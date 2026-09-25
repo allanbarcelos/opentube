@@ -17,6 +17,11 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<Collection> Collections => Set<Collection>();
     public DbSet<CollectionVideo> CollectionVideos => Set<CollectionVideo>();
     public DbSet<VerifiedDomain> VerifiedDomains => Set<VerifiedDomain>();
+    public DbSet<PlaybackSession> PlaybackSessions => Set<PlaybackSession>();
+    public DbSet<PlaybackInterval> PlaybackIntervals => Set<PlaybackInterval>();
+    public DbSet<PlaybackEvent> PlaybackEvents => Set<PlaybackEvent>();
+    public DbSet<VideoDailyStat> VideoDailyStats => Set<VideoDailyStat>();
+    public DbSet<VideoRetentionBucket> VideoRetentionBuckets => Set<VideoRetentionBucket>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

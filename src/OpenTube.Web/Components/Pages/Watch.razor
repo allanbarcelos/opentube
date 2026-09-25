@@ -68,9 +68,10 @@
         </div>
 
         <script src="lib/hlsjs/hls.min.js"></script>
+        <script src="js/analytics.js"></script>
         <script src="js/player.js"></script>
         <script>
-            window.openTubePlayer.iniciar('player-video', '/api/videos/@Video.Id/master.m3u8');
+            window.openTubePlayer.iniciar('player-video', '/api/videos/@Video.Id/master.m3u8', '@Video.Id');
         </script>
     }
 </div>

@@ -3,13 +3,17 @@
 window.openTubePlayer = (function () {
     const instancias = new Map();
 
-    function iniciar(elementId, manifestUrl) {
+    function iniciar(elementId, manifestUrl, videoId) {
         const video = document.getElementById(elementId);
         if (!video) {
             return;
         }
 
         encerrar(elementId);
+
+        const audiencia = videoId && window.openTubeAnalytics
+            ? window.openTubeAnalytics.criar(videoId, video)
+            : null;
 
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = manifestUrl;
@@ -25,6 +29,14 @@ window.openTubePlayer = (function () {
 
         const hls = new window.Hls({ enableWorker: true, lowLatencyMode: false });
 
+        hls.on(window.Hls.Events.LEVEL_SWITCHED, function (_evento, dados) {
+            const nivel = hls.levels[dados.level];
+
+            if (audiencia && nivel) {
+                audiencia.qualidade(nivel.height + 'p');
+            }
+        });
+
         hls.on(window.Hls.Events.ERROR, function (_evento, dados) {
             if (!dados.fatal) {
                 return;
@@ -32,6 +44,10 @@ window.openTubePlayer = (function () {
 
             // Erro de rede costuma ser assinatura vencida no meio da sessão: recarregar a
             // playlist traz endereços novos sem perder a posição.
+            if (audiencia) {
+                audiencia.erro(dados.details || dados.type);
+            }
+
             if (dados.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
                 hls.startLoad();
             } else if (dados.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
