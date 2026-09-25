@@ -30,7 +30,7 @@ public class FakeEmailSender : IEmailSender
     public string LastToken()
     {
         var corpo = Last?.TextBody ?? throw new InvalidOperationException("Nenhum email foi enviado.");
-        var match = System.Text.RegularExpressions.Regex.Match(corpo, @"/entrar/([A-Za-z0-9_-]+)");
+        var match = System.Text.RegularExpressions.Regex.Match(corpo, @"/sign-in/([A-Za-z0-9_-]+)");
 
         return match.Success ? match.Groups[1].Value : throw new InvalidOperationException("Link não encontrado no email.");
     }

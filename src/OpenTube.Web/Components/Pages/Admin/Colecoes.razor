@@ -1,21 +1,21 @@
-@page "/admin/colecoes"
+@page "/admin/collections"
 @using OpenTube.Infrastructure.Services
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject CollectionService Servico
 
-<PageTitle>Coleções — Administração</PageTitle>
+<PageTitle>@T["Collections — Administration"]</PageTitle>
 
 <div class="container py-4">
-    <nav aria-label="Trilha de navegação">
+    <nav aria-label="@T["Breadcrumb"]">
         <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
-            <li class="breadcrumb-item active" aria-current="page">Coleções</li>
+            <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
+            <li class="breadcrumb-item active" aria-current="page">@T["Collections"]</li>
         </ol>
     </nav>
 
     @if (Excluida)
     {
-        <div class="alert alert-success" role="status">Coleção excluída.</div>
+        <div class="alert alert-success" role="status">@T["Collection deleted."]</div>
     }
     @if (!string.IsNullOrWhiteSpace(Erro))
     {
@@ -25,12 +25,12 @@
     <div class="row g-4">
         <div class="col-lg-7">
             <div class="card">
-                <div class="card-header">Coleções</div>
+                <div class="card-header">@T["Collections"]</div>
 
                 @if (Lista.Count == 0)
                 {
                     <div class="card-body text-center text-body-secondary py-5">
-                        Nenhuma coleção ainda. Crie a primeira ao lado.
+                        @T["No collections yet. Create the first one beside this."]
                     </div>
                 }
                 else
@@ -40,7 +40,7 @@
                         {
                             <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
                                 <div>
-                                    <a href="/admin/colecoes/@colecao.Id" class="text-decoration-none fw-semibold">
+                                    <a href="/admin/collections/@colecao.Id" class="text-decoration-none fw-semibold">
                                         @colecao.Name
                                     </a>
                                     @if (!string.IsNullOrWhiteSpace(colecao.Description))
@@ -49,8 +49,8 @@
                                     }
                                 </div>
                                 <div class="text-nowrap">
-                                    <span class="badge text-bg-secondary">@colecao.VideoCount vídeos</span>
-                                    <span class="badge text-bg-light">@colecao.GrantCount acessos</span>
+                                    <span class="badge text-bg-secondary">@T.Format(colecao.VideoCount == 1 ? "{0} video" : "{0} videos", colecao.VideoCount)</span>
+                                    <span class="badge text-bg-light">@T.Format("{0} grants", colecao.GrantCount)</span>
                                 </div>
                             </li>
                         }
@@ -61,29 +61,29 @@
 
         <div class="col-lg-5">
             <div class="card">
-                <div class="card-header">Nova coleção</div>
+                <div class="card-header">@T["New collection"]</div>
                 <div class="card-body">
-                    <form method="post" action="/admin/colecoes/criar">
+                    <form method="post" action="/admin/collections/create">
                         <AntiforgeryToken />
 
                         <div class="mb-3">
-                            <label class="form-label" for="nome">Nome</label>
+                            <label class="form-label" for="nome">@T["Name"]</label>
                             <input class="form-control" id="nome" name="nome" maxlength="200" required />
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label" for="descricao">Descrição</label>
+                            <label class="form-label" for="descricao">@T["Description"]</label>
                             <textarea class="form-control" id="descricao" name="descricao" rows="2"
                                       maxlength="2000"></textarea>
                         </div>
 
-                        <button class="btn btn-primary w-100" type="submit">Criar</button>
+                        <button class="btn btn-primary w-100" type="submit">@T["Create"]</button>
                     </form>
                 </div>
             </div>
 
             <div class="alert alert-light border mt-3 small mb-0">
-                Conceder acesso a uma coleção alcança também os vídeos que entrarem nela depois.
+                @T["Granting access to a collection also covers videos added to it later."]
             </div>
         </div>
     </div>

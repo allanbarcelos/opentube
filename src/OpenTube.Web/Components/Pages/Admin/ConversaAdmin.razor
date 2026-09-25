@@ -1,4 +1,4 @@
-@page "/admin/suporte/{threadId:guid}"
+@page "/admin/support/{threadId:guid}"
 @using OpenTube.Domain.Entities
 @using OpenTube.Domain.Enums
 @using OpenTube.Infrastructure.Persistence
@@ -10,7 +10,7 @@
 @inject OpenTubeDbContext Db
 @inject NavigationManager Navegacao
 
-<PageTitle>Conversa — Administração</PageTitle>
+<PageTitle>@T["Conversation — Administration"]</PageTitle>
 
 <div class="container py-4">
     @if (Conversa is null)
@@ -19,25 +19,25 @@
     }
     else
     {
-        <nav aria-label="Trilha de navegação">
+        <nav aria-label="@T["Breadcrumb"]">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
-                <li class="breadcrumb-item"><a href="/admin/suporte">Suporte</a></li>
+                <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
+                <li class="breadcrumb-item"><a href="/admin/support">@T["Support"]</a></li>
                 <li class="breadcrumb-item active" aria-current="page">@Autor</li>
             </ol>
         </nav>
 
         @if (Encerrada)
         {
-            <div class="alert alert-success" role="status">Conversa encerrada.</div>
+            <div class="alert alert-success" role="status">@T["Conversation closed."]</div>
         }
         @if (Reaberta)
         {
-            <div class="alert alert-success" role="status">Conversa reaberta.</div>
+            <div class="alert alert-success" role="status">@T["Conversation reopened."]</div>
         }
         @if (Respondida)
         {
-            <div class="alert alert-success" role="status">Resposta enviada.</div>
+            <div class="alert alert-success" role="status">@T["Reply sent."]</div>
         }
         @if (!string.IsNullOrWhiteSpace(Erro))
         {
@@ -57,9 +57,9 @@
                         {
                             <div class="mb-3">
                                 <p class="small mb-1">
-                                    <strong>@(mensagem.FromAdmin ? "Administração" : Autor)</strong>
+                                    <strong>@(mensagem.FromAdmin ? T["Administration"] : Autor)</strong>
                                     <span class="text-body-secondary ms-1">
-                                        @mensagem.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                        @mensagem.CreatedAt.ToLocalTime().ToString("g")
                                     </span>
                                 </p>
                                 <p class="mb-0" style="white-space: pre-wrap">@mensagem.Body</p>
@@ -68,17 +68,17 @@
 
                         @if (!Conversa.IsClosed)
                         {
-                            <form method="post" action="/suporte/@Conversa.Id/responder" class="mt-4">
+                            <form method="post" action="/support/@Conversa.Id/reply" class="mt-4">
                                 <AntiforgeryToken />
-                                <input type="hidden" name="destino" value="/admin/suporte/@Conversa.Id" />
+                                <input type="hidden" name="destino" value="/admin/support/@Conversa.Id" />
 
                                 <div class="mb-2">
-                                    <label class="form-label" for="resposta">Sua resposta</label>
+                                    <label class="form-label" for="resposta">@T["Your reply"]</label>
                                     <textarea class="form-control" id="resposta" name="mensagem" rows="4"
                                               maxlength="4000" required autofocus></textarea>
                                 </div>
 
-                                <button class="btn btn-primary" type="submit">Responder</button>
+                                <button class="btn btn-primary" type="submit">@T["Reply"]</button>
                             </form>
                         }
                     </div>
@@ -87,40 +87,40 @@
 
             <div class="col-lg-4">
                 <div class="card mb-3">
-                    <div class="card-header">Contexto</div>
+                    <div class="card-header">@T["Context"]</div>
                     <ul class="list-group list-group-flush">
                         <li class="list-group-item d-flex justify-content-between">
-                            <span>Vídeo</span>
+                            <span>@T["Video"]</span>
                             <a href="/admin/videos/@Conversa.VideoId" class="text-decoration-none">@VideoTitulo</a>
                         </li>
                         <li class="list-group-item d-flex justify-content-between">
-                            <span>Pessoa</span>
-                            <a href="/admin/pessoas/@Conversa.UserId" class="text-decoration-none">@Autor</a>
+                            <span>@T["Person"]</span>
+                            <a href="/admin/people/@Conversa.UserId" class="text-decoration-none">@Autor</a>
                         </li>
                         @if (Conversa.TimestampSeconds is { } instante)
                         {
                             <li class="list-group-item d-flex justify-content-between">
-                                <span>Instante citado</span><span>@Tempo(instante)</span>
+                                <span>@T["Moment mentioned"]</span><span>@Tempo(instante)</span>
                             </li>
                         }
                         <li class="list-group-item d-flex justify-content-between">
-                            <span>Aberta em</span>
-                            <span>@Conversa.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                            <span>@T["Opened on"]</span>
+                            <span>@Conversa.CreatedAt.ToLocalTime().ToString("g")</span>
                         </li>
                     </ul>
                     <div class="card-body">
                         @if (Conversa.IsClosed)
                         {
-                            <form method="post" action="/admin/suporte/@Conversa.Id/reabrir">
+                            <form method="post" action="/admin/support/@Conversa.Id/reopen">
                                 <AntiforgeryToken />
-                                <button class="btn btn-outline-secondary w-100" type="submit">Reabrir conversa</button>
+                                <button class="btn btn-outline-secondary w-100" type="submit">@T["Reopen conversation"]</button>
                             </form>
                         }
                         else
                         {
-                            <form method="post" action="/admin/suporte/@Conversa.Id/encerrar">
+                            <form method="post" action="/admin/support/@Conversa.Id/close">
                                 <AntiforgeryToken />
-                                <button class="btn btn-outline-secondary w-100" type="submit">Encerrar conversa</button>
+                                <button class="btn btn-outline-secondary w-100" type="submit">@T["Close conversation"]</button>
                             </form>
                         }
                     </div>
@@ -161,9 +161,9 @@
 
     private string Texto => Conversa?.Status switch
     {
-        SupportStatus.Answered => "Respondida",
-        SupportStatus.Closed => "Encerrada",
-        _ => "Aguardando resposta"
+        SupportStatus.Answered => T["Answered"],
+        SupportStatus.Closed => T["Closed"],
+        _ => T["Waiting for a reply"]
     };
 
     private string Classe => Conversa?.Status switch
@@ -188,12 +188,12 @@
         Autor = await Db.Users
             .Where(u => u.Id == Conversa.UserId)
             .Select(u => u.Email)
-            .FirstOrDefaultAsync(Http.RequestAborted) ?? "desconhecido";
+            .FirstOrDefaultAsync(Http.RequestAborted) ?? T["unknown"];
 
         VideoTitulo = await Db.Videos
             .Where(v => v.Id == Conversa.VideoId)
             .Select(v => v.Title)
-            .FirstOrDefaultAsync(Http.RequestAborted) ?? "Vídeo removido";
+            .FirstOrDefaultAsync(Http.RequestAborted) ?? T["Removed video"];
 
         // Abrir a conversa já conta como leitura: o distintivo de pendência some da fila.
         await Servico.MarkReadAsync(ThreadId, espectador, Http.RequestAborted);

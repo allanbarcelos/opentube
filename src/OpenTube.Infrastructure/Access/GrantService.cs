@@ -5,6 +5,7 @@ using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Domain.ValueObjects;
 using OpenTube.Infrastructure.Email;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Security;
@@ -23,12 +24,12 @@ public readonly record struct GrantValidity(DateTimeOffset? ExpiresAt, TimeSpan?
 
     public static GrantValidity For(TimeSpan afterFirstUse) => new(null, afterFirstUse);
 
-    /// <summary>Descrição em português, usada no email de convite.</summary>
+    /// <summary>Descrição usada no email de convite, no idioma do pedido.</summary>
     public string Describe() => this switch
     {
-        { DurationAfterFirstUse: { } prazo } => $"{(int)Math.Round(prazo.TotalDays)} dias a partir do primeiro acesso",
-        { ExpiresAt: { } fim } => $"até {fim.ToLocalTime():dd/MM/yyyy}",
-        _ => "sem prazo"
+        { DurationAfterFirstUse: { } prazo } => LocalText.Format("{0} days from the first visit", (int)Math.Round(prazo.TotalDays)),
+        { ExpiresAt: { } fim } => LocalText.Format("until {0}", fim.ToLocalTime().ToString("d")),
+        _ => LocalText.Get("no end date")
     };
 }
 
@@ -81,7 +82,7 @@ public class GrantService(
             .ToList();
 
         if (enderecos.Count == 0)
-            throw new InvalidOperationException("Nenhum endereço de email válido foi informado.");
+            throw new InvalidOperationException("No valid email address was given.");
 
         var rotulo = await DescreverAlvoAsync(targetType, targetId, cancellationToken);
         var agora = clock.GetUtcNow();
@@ -182,14 +183,14 @@ public class GrantService(
         db.AccessGrants.Add(concessao);
         await db.SaveChangesAsync(cancellationToken);
 
-        return new ShareLink(concessao.Id, $"{_options.PublicUrl.TrimEnd('/')}/l/{token}");
+        return new ShareLink(concessao.Id, $"{_options.PublicUrl.TrimEnd('/')}/link/{token}");
     }
 
     /// <summary>Revoga uma concessão. O acesso cai na avaliação seguinte.</summary>
     public async Task RevokeAsync(Guid grantId, CancellationToken cancellationToken = default)
     {
         var concessao = await db.AccessGrants.FirstOrDefaultAsync(g => g.Id == grantId, cancellationToken)
-            ?? throw new InvalidOperationException("Concessão não encontrada.");
+            ?? throw new InvalidOperationException("Grant not found.");
 
         concessao.Revoke(clock.GetUtcNow());
         await db.SaveChangesAsync(cancellationToken);
@@ -200,7 +201,7 @@ public class GrantService(
     public async Task RestoreAsync(Guid grantId, CancellationToken cancellationToken = default)
     {
         var concessao = await db.AccessGrants.FirstOrDefaultAsync(g => g.Id == grantId, cancellationToken)
-            ?? throw new InvalidOperationException("Concessão não encontrada.");
+            ?? throw new InvalidOperationException("Grant not found.");
 
         concessao.Restore();
         await db.SaveChangesAsync(cancellationToken);
@@ -248,15 +249,15 @@ public class GrantService(
     /// <summary>Nome do que foi liberado, para aparecer no convite.</summary>
     private async Task<string> DescreverAlvoAsync(GrantTargetType tipo, Guid? alvoId, CancellationToken cancellationToken) => tipo switch
     {
-        GrantTargetType.All => "todos os vídeos",
+        GrantTargetType.All => LocalText.Get("The whole library"),
         GrantTargetType.Video => await db.Videos
             .Where(v => v.Id == alvoId)
             .Select(v => v.Title)
-            .FirstOrDefaultAsync(cancellationToken) ?? "um vídeo",
+            .FirstOrDefaultAsync(cancellationToken) ?? LocalText.Get("A video"),
         GrantTargetType.Collection => await db.Collections
             .Where(c => c.Id == alvoId)
             .Select(c => c.Name)
-            .FirstOrDefaultAsync(cancellationToken) ?? "uma coleção",
-        _ => "conteúdo"
+            .FirstOrDefaultAsync(cancellationToken) ?? LocalText.Get("A collection"),
+        _ => LocalText.Get("content")
     };
 }

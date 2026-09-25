@@ -1,10 +1,10 @@
-@page "/erro"
+@page "/error"
 @using Microsoft.AspNetCore.Components.Web
 
-<PageTitle>Erro — OpenTube</PageTitle>
+<PageTitle>@T["Error — OpenTube"]</PageTitle>
 
 <div class="container py-5 text-center">
-    <h1 class="h4">Algo deu errado</h1>
-    <p class="text-body-secondary">Tente novamente em alguns instantes.</p>
-    <a class="btn btn-outline-secondary" href="/">Voltar ao início</a>
+    <h1 class="h4">@T["Something went wrong"]</h1>
+    <p class="text-body-secondary">@T["Try again in a moment."]</p>
+    <a class="btn btn-outline-secondary" href="/">@T["Back to the start"]</a>
 </div>

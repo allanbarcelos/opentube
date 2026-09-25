@@ -92,19 +92,19 @@ public class AccessGrant
         string? note = null)
     {
         if (targetType is GrantTargetType.All && targetId is not null)
-            throw new ArgumentException("Uma concessão para todo o acervo não aponta para um alvo.", nameof(targetId));
+            throw new ArgumentException("A grant for the whole library does not point at a target.", nameof(targetId));
 
         if (targetType is not GrantTargetType.All && (targetId is null || targetId == Guid.Empty))
-            throw new ArgumentException("É preciso informar o vídeo ou a coleção alvo.", nameof(targetId));
+            throw new ArgumentException("Name the video or collection this grant applies to.", nameof(targetId));
 
         if (expiresAt is { } fim && startsAt is { } inicio && fim <= inicio)
-            throw new ArgumentException("O fim da validade precisa ser depois do início.", nameof(expiresAt));
+            throw new ArgumentException("The end of the grant must be after the start.", nameof(expiresAt));
 
         if (durationAfterFirstUse is { } prazo && prazo <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(durationAfterFirstUse), "O prazo precisa ser positivo.");
+            throw new ArgumentOutOfRangeException(nameof(durationAfterFirstUse), "The period must be positive.");
 
         if (maxViews is { } teto && teto <= 0)
-            throw new ArgumentOutOfRangeException(nameof(maxViews), "O limite de visualizações precisa ser positivo.");
+            throw new ArgumentOutOfRangeException(nameof(maxViews), "The view limit must be positive.");
 
         return new AccessGrant
         {
@@ -199,10 +199,10 @@ public class AccessGrant
     public void Reschedule(DateTimeOffset? startsAt, DateTimeOffset? expiresAt, TimeSpan? durationAfterFirstUse)
     {
         if (expiresAt is { } fim && startsAt is { } inicio && fim <= inicio)
-            throw new ArgumentException("O fim da validade precisa ser depois do início.", nameof(expiresAt));
+            throw new ArgumentException("The end of the grant must be after the start.", nameof(expiresAt));
 
         if (durationAfterFirstUse is { } prazo && prazo <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(durationAfterFirstUse), "O prazo precisa ser positivo.");
+            throw new ArgumentOutOfRangeException(nameof(durationAfterFirstUse), "The period must be positive.");
 
         StartsAt = startsAt;
         ExpiresAt = expiresAt;
@@ -218,10 +218,10 @@ public class AccessGrant
         GrantSubjectType.Public => string.Empty,
         // O resumo do token é comparado byte a byte; baixar a caixa o corromperia.
         GrantSubjectType.Link => string.IsNullOrWhiteSpace(valor)
-            ? throw new ArgumentException("A concessão por link exige o resumo do token.", nameof(valor))
+            ? throw new ArgumentException("A link grant needs the token digest.", nameof(valor))
             : valor.Trim(),
         _ => string.IsNullOrWhiteSpace(valor)
-            ? throw new ArgumentException("A concessão exige o email ou o domínio do sujeito.", nameof(valor))
+            ? throw new ArgumentException("The grant needs the person's email or the domain.", nameof(valor))
             : valor.Trim().ToLowerInvariant()
     };
 }

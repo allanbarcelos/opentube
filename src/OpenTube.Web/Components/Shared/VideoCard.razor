@@ -1,11 +1,11 @@
 @* Cartão de vídeo usado na home, na busca e na área administrativa. *@
 
 <div class="col">
-    <a class="card h-100 text-decoration-none text-body shadow-sm" href="/v/@Video.Slug">
+    <a class="card h-100 text-decoration-none text-body shadow-sm" href="/watch/@Video.Slug">
         @if (Video.Status == (int)VideoStatus.Ready)
         {
-            <img class="card-img-top video-thumb" src="/api/videos/@Video.Id/miniatura"
-                 alt="Miniatura de @Video.Title" loading="lazy" />
+            <img class="card-img-top video-thumb" src="/api/videos/@Video.Id/thumbnail"
+                 alt="@T.Format("Thumbnail of {0}", Video.Title)" loading="lazy" />
         }
         else
         {
@@ -37,18 +37,18 @@
 
     private string EstadoTexto => (VideoStatus)Video.Status switch
     {
-        VideoStatus.Draft => "Aguardando envio",
-        VideoStatus.Uploaded => "Na fila",
-        VideoStatus.Processing => "Processando",
-        VideoStatus.Failed => "Falhou",
-        _ => "Sem miniatura"
+        VideoStatus.Draft => T["Waiting for the upload"],
+        VideoStatus.Uploaded => T["Queued"],
+        VideoStatus.Processing => T["Processing"],
+        VideoStatus.Failed => T["Failed"],
+        _ => T["No thumbnail"]
     };
 
     private string VisibilidadeTexto => (VideoVisibility)Video.Visibility switch
     {
-        VideoVisibility.Public => "Público",
-        VideoVisibility.Restricted => "Restrito",
-        _ => "Privado"
+        VideoVisibility.Public => T["Public"],
+        VideoVisibility.Restricted => T["Restricted"],
+        _ => T["Private"]
     };
 
     private string DistintivoClasse => (VideoVisibility)Video.Visibility switch

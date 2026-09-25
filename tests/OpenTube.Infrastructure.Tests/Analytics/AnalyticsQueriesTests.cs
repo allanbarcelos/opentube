@@ -124,7 +124,7 @@ public class AnalyticsQueriesTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.False(identificado.Completed);
 
         var anonimo = espectadores.Single(e => e.Email is null);
-        Assert.Equal("Visitante não identificado", anonimo.DisplayName);
+        Assert.Equal("Unidentified visitor", anonimo.DisplayName);
     }
 
     [Fact]

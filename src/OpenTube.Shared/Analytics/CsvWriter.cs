@@ -36,7 +36,9 @@ public static class CsvWriter
     private static string Formatar(object? valor) => valor switch
     {
         null => string.Empty,
-        bool booleano => booleano ? "sim" : "não",
+        bool booleano => booleano
+            ? CultureInfo.CurrentUICulture.TwoLetterISOLanguageName switch { "pt" => "sim", "fr" => "oui", _ => "yes" }
+            : CultureInfo.CurrentUICulture.TwoLetterISOLanguageName switch { "pt" => "não", "fr" => "non", _ => "no" },
         DateTimeOffset momento => momento.ToLocalTime().ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
         DateOnly dia => dia.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
         // Vírgula decimal: é o que a planilha em português reconhece como número.

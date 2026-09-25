@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Web.Auth;
 
@@ -15,7 +16,7 @@ public static class AuthEndpoints
 {
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder rotas)
     {
-        rotas.MapPost("/entrar/codigo", async (
+        rotas.MapPost("/sign-in/code", async (
             [FromForm] string email,
             PasswordlessAuthService auth,
             HttpContext contexto,
@@ -31,13 +32,13 @@ public static class AuthEndpoints
             // entregaria a lista de convidados a quem perguntasse.
             return resultado.Failure switch
             {
-                AuthFailure.InvalidEmail => Redirecionar(email, erro: "Endereço de email inválido."),
-                AuthFailure.RateLimited => Redirecionar(email, erro: "Pedidos demais. Aguarde alguns minutos."),
+                AuthFailure.InvalidEmail => Redirecionar(email, erro: LocalText.Get("Invalid email address.")),
+                AuthFailure.RateLimited => Redirecionar(email, erro: LocalText.Get("Too many requests. Wait a few minutes.")),
                 _ => Redirecionar(email, enviado: true)
             };
         });
 
-        rotas.MapPost("/entrar/verificar", async (
+        rotas.MapPost("/sign-in/verify", async (
             [FromForm] string email,
             [FromForm] string codigo,
             PasswordlessAuthService auth,
@@ -59,7 +60,7 @@ public static class AuthEndpoints
             return Results.Redirect(resultado.User!.IsAdmin ? "/admin" : "/");
         });
 
-        rotas.MapGet("/entrar/{token}", async (
+        rotas.MapGet("/sign-in/{token}", async (
             string token,
             PasswordlessAuthService auth,
             HttpContext contexto,
@@ -79,7 +80,7 @@ public static class AuthEndpoints
             return Results.Redirect(resultado.User!.IsAdmin ? "/admin" : "/");
         });
 
-        rotas.MapPost("/sair", async (PasswordlessAuthService auth, HttpContext contexto) =>
+        rotas.MapPost("/sign-out", async (PasswordlessAuthService auth, HttpContext contexto) =>
         {
             var sessionId = ViewerContext.SessionId(contexto.User);
 
@@ -107,7 +108,7 @@ public static class AuthEndpoints
         if (!string.IsNullOrWhiteSpace(erro))
             parametros.Add("erro=" + Uri.EscapeDataString(erro));
 
-        return Results.Redirect("/entrar" + (parametros.Count > 0 ? "?" + string.Join('&', parametros) : string.Empty));
+        return Results.Redirect("/sign-in" + (parametros.Count > 0 ? "?" + string.Join('&', parametros) : string.Empty));
     }
 
     private static Task EntrarAsync(HttpContext contexto, SignInOutcome resultado) =>
@@ -122,12 +123,12 @@ public static class AuthEndpoints
 
     private static string Mensagem(AuthFailure falha) => falha switch
     {
-        AuthFailure.InvalidEmail => "Endereço de email inválido.",
-        AuthFailure.CodeExpired => "Este código expirou. Peça um novo.",
-        AuthFailure.CodeAlreadyUsed => "Este link já foi usado. Peça um novo código.",
-        AuthFailure.TooManyAttempts => "Tentativas demais. Peça um novo código.",
-        AuthFailure.UserDisabled => "Este acesso está desativado.",
-        AuthFailure.RateLimited => "Pedidos demais. Aguarde alguns minutos.",
-        _ => "Código inválido."
+        AuthFailure.InvalidEmail => LocalText.Get("Invalid email address."),
+        AuthFailure.CodeExpired => LocalText.Get("This code has expired. Ask for a new one."),
+        AuthFailure.CodeAlreadyUsed => LocalText.Get("This link has already been used. Ask for a new code."),
+        AuthFailure.TooManyAttempts => LocalText.Get("Too many attempts. Ask for a new code."),
+        AuthFailure.UserDisabled => LocalText.Get("This access is disabled."),
+        AuthFailure.RateLimited => LocalText.Get("Too many requests. Wait a few minutes."),
+        _ => LocalText.Get("Invalid code.")
     };
 }

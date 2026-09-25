@@ -1,16 +1,16 @@
-@page "/admin/dominios"
+@page "/admin/domains"
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Domains
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject DomainService Servico
 
-<PageTitle>Domínios — Administração</PageTitle>
+<PageTitle>@T["Domains — Administration"]</PageTitle>
 
 <div class="container py-4">
-    <nav aria-label="Trilha de navegação">
+    <nav aria-label="@T["Breadcrumb"]">
         <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
-            <li class="breadcrumb-item active" aria-current="page">Domínios</li>
+            <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
+            <li class="breadcrumb-item active" aria-current="page">@T["Domains"]</li>
         </ol>
     </nav>
 
@@ -22,12 +22,12 @@
     <div class="row g-4">
         <div class="col-lg-7">
             <div class="card">
-                <div class="card-header">Domínios cadastrados</div>
+                <div class="card-header">@T["Registered domains"]</div>
 
                 @if (Lista.Count == 0)
                 {
                     <div class="card-body text-center text-body-secondary py-5">
-                        Nenhum domínio ainda.
+                        @T["No domains yet."]
                     </div>
                 }
                 else
@@ -37,27 +37,27 @@
                         {
                             <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
                                 <div>
-                                    <a href="/admin/dominios/@dominio.Id" class="text-decoration-none fw-semibold">
+                                    <a href="/admin/domains/@dominio.Id" class="text-decoration-none fw-semibold">
                                         @dominio.Name
                                     </a>
                                     @if (dominio.EntryAvailable)
                                     {
-                                        <code class="d-block small text-body-secondary">/d/@dominio.EntrySlug</code>
+                                        <code class="d-block small text-body-secondary">/entry/@dominio.EntrySlug</code>
                                     }
                                 </div>
                                 <div class="text-nowrap">
                                     @if (dominio.IsVerified)
                                     {
-                                        <span class="badge text-bg-success">Verificado</span>
+                                        <span class="badge text-bg-success">@T["Verified"]</span>
                                     }
                                     else
                                     {
-                                        <span class="badge text-bg-warning">Aguardando DNS</span>
+                                        <span class="badge text-bg-warning">@T["Waiting for DNS"]</span>
                                     }
 
                                     @if (dominio.IsVerified && !dominio.EntryEnabled)
                                     {
-                                        <span class="badge text-bg-secondary">Porta fechada</span>
+                                        <span class="badge text-bg-secondary">@T["Entry closed"]</span>
                                     }
                                 </div>
                             </li>
@@ -69,37 +69,36 @@
 
         <div class="col-lg-5">
             <div class="card">
-                <div class="card-header">Cadastrar domínio</div>
+                <div class="card-header">@T["Register a domain"]</div>
                 <div class="card-body">
-                    <form method="post" action="/admin/dominios/cadastrar">
+                    <form method="post" action="/admin/domains/register">
                         <AntiforgeryToken />
 
                         <div class="mb-3">
-                            <label class="form-label" for="dominio">Domínio</label>
+                            <label class="form-label" for="dominio">@T["Domain"]</label>
                             <input class="form-control" id="dominio" name="dominio" required
                                    placeholder="barcelos.dev" />
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label" for="responsavel">Email do responsável</label>
+                            <label class="form-label" for="responsavel">@T["Owner email"]</label>
                             <input class="form-control" id="responsavel" name="responsavel" type="email"
                                    placeholder="ti@barcelos.dev" />
-                            <div class="form-text">Recebe o endereço da porta de entrada para repassar.</div>
+                            <div class="form-text">@T["Receives the entry address to forward."]</div>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label" for="nota">Anotação</label>
+                            <label class="form-label" for="nota">@T["Note"]</label>
                             <input class="form-control" id="nota" name="nota" maxlength="500" />
                         </div>
 
-                        <button class="btn btn-primary w-100" type="submit">Cadastrar</button>
+                        <button class="btn btn-primary w-100" type="submit">@T["Register"]</button>
                     </form>
                 </div>
             </div>
 
             <div class="alert alert-light border mt-3 small mb-0">
-                O domínio só passa a valer depois de comprovado por um registro DNS. Sem essa etapa,
-                qualquer um poderia cadastrar um domínio alheio e liberar o acervo para os usuários dele.
+                @T["A domain only works after a DNS record proves it. Without that, anyone could register someone else's domain."]
             </div>
         </div>
     </div>

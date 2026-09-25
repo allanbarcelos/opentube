@@ -15,7 +15,7 @@ public static class ShareEndpoints
 {
     public static IEndpointRouteBuilder MapShareEndpoints(this IEndpointRouteBuilder rotas)
     {
-        rotas.MapGet("/l/{token}", async (
+        rotas.MapGet("/link/{token}", async (
             string token,
             AccessService acesso,
             OpenTubeDbContext db,
@@ -25,14 +25,14 @@ public static class ShareEndpoints
             var espectador = await acesso.ResolveLinkAsync(Viewer.Anonymous, token, cancellationToken);
 
             if (espectador.LinkGrantId is not { } concessaoId)
-                return Results.Redirect("/nao-encontrado");
+                return Results.Redirect("/not-found");
 
             var concessao = await db.AccessGrants
                 .AsNoTracking()
                 .FirstOrDefaultAsync(g => g.Id == concessaoId, cancellationToken);
 
             if (concessao is null || !concessao.IsActiveAt(DateTimeOffset.UtcNow))
-                return Results.Redirect("/nao-encontrado");
+                return Results.Redirect("/not-found");
 
             contexto.Response.Cookies.Append(
                 CurrentViewer.LinkCookieName,
@@ -49,7 +49,7 @@ public static class ShareEndpoints
                     .FirstOrDefaultAsync(cancellationToken);
 
                 if (endereco is not null)
-                    return Results.Redirect($"/v/{endereco}");
+                    return Results.Redirect($"/watch/{endereco}");
             }
 
             return Results.Redirect("/");

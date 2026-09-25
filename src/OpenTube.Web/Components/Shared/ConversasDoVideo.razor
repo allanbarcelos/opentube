@@ -7,19 +7,19 @@
 @inject CurrentViewer Espectadores
 
 <div class="card mt-4">
-    <div class="card-header">Fale com a administração</div>
+    <div class="card-header">@T["Contact the administration"]</div>
     <div class="card-body">
         @if (!Espectador.IsAuthenticated)
         {
             <p class="text-body-secondary mb-0">
-                <a href="/entrar">Entre</a> para enviar uma mensagem sobre este vídeo.
+                <a href="/sign-in">@T["Sign in"]</a> @T["to send a message about this video."]
             </p>
         }
         else
         {
             @if (Enviada)
             {
-                <div class="alert alert-success" role="status">Mensagem enviada.</div>
+                <div class="alert alert-success" role="status">@T["Message sent."]</div>
             }
             @if (!string.IsNullOrWhiteSpace(Erro))
             {
@@ -33,7 +33,7 @@
                         <span class="badge @SituacaoClasse(conversa)">@SituacaoTexto(conversa)</span>
                         @if (conversa.TimestampSeconds is { } instante)
                         {
-                            <span class="small text-body-secondary">sobre @Tempo(instante)</span>
+                            <span class="small text-body-secondary">@T.Format("about {0}", Tempo(instante))</span>
                         }
                     </div>
 
@@ -41,9 +41,9 @@
                     {
                         <div class="mb-2">
                             <p class="small mb-1">
-                                <strong>@(mensagem.FromAdmin ? "Administração" : "Você")</strong>
+                                <strong>@(mensagem.FromAdmin ? T["Administration"] : T["You"])</strong>
                                 <span class="text-body-secondary ms-1">
-                                    @mensagem.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                    @mensagem.CreatedAt.ToLocalTime().ToString("g")
                                 </span>
                             </p>
                             <p class="mb-0" style="white-space: pre-wrap">@mensagem.Body</p>
@@ -52,54 +52,54 @@
 
                     @if (!conversa.IsClosed)
                     {
-                        <form method="post" action="/suporte/@conversa.Id/responder" class="mt-3">
+                        <form method="post" action="/support/@conversa.Id/reply" class="mt-3">
                             <AntiforgeryToken />
                             <input type="hidden" name="destino" value="@Destino" />
 
                             <div class="mb-2">
-                                <label class="form-label visually-hidden" for="resposta-@conversa.Id">Sua resposta</label>
+                                <label class="form-label visually-hidden" for="resposta-@conversa.Id">@T["Your reply"]</label>
                                 <textarea class="form-control" id="resposta-@conversa.Id" name="mensagem"
-                                          rows="2" maxlength="4000" required placeholder="Escreva uma resposta"></textarea>
+                                          rows="2" maxlength="4000" required placeholder="@T["Write a reply"]"></textarea>
                             </div>
 
-                            <button class="btn btn-sm btn-outline-primary" type="submit">Responder</button>
+                            <button class="btn btn-sm btn-outline-primary" type="submit">@T["Reply"]</button>
                         </form>
                     }
                     else
                     {
-                        <p class="small text-body-secondary mb-0">Esta conversa foi encerrada.</p>
+                        <p class="small text-body-secondary mb-0">@T["This conversation is closed."]</p>
                     }
                 </div>
             }
 
-            <form method="post" action="/suporte/abrir">
+            <form method="post" action="/support/open">
                 <AntiforgeryToken />
                 <input type="hidden" name="videoId" value="@VideoId" />
                 <input type="hidden" name="destino" value="@Destino" />
 
                 <div class="mb-2">
                     <label class="form-label" for="nova-mensagem">
-                        @(Conversas.Count == 0 ? "Sua mensagem" : "Abrir outra conversa")
+                        @(Conversas.Count == 0 ? T["Your message"] : T["Start another conversation"])
                     </label>
                     <textarea class="form-control" id="nova-mensagem" name="mensagem" rows="3"
                               maxlength="4000" required
-                              placeholder="Dúvida sobre o conteúdo, problema para assistir…"></textarea>
+                              placeholder="@T["A question about the content, or a problem watching…"]"></textarea>
                 </div>
 
                 <div class="row g-2 align-items-end">
                     <div class="col-sm-4">
-                        <label class="form-label small" for="instante">Instante do vídeo</label>
+                        <label class="form-label small" for="instante">@T["Moment in the video"]</label>
                         <input class="form-control form-control-sm" id="instante" name="instante"
-                               type="number" min="0" step="1" placeholder="em segundos" />
+                               type="number" min="0" step="1" placeholder="@T["in seconds"]" />
                     </div>
                     <div class="col-sm-8">
-                        <button class="btn btn-primary" type="submit">Enviar</button>
+                        <button class="btn btn-primary" type="submit">@T["Send"]</button>
                     </div>
                 </div>
             </form>
 
             <p class="small text-body-secondary mt-3 mb-0">
-                Só você e a administração enxergam o que é escrito aqui.
+                @T["Only you and the administration can read what is written here."]
             </p>
         }
     </div>
@@ -139,11 +139,11 @@
             Conversas = await Suporte.ForVideoAsync(VideoId, Espectador, Http.RequestAborted);
     }
 
-    private static string SituacaoTexto(SupportThread conversa) => conversa.Status switch
+    private string SituacaoTexto(SupportThread conversa) => conversa.Status switch
     {
-        SupportStatus.Answered => "Respondida",
-        SupportStatus.Closed => "Encerrada",
-        _ => "Aguardando resposta"
+        SupportStatus.Answered => T["Answered"],
+        SupportStatus.Closed => T["Closed"],
+        _ => T["Waiting for a reply"]
     };
 
     private static string SituacaoClasse(SupportThread conversa) => conversa.Status switch

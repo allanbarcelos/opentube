@@ -8,9 +8,9 @@ public class FormularioDeAcessoTests
     [Fact]
     public void Sem_prazo_e_o_padrao()
     {
-        Assert.Equal("sem prazo", AccessEndpoints.MontarValidade("sempre", null).Describe());
-        Assert.Equal("sem prazo", AccessEndpoints.MontarValidade(null, "30").Describe());
-        Assert.Equal("sem prazo", AccessEndpoints.MontarValidade("qualquer-coisa", "30").Describe());
+        Assert.Equal("no end date", AccessEndpoints.MontarValidade("sempre", null).Describe());
+        Assert.Equal("no end date", AccessEndpoints.MontarValidade(null, "30").Describe());
+        Assert.Equal("no end date", AccessEndpoints.MontarValidade("qualquer-coisa", "30").Describe());
     }
 
     [Fact]
@@ -29,7 +29,7 @@ public class FormularioDeAcessoTests
     [InlineData("")]
     public void Prazo_em_dias_invalido_vira_sem_prazo(string valor)
     {
-        Assert.Equal("sem prazo", AccessEndpoints.MontarValidade("dias", valor).Describe());
+        Assert.Equal("no end date", AccessEndpoints.MontarValidade("dias", valor).Describe());
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public class FormularioDeAcessoTests
     [Fact]
     public void Data_invalida_vira_sem_prazo()
     {
-        Assert.Equal("sem prazo", AccessEndpoints.MontarValidade("ate", "trinta e um").Describe());
+        Assert.Equal("no end date", AccessEndpoints.MontarValidade("ate", "trinta e um").Describe());
     }
 
     [Theory]

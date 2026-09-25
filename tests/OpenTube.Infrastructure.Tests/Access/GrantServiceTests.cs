@@ -103,8 +103,8 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var mensagem = _emails.Last!;
 
         Assert.Contains("Reunião Trimestral", mensagem.Subject);
-        Assert.Contains("30 dias a partir do primeiro acesso", mensagem.TextBody);
-        Assert.Contains("https://opentube.org/entrar/", mensagem.TextBody);
+        Assert.Contains("30 days from the first visit", mensagem.TextBody);
+        Assert.Contains("https://opentube.org/sign-in/", mensagem.TextBody);
         Assert.Matches(@"\b\d{6}\b", mensagem.TextBody);
     }
 
@@ -248,7 +248,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var link = await servico.CreateShareLinkAsync(
             GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
 
-        Assert.StartsWith("https://opentube.org/l/", link.Url);
+        Assert.StartsWith("https://opentube.org/link/", link.Url);
 
         var token = link.Url[(link.Url.LastIndexOf('/') + 1)..];
 
@@ -358,9 +358,9 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData(null, null, "sem prazo")]
-    [InlineData(30, null, "30 dias a partir do primeiro acesso")]
-    public void Descreve_a_validade_em_portugues(int? dias, int? _, string esperado)
+    [InlineData(null, null, "no end date")]
+    [InlineData(30, null, "30 days from the first visit")]
+    public void Descreve_a_validade(int? dias, int? _, string esperado)
     {
         var validade = dias is null ? GrantValidity.Forever : GrantValidity.For(TimeSpan.FromDays(dias.Value));
 
@@ -372,6 +372,6 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
     {
         var validade = GrantValidity.Until(new DateTimeOffset(2026, 12, 31, 0, 0, 0, TimeSpan.Zero));
 
-        Assert.StartsWith("até ", validade.Describe());
+        Assert.StartsWith("until ", validade.Describe());
     }
 }

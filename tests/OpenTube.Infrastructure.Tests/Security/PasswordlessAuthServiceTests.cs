@@ -72,7 +72,7 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
         Assert.Single(_email.Sent);
         Assert.Equal(Convidado, _email.Last!.To);
         Assert.Equal(6, _email.LastCode().Length);
-        Assert.StartsWith("https://opentube.org/entrar/", _email.Last.TextBody[_email.Last.TextBody.IndexOf("https://", StringComparison.Ordinal)..].Split('\n')[0]);
+        Assert.StartsWith("https://opentube.org/sign-in/", _email.Last.TextBody[_email.Last.TextBody.IndexOf("https://", StringComparison.Ordinal)..].Split('\n')[0]);
     }
 
     [Fact]

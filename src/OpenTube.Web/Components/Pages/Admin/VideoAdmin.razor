@@ -7,7 +7,7 @@
 @inject ShareLinkFlash Links
 @inject NavigationManager Navegacao
 
-<PageTitle>@(Video?.Title ?? "Vídeo") — Administração</PageTitle>
+<PageTitle>@(Video?.Title ?? T["Video"]) — @T["Administration"]</PageTitle>
 
 <div class="container py-4">
     @if (Video is null)
@@ -16,55 +16,55 @@
     }
     else
     {
-        <nav aria-label="Trilha de navegação">
+        <nav aria-label="@T["Breadcrumb"]">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
+                <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
                 <li class="breadcrumb-item active" aria-current="page">@Video.Title</li>
             </ol>
         </nav>
 
         @if (Salvo)
         {
-            <div class="alert alert-success" role="status">Alterações salvas.</div>
+            <div class="alert alert-success" role="status">@T["Changes saved."]</div>
         }
         @if (Enfileirado)
         {
-            <div class="alert alert-success" role="status">O vídeo voltou para a fila de processamento.</div>
+            <div class="alert alert-success" role="status">@T["The video is back in the processing queue."]</div>
         }
         @if (Restaurado)
         {
-            <div class="alert alert-success" role="status">Vídeo restaurado. Ele continua privado.</div>
+            <div class="alert alert-success" role="status">@T["Video restored. It is still private."]</div>
         }
         @if (Convidados > 0)
         {
             <div class="alert alert-success" role="status">
-                @Convidados @(Convidados == 1 ? "convite enviado" : "convites enviados").
+                @T.Format(Convidados == 1 ? "{0} invite sent" : "{0} invites sent", Convidados)
             </div>
         }
         @if (DominioLiberado)
         {
-            <div class="alert alert-success" role="status">Domínio liberado.</div>
+            <div class="alert alert-success" role="status">@T["Domain granted."]</div>
         }
         @if (Revogado)
         {
-            <div class="alert alert-success" role="status">Acesso revogado.</div>
+            <div class="alert alert-success" role="status">@T["Access revoked."]</div>
         }
         @if (LegendaEnviada)
         {
-            <div class="alert alert-success" role="status">Legenda enviada.</div>
+            <div class="alert alert-success" role="status">@T["Caption uploaded."]</div>
         }
         @if (Transcrevendo)
         {
             <div class="alert alert-success" role="status">
-                Transcrição na fila. A legenda aparece aqui quando terminar.
+                @T["Transcription is queued. The caption shows up here when it finishes."]
             </div>
         }
         @if (!string.IsNullOrWhiteSpace(LinkCriado))
         {
             <div class="alert alert-warning">
-                <p class="mb-2"><strong>Link criado.</strong> Copie agora: ele não será exibido de novo.</p>
+                <p class="mb-2"><strong>@T["Link created."]</strong> @T["Copy it now: it will not be shown again."]</p>
                 <input class="form-control font-monospace" value="@LinkCriado" readonly
-                       onclick="this.select()" aria-label="Endereço do link de compartilhamento" />
+                       onclick="this.select()" aria-label="@T["Share link address"]" />
             </div>
         }
         @if (!string.IsNullOrWhiteSpace(Erro))
@@ -74,20 +74,20 @@
         @if (Video.IsDeleted)
         {
             <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <span>Este vídeo está excluído e não aparece para ninguém.</span>
-                <form method="post" action="/admin/videos/@Video.Id/restaurar">
+                <span>@T["This video is deleted and is hidden from everyone."]</span>
+                <form method="post" action="/admin/videos/@Video.Id/restore">
                     <AntiforgeryToken />
-                    <button class="btn btn-sm btn-outline-dark" type="submit">Restaurar</button>
+                    <button class="btn btn-sm btn-outline-dark" type="submit">@T["Restore"]</button>
                 </form>
             </div>
         }
 
         <ul class="nav nav-tabs mb-4">
             <li class="nav-item">
-                <a class="nav-link @(MostrarAudiencia ? "" : "active")" href="/admin/videos/@Video.Id">Configuração</a>
+                <a class="nav-link @(MostrarAudiencia ? "" : "active")" href="/admin/videos/@Video.Id">@T["Configuration"]</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link @(MostrarAudiencia ? "active" : "")" href="/admin/videos/@Video.Id?aba=audiencia">Audiência</a>
+                <a class="nav-link @(MostrarAudiencia ? "active" : "")" href="/admin/videos/@Video.Id?tab=audience">@T["Audience"]</a>
             </li>
         </ul>
 
@@ -100,32 +100,32 @@
         <div class="row g-4">
             <div class="col-lg-7">
                 <div class="card">
-                    <div class="card-header">Dados do vídeo</div>
+                    <div class="card-header">@T["Video details"]</div>
                     <div class="card-body">
-                        <form method="post" action="/admin/videos/@Video.Id/salvar">
+                        <form method="post" action="/admin/videos/@Video.Id/save">
                             <AntiforgeryToken />
 
                             <div class="mb-3">
-                                <label class="form-label" for="titulo">Título</label>
+                                <label class="form-label" for="titulo">@T["Title"]</label>
                                 <input class="form-control" id="titulo" name="titulo" value="@Video.Title"
                                        maxlength="300" required />
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label" for="descricao">Descrição</label>
+                                <label class="form-label" for="descricao">@T["Description"]</label>
                                 <textarea class="form-control" id="descricao" name="descricao" rows="4"
                                           maxlength="10000">@Video.Description</textarea>
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label" for="etiquetas">Etiquetas</label>
+                                <label class="form-label" for="etiquetas">@T["Tags"]</label>
                                 <input class="form-control" id="etiquetas" name="etiquetas"
                                        value="@string.Join(", ", Video.Tags)" />
-                                <div class="form-text">Separe por vírgula. Elas entram na busca.</div>
+                                <div class="form-text">@T["Separate with commas. They are included in search."]</div>
                             </div>
 
                             <fieldset class="mb-3">
-                                <legend class="form-label">Visibilidade</legend>
+                                <legend class="form-label">@T["Visibility"]</legend>
 
                                 @foreach (var opcao in Opcoes)
                                 {
@@ -144,15 +144,15 @@
                                 @if (!Video.IsPlayable)
                                 {
                                     <div class="form-text">
-                                        Só um vídeo pronto pode deixar de ser privado.
+                                        @T["Only a ready video can stop being private."]
                                     </div>
                                 }
                             </fieldset>
 
-                            <button class="btn btn-primary" type="submit">Salvar</button>
+                            <button class="btn btn-primary" type="submit">@T["Save"]</button>
                             @if (Video.IsPlayable)
                             {
-                                <a class="btn btn-outline-secondary ms-2" href="/v/@Video.Slug">Ver a página do vídeo</a>
+                                <a class="btn btn-outline-secondary ms-2" href="/watch/@Video.Slug">@T["View the video page"]</a>
                             }
                         </form>
                     </div>
@@ -163,42 +163,42 @@
 
             <div class="col-lg-5">
                 <div class="card mb-3">
-                    <div class="card-header">Processamento</div>
+                    <div class="card-header">@T["Processing"]</div>
                     <ul class="list-group list-group-flush">
                         <li class="list-group-item d-flex justify-content-between">
-                            <span>Estado</span><span class="badge @EstadoClasse">@EstadoTexto</span>
+                            <span>@T["State"]</span><span class="badge @EstadoClasse">@EstadoTexto</span>
                         </li>
                         <li class="list-group-item d-flex justify-content-between">
-                            <span>Duração</span><span>@(Video.IsPlayable ? DuracaoTexto : "—")</span>
+                            <span>@T["Duration"]</span><span>@(Video.IsPlayable ? DuracaoTexto : "—")</span>
                         </li>
                         <li class="list-group-item d-flex justify-content-between">
-                            <span>Resolução</span>
+                            <span>@T["Resolution"]</span>
                             <span>@(Video.Width > 0 ? $"{Video.Width}×{Video.Height}" : "—")</span>
                         </li>
                         <li class="list-group-item d-flex justify-content-between">
-                            <span>Tamanho do original</span><span>@TamanhoTexto</span>
+                            <span>@T["Original size"]</span><span>@TamanhoTexto</span>
                         </li>
                         <li class="list-group-item d-flex justify-content-between">
-                            <span>Endereço</span><code class="small">/v/@Video.Slug</code>
+                            <span>@T["Address"]</span><code class="small">/watch/@Video.Slug</code>
                         </li>
                     </ul>
                     <div class="card-body">
-                        <form method="post" action="/admin/videos/@Video.Id/reprocessar">
+                        <form method="post" action="/admin/videos/@Video.Id/reprocess">
                             <AntiforgeryToken />
                             <button class="btn btn-outline-secondary w-100" type="submit">
-                                Reprocessar a partir do original
+                                @T["Reprocess from the original"]
                             </button>
                         </form>
                     </div>
                 </div>
 
                 <div class="card mb-3">
-                    <div class="card-header">Legendas</div>
+                    <div class="card-header">@T["Captions"]</div>
 
                     @if (ListaDeLegendas.Count == 0)
                     {
                         <div class="card-body text-body-secondary small">
-                            Nenhuma legenda ainda. Envie um arquivo ou gere a partir da fala.
+                            @T["No captions yet. Upload a file or generate one from the speech."]
                         </div>
                     }
                     else
@@ -211,9 +211,9 @@
                                         @legenda.Label
                                         <span class="d-block small text-body-secondary">@legenda.Language</span>
                                     </span>
-                                    <form method="post" action="/admin/videos/@Video.Id/legendas/@legenda.Id/excluir">
+                                    <form method="post" action="/admin/videos/@Video.Id/captions/@legenda.Id/delete">
                                         <AntiforgeryToken />
-                                        <button class="btn btn-sm btn-outline-secondary" type="submit">Remover</button>
+                                        <button class="btn btn-sm btn-outline-secondary" type="submit">@T["Remove"]</button>
                                     </form>
                                 </li>
                             }
@@ -221,35 +221,35 @@
                     }
 
                     <div class="card-body border-top">
-                        <form method="post" action="/admin/videos/@Video.Id/legendas" enctype="multipart/form-data">
+                        <form method="post" action="/admin/videos/@Video.Id/captions" enctype="multipart/form-data">
                             <AntiforgeryToken />
 
                             <div class="mb-2">
-                                <label class="form-label small" for="arquivo-legenda">Arquivo WebVTT</label>
+                                <label class="form-label small" for="arquivo-legenda">@T["WebVTT file"]</label>
                                 <input class="form-control form-control-sm" id="arquivo-legenda" name="arquivo"
                                        type="file" accept=".vtt,text/vtt" required />
                             </div>
 
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
-                                    <label class="form-label small" for="idioma">Idioma</label>
+                                    <label class="form-label small" for="idioma">@T["Language"]</label>
                                     <input class="form-control form-control-sm" id="idioma" name="idioma"
                                            value="pt-BR" maxlength="20" required />
                                 </div>
                                 <div class="col-6">
-                                    <label class="form-label small" for="rotulo">Rótulo</label>
+                                    <label class="form-label small" for="rotulo">@T["Label"]</label>
                                     <input class="form-control form-control-sm" id="rotulo" name="rotulo"
-                                           placeholder="Português" maxlength="120" />
+                                           placeholder="@T["English"]" maxlength="120" />
                                 </div>
                             </div>
 
-                            <button class="btn btn-sm btn-outline-primary w-100" type="submit">Enviar legenda</button>
+                            <button class="btn btn-sm btn-outline-primary w-100" type="submit">@T["Upload caption"]</button>
                         </form>
 
-                        <form method="post" action="/admin/videos/@Video.Id/legendas/transcrever" class="mt-2">
+                        <form method="post" action="/admin/videos/@Video.Id/captions/transcribe" class="mt-2">
                             <AntiforgeryToken />
                             <button class="btn btn-sm btn-outline-secondary w-100" type="submit">
-                                Gerar a partir da fala
+                                @T["Generate from the speech"]
                             </button>
                         </form>
                     </div>
@@ -258,15 +258,14 @@
                 @if (!Video.IsDeleted)
                 {
                     <div class="card border-danger">
-                        <div class="card-header text-danger">Excluir</div>
+                        <div class="card-header text-danger">@T["Delete"]</div>
                         <div class="card-body">
                             <p class="small text-body-secondary">
-                                O vídeo sai do acervo e do acesso na hora. O registro é preservado para
-                                que o histórico de quem assistiu continue fazendo sentido.
+                                @T["The video leaves the library and access immediately. The record stays so the viewing history still makes sense."]
                             </p>
-                            <form method="post" action="/admin/videos/@Video.Id/excluir">
+                            <form method="post" action="/admin/videos/@Video.Id/delete">
                                 <AntiforgeryToken />
-                                <button class="btn btn-outline-danger w-100" type="submit">Excluir vídeo</button>
+                                <button class="btn btn-outline-danger w-100" type="submit">@T["Delete video"]</button>
                             </form>
                         </div>
                     </div>
@@ -278,11 +277,11 @@
 </div>
 
 @code {
-    private static readonly (VideoVisibility Valor, string Rotulo, string Explicacao)[] Opcoes =
+    private (VideoVisibility Valor, string Rotulo, string Explicacao)[] Opcoes =>
     [
-        (VideoVisibility.Private, "Privado", "Somente administradores."),
-        (VideoVisibility.Public, "Público", "Qualquer visitante do site, sem entrar."),
-        (VideoVisibility.Restricted, "Restrito", "Somente quem tiver uma concessão de acesso.")
+        (VideoVisibility.Private, T["Private"], T["Administrators only."]),
+        (VideoVisibility.Public, T["Public"], T["Any visitor, without signing in."]),
+        (VideoVisibility.Restricted, T["Restricted"], T["Only people with an access grant."])
     ];
 
     [CascadingParameter]
@@ -315,7 +314,7 @@
     [SupplyParameterFromQuery(Name = "link")]
     private string? LinkBruto { get; set; }
 
-    [SupplyParameterFromQuery(Name = "aba")]
+    [SupplyParameterFromQuery(Name = "tab")]
     private string? Aba { get; set; }
 
     [SupplyParameterFromQuery(Name = "legenda")]
@@ -327,7 +326,7 @@
     private bool LegendaEnviada => LegendaBruta == "1";
     private bool Transcrevendo => TranscrevendoBruto == "1";
 
-    private bool MostrarAudiencia => Aba == "audiencia";
+    private bool MostrarAudiencia => Aba == "audience";
 
     private int Convidados => ConvidadosBruto ?? 0;
     private bool DominioLiberado => DominioBruto == "1";
@@ -344,11 +343,11 @@
 
     private string EstadoTexto => Video?.Status switch
     {
-        VideoStatus.Draft => "Aguardando o envio do arquivo",
-        VideoStatus.Uploaded => "Na fila",
-        VideoStatus.Processing => "Processando",
-        VideoStatus.Ready => "Pronto",
-        _ => "Falhou"
+        VideoStatus.Draft => T["Waiting for the file"],
+        VideoStatus.Uploaded => T["Queued"],
+        VideoStatus.Processing => T["Processing"],
+        VideoStatus.Ready => T["Ready"],
+        _ => T["Failed"]
     };
 
     private string EstadoClasse => Video?.Status switch

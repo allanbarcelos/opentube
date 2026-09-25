@@ -3,6 +3,11 @@
 (function () {
     const LOTE_DE_ASSINATURAS = 50;
 
+    function formularioMensagem(campo, padrao) {
+        const formulario = selecionar('#formulario-envio');
+        return (formulario && formulario.dataset[campo]) || padrao;
+    }
+
     function selecionar(seletor) {
         return document.querySelector(seletor);
     }
@@ -18,7 +23,7 @@
         });
 
         if (!resposta.ok) {
-            let mensagem = 'Falha na comunicação com o servidor.';
+            let mensagem = formularioMensagem('falhaServidor', 'Could not reach the server.');
             try {
                 const dados = await resposta.json();
                 mensagem = dados.erro || dados.detail || mensagem;
@@ -35,12 +40,12 @@
         const resposta = await fetch(url, { method: 'PUT', body: pedaco });
 
         if (!resposta.ok) {
-            throw new Error('Falha ao enviar um pedaço do arquivo.');
+            throw new Error(formularioMensagem('falhaPedaco', 'A part of the file failed to upload.'));
         }
 
         const etag = resposta.headers.get('ETag');
         if (!etag) {
-            throw new Error('O storage não confirmou o recebimento do pedaço.');
+            throw new Error(formularioMensagem('falhaStorage', 'Storage did not confirm the part.'));
         }
 
         return etag;
@@ -79,9 +84,9 @@
             let bilhete = null;
 
             try {
-                progresso(0, 'Preparando o envio…');
+                progresso(0, formulario.dataset.preparando || 'Preparing the upload…');
 
-                bilhete = await postar('/api/admin/envios/iniciar', {
+                bilhete = await postar('/api/admin/uploads/start', {
                     titulo: selecionar('#titulo').value,
                     descricao: selecionar('#descricao').value,
                     arquivo: arquivo.name,
@@ -94,7 +99,7 @@
 
                 for (let numero = 1; numero <= bilhete.totalDePedacos; numero++) {
                     if (!assinadas.some(p => p.numero === numero)) {
-                        const lote = await postar(`/api/admin/envios/${bilhete.videoId}/partes`, {
+                        const lote = await postar(`/api/admin/uploads/${bilhete.videoId}/parts`, {
                             uploadId: bilhete.uploadId,
                             primeira: numero,
                             quantidade: Math.min(LOTE_DE_ASSINATURAS, bilhete.totalDePedacos - numero + 1)
@@ -112,12 +117,14 @@
 
                     progresso(
                         Math.round((numero / bilhete.totalDePedacos) * 100),
-                        `Enviando… ${numero} de ${bilhete.totalDePedacos} pedaços`);
+                        (formulario.dataset.enviando || 'Uploading… {0} of {1}')
+                            .replace('{0}', numero)
+                            .replace('{1}', bilhete.totalDePedacos));
                 }
 
-                progresso(100, 'Finalizando…');
+                progresso(100, formulario.dataset.finalizando || 'Finishing…');
 
-                const conclusao = await postar(`/api/admin/envios/${bilhete.videoId}/concluir`, {
+                const conclusao = await postar(`/api/admin/uploads/${bilhete.videoId}/complete`, {
                     uploadId: bilhete.uploadId,
                     partes: enviados
                 }, token);
@@ -132,7 +139,7 @@
                 if (bilhete) {
                     // Libera os pedaços já recebidos em vez de deixá-los ocupando espaço.
                     try {
-                        await postar(`/api/admin/envios/${bilhete.videoId}/cancelar`,
+                        await postar(`/api/admin/uploads/${bilhete.videoId}/cancel`,
                             { uploadId: bilhete.uploadId }, token);
                     } catch (_) {
                         // Nada a fazer: o storage descarta envios incompletos por conta própria.

@@ -1,5 +1,6 @@
 using System.Net;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Localization;
 
 namespace OpenTube.Infrastructure.Email;
 
@@ -24,39 +25,36 @@ public static class EmailTemplates
         TimeSpan linkValidity)
     {
         var dias = Math.Max(1, (int)Math.Round(linkValidity.TotalDays));
+        var prazo = LocalText.Format("The link and the code are valid for {0} days and can be used only once. After that, ask for a new code on the sign-in page with this same email.", dias);
 
         var texto = $"""
-            Você recebeu acesso a {whatWasShared} no OpenTube.
+            {LocalText.Format("You were given access to {0} on OpenTube.", whatWasShared)}
 
-            Validade do acesso: {validityDescription}
+            {LocalText.Format("Access ends: {0}", validityDescription)}
 
-            Entre por este link:
+            {LocalText.Get("Sign in with this link:")}
             {link}
 
-            Ou use o código: {code}
+            {LocalText.Format("Or use the code: {0}", code)}
 
-            O link e o código valem por {dias} dias e só podem ser usados uma vez. Depois disso,
-            peça um novo código na tela de entrada com este mesmo email.
+            {prazo}
             """;
 
         var html = $"""
             <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#212529">
               <h1 style="font-size:20px;margin:0 0 16px">OpenTube</h1>
-              <p style="margin:0 0 8px">Você recebeu acesso a <strong>{WebUtility.HtmlEncode(whatWasShared)}</strong>.</p>
-              <p style="margin:0 0 24px;color:#6c757d">Validade do acesso: {WebUtility.HtmlEncode(validityDescription)}</p>
+              <p style="margin:0 0 8px">{WebUtility.HtmlEncode(LocalText.Format("You were given access to {0}.", whatWasShared))}</p>
+              <p style="margin:0 0 24px;color:#6c757d">{WebUtility.HtmlEncode(LocalText.Format("Access ends: {0}", validityDescription))}</p>
               <p style="margin:0 0 24px">
-                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">Ver os vídeos</a>
+                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">{WebUtility.HtmlEncode(LocalText.Get("See the videos"))}</a>
               </p>
-              <p style="margin:0 0 8px">Ou use o código:</p>
+              <p style="margin:0 0 8px">{WebUtility.HtmlEncode(LocalText.Get("Or use the code:"))}</p>
               <p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:0 0 24px">{WebUtility.HtmlEncode(code)}</p>
-              <p style="font-size:14px;color:#6c757d;margin:0">
-                O link e o código valem por {dias} dias e só podem ser usados uma vez. Depois disso,
-                peça um novo código na tela de entrada com este mesmo email.
-              </p>
+              <p style="font-size:14px;color:#6c757d;margin:0">{WebUtility.HtmlEncode(prazo)}</p>
             </div>
             """;
 
-        return new EmailMessage(to, $"Você recebeu acesso a {whatWasShared}", html, texto);
+        return new EmailMessage(to, LocalText.Format("You were given access to {0}", whatWasShared), html, texto);
     }
 
     /// <summary>
@@ -66,84 +64,81 @@ public static class EmailTemplates
     public static EmailMessage DomainEntry(string to, string domain, string entryUrl)
     {
         var texto = $"""
-            O acesso da organização {domain} ao OpenTube está liberado.
+            {LocalText.Format("Organization {0} can now use OpenTube.", domain)}
 
-            Repasse este endereço às pessoas que devem assistir:
+            {LocalText.Get("Forward this address to the people who should watch:")}
             {entryUrl}
 
-            Quem abrir a página informa o próprio email do domínio {domain} e recebe um código
-            de acesso. Não existe senha a distribuir nem conta a criar.
+            {LocalText.Format("Anyone who opens the page enters their own {0} email and receives an access code. There is no password to share and no account to create.", domain)}
             """;
 
         var html = $"""
             <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#212529">
               <h1 style="font-size:20px;margin:0 0 16px">OpenTube</h1>
-              <p style="margin:0 0 16px">O acesso da organização <strong>{WebUtility.HtmlEncode(domain)}</strong> está liberado.</p>
-              <p style="margin:0 0 8px">Repasse este endereço às pessoas que devem assistir:</p>
+              <p style="margin:0 0 16px">{WebUtility.HtmlEncode(LocalText.Format("Organization {0} can now use OpenTube.", domain))}</p>
+              <p style="margin:0 0 8px">{WebUtility.HtmlEncode(LocalText.Get("Forward this address to the people who should watch:"))}</p>
               <p style="margin:0 0 24px">
                 <a href="{WebUtility.HtmlEncode(entryUrl)}" style="word-break:break-all">{WebUtility.HtmlEncode(entryUrl)}</a>
               </p>
               <p style="font-size:14px;color:#6c757d;margin:0">
-                Quem abrir a página informa o próprio email do domínio {WebUtility.HtmlEncode(domain)} e recebe um
-                código de acesso. Não existe senha a distribuir nem conta a criar.
+                {WebUtility.HtmlEncode(LocalText.Format("Anyone who opens the page enters their own {0} email and receives an access code. There is no password to share and no account to create.", domain))}
               </p>
             </div>
             """;
 
-        return new EmailMessage(to, $"Acesso ao OpenTube para {domain}", html, texto);
+        return new EmailMessage(to, LocalText.Format("OpenTube access for {0}", domain), html, texto);
     }
 
     /// <summary>Aviso à administração de que alguém escreveu sobre um vídeo.</summary>
     public static EmailMessage SupportForAdmin(string to, string author, string videoTitle, string message, string link)
     {
         var texto = $"""
-            {author} escreveu sobre "{videoTitle}":
+            {LocalText.Format("{0} wrote about \"{1}\":", author, videoTitle)}
 
             {Resumir(message)}
 
-            Responda por aqui:
+            {LocalText.Get("Reply here:")}
             {link}
             """;
 
         var html = $"""
             <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#212529">
               <h1 style="font-size:20px;margin:0 0 16px">OpenTube</h1>
-              <p style="margin:0 0 8px"><strong>{WebUtility.HtmlEncode(author)}</strong> escreveu sobre
-                <strong>{WebUtility.HtmlEncode(videoTitle)}</strong>:</p>
+              <p style="margin:0 0 8px">{WebUtility.HtmlEncode(LocalText.Format("{0} wrote about \"{1}\":", author, videoTitle))}</p>
               <blockquote style="margin:0 0 24px;padding:12px 16px;border-left:3px solid #dee2e6;color:#495057;white-space:pre-wrap">{WebUtility.HtmlEncode(Resumir(message))}</blockquote>
               <p style="margin:0">
-                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">Responder</a>
+                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">{WebUtility.HtmlEncode(LocalText.Get("Reply"))}</a>
               </p>
             </div>
             """;
 
-        return new EmailMessage(to, $"Nova mensagem sobre {videoTitle}", html, texto);
+        return new EmailMessage(to, LocalText.Format("New message about {0}", videoTitle), html, texto);
     }
 
     /// <summary>Aviso a quem perguntou de que a administração respondeu.</summary>
     public static EmailMessage SupportForUser(string to, string videoTitle, string message, string link)
     {
         var texto = $"""
-            Você recebeu uma resposta sobre "{videoTitle}":
+            {LocalText.Format("You received a reply about \"{0}\":", videoTitle)}
 
             {Resumir(message)}
 
-            Continue a conversa na página do vídeo:
+            {LocalText.Get("Continue the conversation on the video page:")}
             {link}
             """;
 
         var html = $"""
             <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#212529">
               <h1 style="font-size:20px;margin:0 0 16px">OpenTube</h1>
-              <p style="margin:0 0 8px">Você recebeu uma resposta sobre <strong>{WebUtility.HtmlEncode(videoTitle)}</strong>:</p>
+              <p style="margin:0 0 8px">{WebUtility.HtmlEncode(LocalText.Format("You received a reply about \"{0}\":", videoTitle))}</p>
               <blockquote style="margin:0 0 24px;padding:12px 16px;border-left:3px solid #dee2e6;color:#495057;white-space:pre-wrap">{WebUtility.HtmlEncode(Resumir(message))}</blockquote>
               <p style="margin:0">
-                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">Ver a conversa</a>
+                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">{WebUtility.HtmlEncode(LocalText.Get("See the conversation"))}</a>
               </p>
             </div>
             """;
 
-        return new EmailMessage(to, $"Resposta sobre {videoTitle}", html, texto);
+        return new EmailMessage(to, LocalText.Format("Reply about {0}", videoTitle), html, texto);
     }
 
     /// <summary>
@@ -161,42 +156,43 @@ public static class EmailTemplates
     {
         var assunto = purpose switch
         {
-            AuthPurpose.Invite => "Você recebeu acesso a vídeos no OpenTube",
-            AuthPurpose.DomainEntry => "Seu código de acesso ao OpenTube",
-            _ => "Seu código de acesso ao OpenTube"
+            AuthPurpose.Invite => LocalText.Get("You now have access to videos on OpenTube"),
+            _ => LocalText.Get("Your OpenTube access code")
         };
 
         var abertura = purpose switch
         {
-            AuthPurpose.Invite => "Foram liberados vídeos para você.",
-            _ => "Recebemos um pedido de acesso com este endereço de email."
+            AuthPurpose.Invite => LocalText.Get("Videos were shared with you."),
+            _ => LocalText.Get("We received an access request for this email address.")
         };
 
         var minutos = (int)Math.Round(validity.TotalMinutes);
+        var aviso = LocalText.Get("If you did not ask for this access, ignore this message.");
+        var validade = LocalText.Format("The code is valid for {0} minutes and can be used only once.", minutos);
 
         var texto = $"""
             {abertura}
 
-            Seu código de acesso é: {code}
+            {LocalText.Format("Your access code is: {0}", code)}
 
-            Ou entre direto por este link:
+            {LocalText.Get("Or sign in directly with this link:")}
             {link}
 
-            O código vale por {minutos} minutos e só pode ser usado uma vez.
-            Se você não pediu este acesso, ignore esta mensagem.
+            {validade}
+            {aviso}
             """;
 
         var html = $"""
             <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#212529">
               <h1 style="font-size:20px;margin:0 0 16px">OpenTube</h1>
               <p style="margin:0 0 16px">{WebUtility.HtmlEncode(abertura)}</p>
-              <p style="margin:0 0 8px">Seu código de acesso:</p>
+              <p style="margin:0 0 8px">{WebUtility.HtmlEncode(LocalText.Get("Your access code:"))}</p>
               <p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:0 0 24px">{WebUtility.HtmlEncode(code)}</p>
               <p style="margin:0 0 24px">
-                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">Entrar agora</a>
+                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">{WebUtility.HtmlEncode(LocalText.Get("Sign in now"))}</a>
               </p>
-              <p style="font-size:14px;color:#6c757d;margin:0 0 8px">O código vale por {minutos} minutos e só pode ser usado uma vez.</p>
-              <p style="font-size:14px;color:#6c757d;margin:0">Se você não pediu este acesso, ignore esta mensagem.</p>
+              <p style="font-size:14px;color:#6c757d;margin:0 0 8px">{WebUtility.HtmlEncode(validade)}</p>
+              <p style="font-size:14px;color:#6c757d;margin:0">{WebUtility.HtmlEncode(aviso)}</p>
             </div>
             """;
 

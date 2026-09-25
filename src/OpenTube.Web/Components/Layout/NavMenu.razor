@@ -5,21 +5,35 @@
         <a class="navbar-brand fw-semibold" href="/">OpenTube</a>
 
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu-principal"
-                aria-controls="menu-principal" aria-expanded="false" aria-label="Abrir o menu">
+                aria-controls="menu-principal" aria-expanded="false" aria-label="@T["Open the menu"]">
             <span class="navbar-toggler-icon"></span>
         </button>
 
         <div class="collapse navbar-collapse" id="menu-principal">
             <form class="d-flex ms-md-3 me-auto my-2 my-md-0 flex-grow-1" action="/" method="get" role="search">
                 <input class="form-control" type="search" name="q" value="@Termo"
-                       placeholder="Buscar vídeos" aria-label="Buscar vídeos" />
-                <button class="btn btn-outline-secondary ms-2" type="submit">Buscar</button>
+                       placeholder="@T["Search videos"]" aria-label="@T["Search videos"]" />
+                <button class="btn btn-outline-secondary ms-2" type="submit">@T["Search"]</button>
             </form>
 
             <ul class="navbar-nav align-items-md-center gap-md-2">
+                <li class="nav-item">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="@T["Language"]">
+                        @foreach (var idioma in Idiomas)
+                        {
+                            <form action="/language" method="post">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="idioma" value="@idioma" />
+                                <input type="hidden" name="voltar" value="@Voltar" />
+                                <button class="btn @(idioma == Atual ? "btn-secondary" : "btn-outline-secondary")" type="submit">@idioma</button>
+                            </form>
+                        }
+                    </div>
+                </li>
+
                 <AuthorizeView Policy="@Policies.Administrator">
                     <li class="nav-item">
-                        <a class="nav-link" href="/admin">Administração</a>
+                        <a class="nav-link" href="/admin">@T["Administration"]</a>
                     </li>
                 </AuthorizeView>
 
@@ -29,15 +43,15 @@
                             @context.User.Identity?.Name
                         </li>
                         <li class="nav-item">
-                            <form action="/sair" method="post">
+                            <form action="/sign-out" method="post">
                                 <AntiforgeryToken />
-                                <button class="btn btn-sm btn-outline-secondary" type="submit">Sair</button>
+                                <button class="btn btn-sm btn-outline-secondary" type="submit">@T["Sign out"]</button>
                             </form>
                         </li>
                     </Authorized>
                     <NotAuthorized>
                         <li class="nav-item">
-                            <a class="btn btn-sm btn-primary" href="/entrar">Entrar</a>
+                            <a class="btn btn-sm btn-primary" href="/sign-in">@T["Sign in"]</a>
                         </li>
                     </NotAuthorized>
                 </AuthorizeView>
@@ -47,8 +61,23 @@
 </nav>
 
 @code {
+    private static readonly string[] Idiomas = ["en", "pt", "fr"];
+
     [CascadingParameter]
     private HttpContext? Http { get; set; }
 
     private string? Termo => Http?.Request.Query["q"].ToString();
+
+    private string Atual => System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName;
+
+    private string Voltar
+    {
+        get
+        {
+            var caminho = Http?.Request.Path.Value ?? "/";
+            var consulta = Http?.Request.QueryString.Value;
+
+            return string.IsNullOrEmpty(consulta) ? caminho : caminho + consulta;
+        }
+    }
 }

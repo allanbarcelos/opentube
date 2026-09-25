@@ -1,4 +1,4 @@
-@page "/v/{slug}"
+@page "/watch/{slug}"
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Playback
 @inject VideoCatalog Catalogo
@@ -7,7 +7,7 @@
 @inject Microsoft.Extensions.Options.IOptions<OpenTube.Infrastructure.Options.SecurityOptions> Seguranca
 @inject NavigationManager Navegacao
 
-<PageTitle>@(Video?.Title ?? "Vídeo não encontrado") — OpenTube</PageTitle>
+<PageTitle>@(Video?.Title ?? T["Video not found"]) — OpenTube</PageTitle>
 
 <div class="container py-4">
     @if (Video is null)
@@ -18,7 +18,7 @@
     {
         <h1 class="h4">@Video.Title</h1>
         <div class="alert alert-info">
-            Este vídeo ainda está sendo processado. Volte em alguns minutos.
+            @T["This video is still being processed. Come back in a few minutes."]
         </div>
     }
     else
@@ -27,10 +27,10 @@
             <div class="col-lg-8">
                 <div class="player-shell rounded overflow-hidden shadow-sm position-relative">
                     <video id="player-video" controls playsinline preload="metadata"
-                           poster="/api/videos/@Video.Id/miniatura" crossorigin="use-credentials">
+                           poster="/api/videos/@Video.Id/thumbnail" crossorigin="use-credentials">
                         @foreach (var legenda in ListaDeLegendas)
                         {
-                            <track kind="subtitles" src="/api/videos/@Video.Id/legendas/@(legenda.Id).vtt"
+                            <track kind="subtitles" src="/api/videos/@Video.Id/captions/@(legenda.Id).vtt"
                                    srclang="@legenda.Language" label="@(legenda.Label ?? legenda.Language)" />
                         }
                     </video>
@@ -47,7 +47,7 @@
                     @if (Video.PublishedAt is { } publicado)
                     {
                         <span class="mx-1">&middot;</span>
-                        <span>@publicado.ToLocalTime().ToString("dd/MM/yyyy")</span>
+                        <span>@publicado.ToLocalTime().ToString("d")</span>
                     }
                 </p>
 
@@ -60,13 +60,13 @@
                     </div>
                 }
 
-                <ConversasDoVideo VideoId="Video.Id" Destino="@($"/v/{Video.Slug}")" />
+                <ConversasDoVideo VideoId="Video.Id" Destino="@($"/watch/{Video.Slug}")" />
             </div>
 
             <div class="col-lg-4">
                 @if (Video.Tags.Count > 0)
                 {
-                    <h2 class="h6">Etiquetas</h2>
+                    <h2 class="h6">@T["Tags"]</h2>
                     <p>
                         @foreach (var etiqueta in Video.Tags)
                         {
@@ -77,7 +77,7 @@
                 }
 
                 <div class="alert alert-light border small mb-0">
-                    O acesso a este vídeo é registrado, incluindo quanto foi assistido.
+                    @T["Access to this video is recorded, including how much of it was watched."]
                 </div>
             </div>
         </div>
@@ -87,7 +87,7 @@
         <script src="js/analytics.js"></script>
         <script src="js/player.js"></script>
         <script>
-            window.openTubePlayer.iniciar('player-video', '/api/videos/@Video.Id/master.m3u8', '@Video.Id');
+            window.openTubePlayer.iniciar('player-video', '/api/videos/@Video.Id/master.m3u8', '@Video.Id', @System.Text.Json.JsonSerializer.Serialize(T["This browser cannot play the video."]));
             window.openTubeMarcaDagua && window.openTubeMarcaDagua.iniciar('marca-dagua');
         </script>
     }

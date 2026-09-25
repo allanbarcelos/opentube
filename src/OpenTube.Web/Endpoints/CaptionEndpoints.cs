@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Playback;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
@@ -12,7 +13,7 @@ public static class CaptionEndpoints
 {
     public static IEndpointRouteBuilder MapCaptionEndpoints(this IEndpointRouteBuilder rotas)
     {
-        var administracao = rotas.MapGroup("/admin/videos/{videoId:guid}/legendas")
+        var administracao = rotas.MapGroup("/admin/videos/{videoId:guid}/captions")
             .RequireAuthorization(Policies.Administrator);
 
         administracao.MapPost("/", async (
@@ -27,10 +28,10 @@ public static class CaptionEndpoints
             try
             {
                 if (arquivo is null || arquivo.Length == 0)
-                    throw new InvalidOperationException("Escolha um arquivo de legenda.");
+                    throw new InvalidOperationException("Choose a caption file.");
 
                 if (arquivo.Length > CaptionService.MaxSizeBytes)
-                    throw new InvalidOperationException("O arquivo de legenda é grande demais.");
+                    throw new InvalidOperationException("The caption file is too large.");
 
                 using var leitor = new StreamReader(arquivo.OpenReadStream());
                 var conteudo = await leitor.ReadToEndAsync(cancellationToken);
@@ -39,17 +40,17 @@ public static class CaptionEndpoints
 
                 await contexto.RegistrarAsync(
                     AuditActions.VideoAlterado, AuditEntities.Video, videoId,
-                    $"Legenda {idioma} enviada", cancellationToken);
+                    LocalText.Format("Caption {0} uploaded", idioma), cancellationToken);
 
                 return Results.Redirect($"/admin/videos/{videoId}?legenda=1");
             }
             catch (Exception e) when (e is ArgumentException or InvalidOperationException)
             {
-                return Results.Redirect($"/admin/videos/{videoId}?erro={Uri.EscapeDataString(e.Message)}");
+                return Results.Redirect($"/admin/videos/{videoId}?erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
             }
         });
 
-        administracao.MapPost("/{assetId:guid}/excluir", async (
+        administracao.MapPost("/{assetId:guid}/delete", async (
             Guid videoId,
             Guid assetId,
             CaptionService legendas,
@@ -60,7 +61,7 @@ public static class CaptionEndpoints
             return Results.Redirect($"/admin/videos/{videoId}?legendaRemovida=1");
         });
 
-        administracao.MapPost("/transcrever", async (
+        administracao.MapPost("/transcribe", async (
             Guid videoId,
             CaptionService legendas,
             HttpContext contexto,
@@ -72,19 +73,19 @@ public static class CaptionEndpoints
 
                 await contexto.RegistrarAsync(
                     AuditActions.VideoReprocessado, AuditEntities.Video, videoId,
-                    "Transcrição automática solicitada", cancellationToken);
+                    LocalText.Get("Automatic transcription requested"), cancellationToken);
 
                 return Results.Redirect($"/admin/videos/{videoId}?transcrevendo=1");
             }
             catch (InvalidOperationException e)
             {
-                return Results.Redirect($"/admin/videos/{videoId}?erro={Uri.EscapeDataString(e.Message)}");
+                return Results.Redirect($"/admin/videos/{videoId}?erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
             }
         });
 
         // A legenda segue a mesma regra de acesso do vídeo: ela é parte do conteúdo, e o
         // texto falado costuma revelar tanto quanto a imagem.
-        rotas.MapGet("/api/videos/{videoId:guid}/legendas/{assetId:guid}.vtt", async (
+        rotas.MapGet("/api/videos/{videoId:guid}/captions/{assetId:guid}.vtt", async (
             Guid videoId,
             Guid assetId,
             CaptionService legendas,

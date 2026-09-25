@@ -154,7 +154,7 @@ public class Video
     public void ChangeVisibility(VideoVisibility visibility)
     {
         if (visibility is not VideoVisibility.Private && !IsPlayable)
-            throw new InvalidOperationException("Só um vídeo pronto pode deixar de ser privado.");
+            throw new InvalidOperationException("Only a ready video can stop being private.");
 
         Visibility = visibility;
     }

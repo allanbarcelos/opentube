@@ -1,4 +1,4 @@
-@page "/admin/colecoes/{collectionId:guid}"
+@page "/admin/collections/{collectionId:guid}"
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Playback
 @using OpenTube.Infrastructure.Services
@@ -9,7 +9,7 @@
 @inject ShareLinkFlash Links
 @inject NavigationManager Navegacao
 
-<PageTitle>@(Colecao?.Name ?? "Coleção") — Administração</PageTitle>
+<PageTitle>@(Colecao?.Name ?? T["Collection"]) — @T["Administration"]</PageTitle>
 
 <div class="container py-4">
     @if (Colecao is null)
@@ -18,10 +18,10 @@
     }
     else
     {
-        <nav aria-label="Trilha de navegação">
+        <nav aria-label="@T["Breadcrumb"]">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
-                <li class="breadcrumb-item"><a href="/admin/colecoes">Coleções</a></li>
+                <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
+                <li class="breadcrumb-item"><a href="/admin/collections">@T["Collections"]</a></li>
                 <li class="breadcrumb-item active" aria-current="page">@Colecao.Name</li>
             </ol>
         </nav>
@@ -33,9 +33,9 @@
         @if (!string.IsNullOrWhiteSpace(LinkCriado))
         {
             <div class="alert alert-warning">
-                <p class="mb-2"><strong>Link criado.</strong> Copie agora: ele não será exibido de novo.</p>
+                <p class="mb-2"><strong>@T["Link created."]</strong> @T["Copy it now: it will not be shown again."]</p>
                 <input class="form-control font-monospace" value="@LinkCriado" readonly
-                       onclick="this.select()" aria-label="Endereço do link de compartilhamento" />
+                       onclick="this.select()" aria-label="@T["Share link address"]" />
             </div>
         }
         @if (!string.IsNullOrWhiteSpace(Erro))
@@ -45,10 +45,10 @@
         @if (Colecao.IsDeleted)
         {
             <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <span>Esta coleção está excluída; as concessões sobre ela não alcançam mais nada.</span>
-                <form method="post" action="/admin/colecoes/@Colecao.Id/restaurar">
+                <span>@T["This collection is deleted; grants on it no longer reach anything."]</span>
+                <form method="post" action="/admin/collections/@Colecao.Id/restore">
                     <AntiforgeryToken />
-                    <button class="btn btn-sm btn-outline-dark" type="submit">Restaurar</button>
+                    <button class="btn btn-sm btn-outline-dark" type="submit">@T["Restore"]</button>
                 </form>
             </div>
         }
@@ -57,14 +57,14 @@
             <div class="col-lg-7">
                 <div class="card mb-4">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <span>Vídeos da coleção</span>
+                        <span>@T["Videos in the collection"]</span>
                         <span class="badge text-bg-secondary">@Videos.Count</span>
                     </div>
 
                     @if (Videos.Count == 0)
                     {
                         <div class="card-body text-center text-body-secondary py-4">
-                            Nenhum vídeo nesta coleção ainda.
+                            @T["No videos in this collection yet."]
                         </div>
                     }
                     else
@@ -77,10 +77,10 @@
                                         <a href="/admin/videos/@video.Id" class="text-decoration-none">@video.Title</a>
                                         <span class="d-block small text-body-secondary">@video.DurationLabel</span>
                                     </div>
-                                    <form method="post" action="/admin/colecoes/@Colecao.Id/videos/remover">
+                                    <form method="post" action="/admin/collections/@Colecao.Id/videos/remove">
                                         <AntiforgeryToken />
                                         <input type="hidden" name="videoId" value="@video.Id" />
-                                        <button class="btn btn-sm btn-outline-secondary" type="submit">Remover</button>
+                                        <button class="btn btn-sm btn-outline-secondary" type="submit">@T["Remove"]</button>
                                     </form>
                                 </li>
                             }
@@ -88,13 +88,13 @@
                     }
 
                     <div class="card-body border-top">
-                        <form method="post" action="/admin/colecoes/@Colecao.Id/videos/adicionar" class="row g-2">
+                        <form method="post" action="/admin/collections/@Colecao.Id/videos/add" class="row g-2">
                             <AntiforgeryToken />
 
                             <div class="col-sm-8">
-                                <label class="form-label visually-hidden" for="videoId">Vídeo</label>
+                                <label class="form-label visually-hidden" for="videoId">@T["Video"]</label>
                                 <select class="form-select" id="videoId" name="videoId" required>
-                                    <option value="">Escolha um vídeo…</option>
+                                    <option value="">@T["Choose a video…"]</option>
                                     @foreach (var video in Disponiveis)
                                     {
                                         <option value="@video.Id">@video.Title</option>
@@ -103,7 +103,7 @@
                             </div>
 
                             <div class="col-sm-4">
-                                <button class="btn btn-outline-primary w-100" type="submit">Acrescentar</button>
+                                <button class="btn btn-outline-primary w-100" type="submit">@T["Add"]</button>
                             </div>
                         </form>
                     </div>
@@ -114,24 +114,24 @@
 
             <div class="col-lg-5">
                 <div class="card mb-3">
-                    <div class="card-header">Dados da coleção</div>
+                    <div class="card-header">@T["Collection details"]</div>
                     <div class="card-body">
-                        <form method="post" action="/admin/colecoes/@Colecao.Id/salvar">
+                        <form method="post" action="/admin/collections/@Colecao.Id/save">
                             <AntiforgeryToken />
 
                             <div class="mb-3">
-                                <label class="form-label" for="nome">Nome</label>
+                                <label class="form-label" for="nome">@T["Name"]</label>
                                 <input class="form-control" id="nome" name="nome" value="@Colecao.Name"
                                        maxlength="200" required />
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label" for="descricao">Descrição</label>
+                                <label class="form-label" for="descricao">@T["Description"]</label>
                                 <textarea class="form-control" id="descricao" name="descricao" rows="3"
                                           maxlength="2000">@Colecao.Description</textarea>
                             </div>
 
-                            <button class="btn btn-primary" type="submit">Salvar</button>
+                            <button class="btn btn-primary" type="submit">@T["Save"]</button>
                         </form>
                     </div>
                 </div>
@@ -139,15 +139,14 @@
                 @if (!Colecao.IsDeleted)
                 {
                     <div class="card border-danger">
-                        <div class="card-header text-danger">Excluir</div>
+                        <div class="card-header text-danger">@T["Delete"]</div>
                         <div class="card-body">
                             <p class="small text-body-secondary">
-                                Os vídeos continuam no acervo; apenas o agrupamento deixa de existir, e com ele
-                                o acesso concedido através dele.
+                                @T["The videos stay in the library; only the grouping goes away, and with it the access granted through it."]
                             </p>
-                            <form method="post" action="/admin/colecoes/@Colecao.Id/excluir">
+                            <form method="post" action="/admin/collections/@Colecao.Id/delete">
                                 <AntiforgeryToken />
-                                <button class="btn btn-outline-danger w-100" type="submit">Excluir coleção</button>
+                                <button class="btn btn-outline-danger w-100" type="submit">@T["Delete collection"]</button>
                             </form>
                         </div>
                     </div>
@@ -206,14 +205,14 @@
     {
         get
         {
-            if (Criada == "1") yield return "Coleção criada.";
-            if (Salva == "1") yield return "Alterações salvas.";
-            if (Adicionado == "1") yield return "Vídeo acrescentado à coleção.";
-            if (Removido == "1") yield return "Vídeo removido da coleção.";
-            if (Restaurada == "1") yield return "Coleção restaurada.";
-            if (Convidados is > 0) yield return $"{Convidados} convite(s) enviado(s).";
-            if (DominioBruto == "1") yield return "Domínio liberado.";
-            if (RevogadoBruto == "1") yield return "Acesso revogado.";
+            if (Criada == "1") yield return T["Collection created."];
+            if (Salva == "1") yield return T["Changes saved."];
+            if (Adicionado == "1") yield return T["Video added to the collection."];
+            if (Removido == "1") yield return T["Video removed from the collection."];
+            if (Restaurada == "1") yield return T["Collection restored."];
+            if (Convidados is > 0) yield return T.Format("{0} invite(s) sent.", Convidados);
+            if (DominioBruto == "1") yield return T["Domain granted."];
+            if (RevogadoBruto == "1") yield return T["Access revoked."];
         }
     }
 

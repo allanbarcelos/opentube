@@ -5,6 +5,7 @@ using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Domain.ValueObjects;
 using OpenTube.Infrastructure.Email;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Security;
@@ -51,7 +52,7 @@ public class DomainService(
         var normalizado = VerifiedDomain.Normalize(name);
 
         if (await db.VerifiedDomains.AnyAsync(d => d.Name == normalizado, cancellationToken))
-            throw new InvalidOperationException($"O domínio '{normalizado}' já está cadastrado.");
+            throw new InvalidOperationException(LocalText.Format("The domain {0} is already registered.", normalizado));
 
         var dominio = VerifiedDomain.Register(
             normalizado, OneTimeCode.GenerateToken(16), adminId, clock.GetUtcNow(), contactEmail, note);
@@ -112,7 +113,7 @@ public class DomainService(
             var normalizado = entrySlug.Trim().ToLowerInvariant();
 
             if (await db.VerifiedDomains.AnyAsync(d => d.EntrySlug == normalizado && d.Id != domainId, cancellationToken))
-                throw new InvalidOperationException("Já existe outra porta de entrada com este endereço.");
+                throw new InvalidOperationException("Another entry page already uses this address.");
 
             dominio.ChangeEntrySlug(normalizado);
         }
@@ -150,7 +151,7 @@ public class DomainService(
 
     /// <summary>Endereço completo da porta de entrada, para copiar e repassar.</summary>
     public string EntryUrl(VerifiedDomain dominio) =>
-        $"{_options.PublicUrl.TrimEnd('/')}/d/{dominio.EntrySlug}";
+        $"{_options.PublicUrl.TrimEnd('/')}/entry/{dominio.EntrySlug}";
 
     /// <summary>
     /// Envia ao responsável pelo domínio o endereço da porta de entrada, que é o que ele
@@ -200,5 +201,5 @@ public class DomainService(
 
     private async Task<VerifiedDomain> CarregarAsync(Guid domainId, CancellationToken cancellationToken) =>
         await db.VerifiedDomains.FirstOrDefaultAsync(d => d.Id == domainId, cancellationToken)
-        ?? throw new InvalidOperationException("Domínio não encontrado.");
+        ?? throw new InvalidOperationException("Domain not found.");
 }

@@ -3,17 +3,17 @@
 @inject VideoCatalog Catalogo
 @inject CurrentViewer Espectadores
 
-<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "OpenTube" : $"Busca: {Q} — OpenTube")</PageTitle>
+<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "OpenTube" : T.Format("Search: {0} — OpenTube", Q))</PageTitle>
 
 <div class="container py-4">
     @if (!string.IsNullOrWhiteSpace(Q))
     {
-        <h1 class="h4 mb-1">Resultados para &ldquo;@Q&rdquo;</h1>
-        <p class="text-body-secondary">@Resultado.Total @(Resultado.Total == 1 ? "vídeo encontrado" : "vídeos encontrados")</p>
+        <h1 class="h4 mb-1">@T.Format("Results for “{0}”", Q)</h1>
+        <p class="text-body-secondary">@T.Format(Resultado.Total == 1 ? "{0} video found" : "{0} videos found", Resultado.Total)</p>
     }
     else
     {
-        <h1 class="h4 mb-3">Vídeos</h1>
+        <h1 class="h4 mb-3">@T["Videos"]</h1>
     }
 
     @if (Resultado.Items.Count == 0)
@@ -21,17 +21,17 @@
         <div class="alert alert-light border text-center py-5">
             @if (!string.IsNullOrWhiteSpace(Q))
             {
-                <p class="mb-1">Nenhum vídeo corresponde à busca.</p>
-                <a href="/">Ver todos os vídeos</a>
+                <p class="mb-1">@T["No videos match your search."]</p>
+                <a href="/">@T["See all videos"]</a>
             }
             else if (Espectador.IsAuthenticated)
             {
-                <p class="mb-0">Nenhum vídeo disponível para você no momento.</p>
+                <p class="mb-0">@T["No videos available to you right now."]</p>
             }
             else
             {
-                <p class="mb-1">Nenhum vídeo público disponível.</p>
-                <a href="/entrar">Entrar para ver o conteúdo liberado a você</a>
+                <p class="mb-1">@T["No public videos available."]</p>
+                <a href="/sign-in">@T["Sign in to see what has been shared with you"]</a>
             }
         </div>
     }
@@ -55,7 +55,7 @@
     [SupplyParameterFromQuery(Name = "q")]
     private string? Q { get; set; }
 
-    [SupplyParameterFromQuery(Name = "pagina")]
+    [SupplyParameterFromQuery(Name = "page")]
     private int? Pagina { get; set; }
 
     private Viewer Espectador = Viewer.Anonymous;

@@ -61,9 +61,12 @@
             const fracao = caixaDaLinha.width === 0 ? 0 : (melhor.x - caixaDaLinha.x) / caixaDaLinha.width;
             const percentual = Math.round(100 - ((melhor.y - 12) / (svg.viewBox.baseVal.height - 40)) * 100);
 
-            legenda.textContent = duracao > 0
-                ? instante(duracao * fracao) + ' — ' + Math.max(0, Math.min(100, percentual)) + '% do público'
-                : Math.round(fracao * 100) + '% do vídeo — ' + Math.max(0, Math.min(100, percentual)) + '% do público';
+            const texto = duracao > 0
+                ? (svg.dataset.comDuracao || '{0} — {1}% of the audience')
+                : (svg.dataset.semDuracao || '{0}% of the video — {1}% of the audience');
+            const primeiro = duracao > 0 ? instante(duracao * fracao) : String(Math.round(fracao * 100));
+
+            legenda.textContent = texto.replace('{0}', primeiro).replace('{1}', String(Math.max(0, Math.min(100, percentual))));
         }
 
         function sair() {

@@ -1,33 +1,33 @@
-@page "/admin/pessoas"
+@page "/admin/people"
 @using OpenTube.Infrastructure.Analytics
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject AnalyticsQueries Consultas
 
-<PageTitle>Pessoas — Administração</PageTitle>
+<PageTitle>@T["People — Administration"]</PageTitle>
 
 <div class="container py-4">
-    <nav aria-label="Trilha de navegação">
+    <nav aria-label="@T["Breadcrumb"]">
         <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
-            <li class="breadcrumb-item active" aria-current="page">Pessoas</li>
+            <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
+            <li class="breadcrumb-item active" aria-current="page">@T["People"]</li>
         </ol>
     </nav>
 
     <div class="card">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <span>Quem tem acesso à plataforma</span>
+            <span>@T["Who has access to the platform"]</span>
 
-            <form action="/admin/pessoas" method="get" class="d-flex" role="search">
+            <form action="/admin/people" method="get" class="d-flex" role="search">
                 <input class="form-control form-control-sm" type="search" name="q" value="@Q"
-                       placeholder="Buscar por email" aria-label="Buscar pessoa por email" />
-                <button class="btn btn-sm btn-outline-secondary ms-2" type="submit">Buscar</button>
+                       placeholder="@T["Search by email"]" aria-label="@T["Search a person by email"]" />
+                <button class="btn btn-sm btn-outline-secondary ms-2" type="submit">@T["Search"]</button>
             </form>
         </div>
 
         @if (Lista.Count == 0)
         {
             <div class="card-body text-center text-body-secondary py-5">
-                @(string.IsNullOrWhiteSpace(Q) ? "Ninguém entrou ainda." : "Nenhuma pessoa corresponde à busca.")
+                @(string.IsNullOrWhiteSpace(Q) ? T["Nobody has signed in yet."] : T["No one matches"])
             </div>
         }
         else
@@ -36,11 +36,11 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead>
                         <tr>
-                            <th scope="col">Email</th>
-                            <th scope="col">Acessos concedidos</th>
-                            <th scope="col">Vídeos assistidos</th>
-                            <th scope="col">Tempo assistido</th>
-                            <th scope="col">Último acesso</th>
+                            <th scope="col">@T["Email"]</th>
+                            <th scope="col">@T["Grants"]</th>
+                            <th scope="col">@T["Videos watched"]</th>
+                            <th scope="col">@T["Time watched"]</th>
+                            <th scope="col">@T["Last sign-in"]</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -48,14 +48,14 @@
                         {
                             <tr>
                                 <td>
-                                    <a href="/admin/pessoas/@pessoa.UserId" class="text-decoration-none">@pessoa.Email</a>
+                                    <a href="/admin/people/@pessoa.UserId" class="text-decoration-none">@pessoa.Email</a>
                                     @if (pessoa.IsAdmin)
                                     {
-                                        <span class="badge text-bg-primary ms-1">Administrador</span>
+                                        <span class="badge text-bg-primary ms-1">@T["Administrator"]</span>
                                     }
                                     @if (!pessoa.IsActive)
                                     {
-                                        <span class="badge text-bg-secondary ms-1">Desativado</span>
+                                        <span class="badge text-bg-secondary ms-1">@T["Disabled"]</span>
                                     }
                                 </td>
                                 <td>@pessoa.ActiveGrants</td>
@@ -63,8 +63,8 @@
                                 <td>@Tempo(pessoa.WatchSeconds)</td>
                                 <td class="small">
                                     @(pessoa.LastSeenAt is { } quando
-                                        ? quando.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
-                                        : "nunca entrou")
+                                        ? quando.ToLocalTime().ToString("g")
+                                        : T["never signed in"])
                                 </td>
                             </tr>
                         }

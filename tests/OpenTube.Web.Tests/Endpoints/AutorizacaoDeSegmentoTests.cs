@@ -65,7 +65,7 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
         _app.ComAutorizacaoDeSegmento = true;
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -75,12 +75,12 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = Admin });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = Admin });
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(Admin)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
     }
 
@@ -99,7 +99,7 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var playlist = await cliente.GetStringAsync($"/api/videos/{video.Id}/versoes/360p.m3u8");
+        var playlist = await cliente.GetStringAsync($"/api/videos/{video.Id}/renditions/360p.m3u8");
 
         Assert.Contains($"/vod/{video.Id}/360p/seg-00000.m4s", playlist);
         // Sem assinatura: quem autoriza agora é a própria aplicação, a cada pedido.

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
 using OpenTube.Infrastructure.Storage;
@@ -50,11 +51,11 @@ public static class AdminEndpoints
     {
         // O envio é conduzido por JavaScript, então a proteção contra falsificação precisa
         // ser conferida à mão: a validação automática só cobre formulários comuns.
-        var grupo = rotas.MapGroup("/api/admin/envios")
+        var grupo = rotas.MapGroup("/api/admin/uploads")
             .RequireAuthorization(Policies.Administrator)
             .AddEndpointFilter(ValidarAntifalsificacaoAsync);
 
-        grupo.MapPost("/iniciar", async (
+        grupo.MapPost("/start", async (
             [FromBody] IniciarEnvio pedido,
             VideoUploadService envios,
             HttpContext contexto,
@@ -62,9 +63,17 @@ public static class AdminEndpoints
         {
             var admin = ViewerContext.From(contexto.User);
 
-            var bilhete = await envios.StartAsync(
-                pedido.Titulo, pedido.Descricao, pedido.Arquivo, pedido.Tipo, pedido.Tamanho,
-                admin.UserId!.Value, cancellationToken);
+            UploadTicket bilhete;
+            try
+            {
+                bilhete = await envios.StartAsync(
+                    pedido.Titulo, pedido.Descricao, pedido.Arquivo, pedido.Tipo, pedido.Tamanho,
+                    admin.UserId!.Value, cancellationToken);
+            }
+            catch (Exception e) when (e is InvalidOperationException or ArgumentException)
+            {
+                return Results.BadRequest(new { erro = LocalText.Get(e.Message) });
+            }
 
             return Results.Ok(new
             {
@@ -76,7 +85,7 @@ public static class AdminEndpoints
             });
         });
 
-        grupo.MapPost("/{videoId:guid}/partes", async (
+        grupo.MapPost("/{videoId:guid}/parts", async (
             Guid videoId,
             [FromBody] AssinarPartes pedido,
             VideoUploadService envios,
@@ -88,7 +97,7 @@ public static class AdminEndpoints
             return Results.Ok(new { partes = partes.Select(p => new { numero = p.PartNumber, url = p.Url }) });
         });
 
-        grupo.MapPost("/{videoId:guid}/concluir", async (
+        grupo.MapPost("/{videoId:guid}/complete", async (
             Guid videoId,
             [FromBody] ConcluirEnvio pedido,
             VideoUploadService envios,
@@ -103,12 +112,12 @@ public static class AdminEndpoints
 
             await contexto.RegistrarAsync(
                 AuditActions.VideoEnviado, AuditEntities.Video, video.Id,
-                $"Vídeo '{video.Title}' enviado", cancellationToken);
+                LocalText.Format("Video '{0}' uploaded", video.Title), cancellationToken);
 
             return Results.Ok(new { destino = $"/admin/videos/{video.Id}" });
         });
 
-        grupo.MapPost("/{videoId:guid}/cancelar", async (
+        grupo.MapPost("/{videoId:guid}/cancel", async (
             Guid videoId,
             [FromBody] CancelarEnvio pedido,
             VideoUploadService envios,
@@ -125,7 +134,7 @@ public static class AdminEndpoints
         var grupo = rotas.MapGroup("/admin/videos/{videoId:guid}")
             .RequireAuthorization(Policies.Administrator);
 
-        grupo.MapPost("/salvar", async (
+        grupo.MapPost("/save", async (
             Guid videoId,
             [FromForm] string titulo,
             [FromForm] string? descricao,
@@ -145,39 +154,40 @@ public static class AdminEndpoints
 
                 await contexto.RegistrarAsync(
                     AuditActions.VideoAlterado, AuditEntities.Video, videoId,
-                    $"Vídeo '{titulo}' salvo com visibilidade {(VideoVisibility)visibilidade}", cancellationToken);
+                    LocalText.Format("Video '{0}' saved with visibility {1}", titulo, Visibilidade((VideoVisibility)visibilidade)),
+                    cancellationToken);
 
                 return Results.Redirect($"/admin/videos/{videoId}?salvo=1");
             }
             catch (Exception e) when (e is InvalidOperationException or ArgumentException)
             {
-                return Results.Redirect($"/admin/videos/{videoId}?erro={Uri.EscapeDataString(e.Message)}");
+                return Results.Redirect($"/admin/videos/{videoId}?erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
             }
         });
 
-        grupo.MapPost("/excluir", async (
+        grupo.MapPost("/delete", async (
             Guid videoId, AdminVideoService admin, HttpContext contexto, CancellationToken cancellationToken) =>
         {
             await admin.DeleteAsync(videoId, cancellationToken);
 
             await contexto.RegistrarAsync(
-                AuditActions.VideoExcluido, AuditEntities.Video, videoId, "Vídeo excluído", cancellationToken);
+                AuditActions.VideoExcluido, AuditEntities.Video, videoId, LocalText.Get("Video deleted."), cancellationToken);
 
             return Results.Redirect("/admin?excluido=1");
         });
 
-        grupo.MapPost("/restaurar", async (
+        grupo.MapPost("/restore", async (
             Guid videoId, AdminVideoService admin, HttpContext contexto, CancellationToken cancellationToken) =>
         {
             await admin.RestoreAsync(videoId, cancellationToken);
 
             await contexto.RegistrarAsync(
-                AuditActions.VideoRestaurado, AuditEntities.Video, videoId, "Vídeo restaurado", cancellationToken);
+                AuditActions.VideoRestaurado, AuditEntities.Video, videoId, LocalText.Get("Video restored"), cancellationToken);
 
             return Results.Redirect($"/admin/videos/{videoId}?restaurado=1");
         });
 
-        grupo.MapPost("/reprocessar", async (
+        grupo.MapPost("/reprocess", async (
             Guid videoId, AdminVideoService admin, HttpContext contexto, CancellationToken cancellationToken) =>
         {
             try
@@ -186,16 +196,23 @@ public static class AdminEndpoints
 
                 await contexto.RegistrarAsync(
                     AuditActions.VideoReprocessado, AuditEntities.Video, videoId,
-                    "Vídeo recolocado na fila de processamento", cancellationToken);
+                    LocalText.Get("Video put back in the processing queue"), cancellationToken);
 
                 return Results.Redirect($"/admin/videos/{videoId}?enfileirado=1");
             }
             catch (InvalidOperationException e)
             {
-                return Results.Redirect($"/admin/videos/{videoId}?erro={Uri.EscapeDataString(e.Message)}");
+                return Results.Redirect($"/admin/videos/{videoId}?erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
             }
         });
     }
+
+    private static string Visibilidade(VideoVisibility visibilidade) => LocalText.Get(visibilidade switch
+    {
+        VideoVisibility.Public => "Public",
+        VideoVisibility.Restricted => "Restricted",
+        _ => "Private"
+    });
 
     /// <summary>Divide a lista de etiquetas digitada pelo administrador.</summary>
     public static IEnumerable<string> SepararEtiquetas(string? texto) =>
@@ -215,7 +232,7 @@ public static class AdminEndpoints
         }
         catch (AntiforgeryValidationException)
         {
-            return Results.BadRequest(new { erro = "Pedido sem a credencial de segurança." });
+            return Results.BadRequest(new { erro = LocalText.Get("Request is missing the security credential.") });
         }
 
         return await proximo(contexto);

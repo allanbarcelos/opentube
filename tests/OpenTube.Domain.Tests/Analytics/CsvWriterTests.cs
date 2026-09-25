@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using OpenTube.Shared.Analytics;
 
@@ -57,10 +58,20 @@ public class CsvWriterTests
     [Fact]
     public void O_booleano_sai_em_portugues()
     {
-        var csv = CsvWriter.Build(["Concluiu"], [[true], [false]]);
+        var anterior = CultureInfo.CurrentUICulture;
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("pt-BR");
 
-        Assert.Contains("sim", csv);
-        Assert.Contains("não", csv);
+        try
+        {
+            var csv = CsvWriter.Build(["Concluiu"], [[true], [false]]);
+
+            Assert.Contains("sim", csv);
+            Assert.Contains("não", csv);
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = anterior;
+        }
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-@page "/admin/pessoas/{userId:guid}"
+@page "/admin/people/{userId:guid}"
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Access
 @using OpenTube.Infrastructure.Analytics
@@ -10,7 +10,7 @@
 @inject OpenTubeDbContext Db
 @inject NavigationManager Navegacao
 
-<PageTitle>@(Pessoa?.Email ?? "Pessoa") — Administração</PageTitle>
+<PageTitle>@(Pessoa?.Email ?? T["Person"]) — @T["Administration"]</PageTitle>
 
 <div class="container py-4">
     @if (Pessoa is null)
@@ -19,10 +19,10 @@
     }
     else
     {
-        <nav aria-label="Trilha de navegação">
+        <nav aria-label="@T["Breadcrumb"]">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
-                <li class="breadcrumb-item"><a href="/admin/pessoas">Pessoas</a></li>
+                <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
+                <li class="breadcrumb-item"><a href="/admin/people">@T["People"]</a></li>
                 <li class="breadcrumb-item active" aria-current="page">@Pessoa.Email</li>
             </ol>
         </nav>
@@ -32,18 +32,18 @@
                 @Pessoa.Email
                 @if (Pessoa.IsAdmin)
                 {
-                    <span class="badge text-bg-primary align-middle ms-1">Administrador</span>
+                    <span class="badge text-bg-primary align-middle ms-1">@T["Administrator"]</span>
                 }
                 @if (!Pessoa.IsActive)
                 {
-                    <span class="badge text-bg-secondary align-middle ms-1">Desativado</span>
+                    <span class="badge text-bg-secondary align-middle ms-1">@T["Disabled"]</span>
                 }
             </h1>
 
             @if (Atividade.Count > 0)
             {
-                <a class="btn btn-outline-secondary btn-sm" href="/admin/exportar/pessoas/@UserId/atividade.csv">
-                    Exportar CSV
+                <a class="btn btn-outline-secondary btn-sm" href="/admin/export/people/@UserId/activity.csv">
+                    @T["Export CSV"]
                 </a>
             }
         </div>
@@ -51,12 +51,12 @@
         <div class="row g-4">
             <div class="col-lg-8">
                 <div class="card">
-                    <div class="card-header">O que assistiu</div>
+                    <div class="card-header">@T["What they watched"]</div>
 
                     @if (Atividade.Count == 0)
                     {
                         <div class="card-body text-center text-body-secondary py-5">
-                            Esta pessoa ainda não assistiu a nada.
+                            @T["This person has not watched anything yet."]
                         </div>
                     }
                     else
@@ -65,10 +65,10 @@
                             <table class="table table-sm align-middle mb-0">
                                 <thead>
                                     <tr>
-                                        <th scope="col">Vídeo</th>
-                                        <th scope="col">Quando</th>
-                                        <th scope="col">Assistiu</th>
-                                        <th scope="col">Aparelho</th>
+                                        <th scope="col">@T["Video"]</th>
+                                        <th scope="col">@T["When"]</th>
+                                        <th scope="col">@T["Watched"]</th>
+                                        <th scope="col">@T["Device"]</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -78,12 +78,12 @@
                                             <td>
                                                 <a href="/admin/videos/@item.VideoId" class="text-decoration-none">@item.Title</a>
                                             </td>
-                                            <td class="small">@item.At.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td class="small">@item.At.ToLocalTime().ToString("g")</td>
                                             <td>
                                                 @((item.Coverage * 100).ToString("0")) %
                                                 @if (item.Completed)
                                                 {
-                                                    <span class="badge text-bg-success ms-1">até o fim</span>
+                                                    <span class="badge text-bg-success ms-1">@T["to the end"]</span>
                                                 }
                                             </td>
                                             <td class="small">@item.Device</td>
@@ -98,12 +98,12 @@
 
             <div class="col-lg-4">
                 <div class="card">
-                    <div class="card-header">Acessos concedidos</div>
+                    <div class="card-header">@T["Grants"]</div>
 
                     @if (Acessos.Count == 0)
                     {
                         <div class="card-body text-body-secondary small">
-                            Nenhuma concessão individual. O acesso pode vir do domínio do email.
+                            @T["No individual grant. Access may come from the email domain."]
                         </div>
                     }
                     else
@@ -114,7 +114,7 @@
                                 <li class="list-group-item d-flex justify-content-between small">
                                     <span>@AlvoTexto(concessao)</span>
                                     <span class="text-body-secondary">
-                                        @(concessao.IsRevoked ? "revogado" : "em vigor")
+                                        @(concessao.IsRevoked ? T["Revoked"] : T["in effect"])
                                     </span>
                                 </li>
                             }
@@ -153,10 +153,10 @@
         Acessos = await Concessoes.ListForEmailAsync(Pessoa.Email, Http.RequestAborted);
     }
 
-    private static string AlvoTexto(AccessGrant concessao) => concessao.TargetType switch
+    private string AlvoTexto(AccessGrant concessao) => concessao.TargetType switch
     {
-        OpenTube.Domain.Enums.GrantTargetType.All => "Todo o acervo",
-        OpenTube.Domain.Enums.GrantTargetType.Collection => "Uma coleção",
-        _ => "Um vídeo"
+        OpenTube.Domain.Enums.GrantTargetType.All => T["The whole library"],
+        OpenTube.Domain.Enums.GrantTargetType.Collection => T["A collection"],
+        _ => T["A video"]
     };
 }

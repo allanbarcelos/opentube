@@ -202,7 +202,7 @@ public class AdminVideoServiceTests(PostgresFixture postgres, MinioFixture minio
 
         var erro = await Assert.ThrowsAsync<InvalidOperationException>(() => servico.RequeueAsync(video.Id));
 
-        Assert.Contains("já está na fila", erro.Message);
+        Assert.Contains("already in the transcoding queue", erro.Message);
     }
 
     [Fact]
@@ -215,7 +215,7 @@ public class AdminVideoServiceTests(PostgresFixture postgres, MinioFixture minio
 
         var erro = await Assert.ThrowsAsync<InvalidOperationException>(() => servico.RequeueAsync(video.Id));
 
-        Assert.Contains("não está mais no storage", erro.Message);
+        Assert.Contains("no longer in storage", erro.Message);
     }
 
     [Fact]
@@ -235,7 +235,7 @@ public class AdminVideoServiceTests(PostgresFixture postgres, MinioFixture minio
 
         var erro = await Assert.ThrowsAsync<InvalidOperationException>(() => servico.RequeueAsync(videoId));
 
-        Assert.Contains("ainda não terminou de ser enviado", erro.Message);
+        Assert.Contains("has not finished uploading", erro.Message);
     }
 
     [Fact]

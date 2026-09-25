@@ -553,7 +553,7 @@ ${APP_MOUNTS}
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/saude || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

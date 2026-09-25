@@ -1,8 +1,12 @@
+using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Unicode;
+using Microsoft.AspNetCore.Localization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.WebEncoders;
 using OpenTube.Infrastructure;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Storage;
@@ -24,6 +28,25 @@ builder.Services.Configure<WebEncoderOptions>(opcoes =>
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+builder.Services.AddLocalization();
+builder.Services.AddSingleton<UiText>();
+
+var idiomas = new[] { "en", "pt", "fr" };
+builder.Services.Configure<RequestLocalizationOptions>(opcoes =>
+{
+    opcoes.SetDefaultCulture("en")
+        .AddSupportedCultures(idiomas)
+        .AddSupportedUICultures(idiomas);
+
+    // O cookie da escolha explícita vem primeiro. Sem ele, vale o idioma do navegador.
+    // Se nenhum dos dois servir, a base é o inglês.
+    opcoes.RequestCultureProviders =
+    [
+        new CookieRequestCultureProvider { CookieName = Idioma.Cookie },
+        new AcceptLanguageHeaderRequestCultureProvider()
+    ];
+});
 
 builder.Services.AddOpenTubeInfrastructure(builder.Configuration);
 builder.Services.AddSessionAuthentication();
@@ -49,11 +72,12 @@ app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/erro", createScopeForErrors: true);
+    app.UseExceptionHandler("/error", createScopeForErrors: true);
     app.UseHsts();
 }
 
 app.UseStaticFiles();
+app.UseRequestLocalization();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -65,6 +89,27 @@ app.UseRateLimiter();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+app.MapPost("/language", (HttpContext contexto, [FromForm] string? idioma, [FromForm] string? voltar) =>
+{
+    var escolhido = idioma is "en" or "pt" or "fr" ? idioma : "en";
+
+    contexto.Response.Cookies.Append(Idioma.Cookie, CookieRequestCultureProvider.MakeCookieValue(new RequestCulture(escolhido)), new CookieOptions
+    {
+        MaxAge = TimeSpan.FromDays(365),
+        IsEssential = true,
+        HttpOnly = true,
+        Secure = contexto.Request.IsHttps,
+        SameSite = SameSiteMode.Lax,
+        Path = "/"
+    });
+
+    var destino = voltar is { Length: > 0 } && voltar.StartsWith('/') && !voltar.StartsWith("//") && !voltar.Contains('\\')
+        ? voltar
+        : "/";
+
+    return Results.Redirect(destino);
+});
 
 app.MapAuthEndpoints();
 app.MapPlaybackEndpoints();
@@ -78,7 +123,7 @@ app.MapExportEndpoints();
 app.MapSupportEndpoints();
 app.MapCaptionEndpoints();
 app.MapSegmentAuthorization();
-app.MapHealthChecks("/saude");
+app.MapHealthChecks("/health");
 
 await PrepararAsync(app);
 
@@ -98,6 +143,12 @@ static async Task PrepararAsync(WebApplication app)
 
     await servicos.GetRequiredService<IVideoStorage>().EnsureBucketsAsync();
     await servicos.GetRequiredService<AdminSeeder>().EnsureAdminsAsync();
+}
+
+/// <summary>Cookie da escolha de idioma. O valor segue o formato do provedor de cultura.</summary>
+static class Idioma
+{
+    public const string Cookie = "opentube.idioma";
 }
 
 /// <summary>Exposto para que a suíte de testes possa subir a aplicação em memória.</summary>

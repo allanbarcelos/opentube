@@ -1,4 +1,4 @@
-@page "/admin/dominios/{domainId:guid}"
+@page "/admin/domains/{domainId:guid}"
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Access
 @using OpenTube.Infrastructure.Domains
@@ -7,7 +7,7 @@
 @inject GrantService Concessoes
 @inject NavigationManager Navegacao
 
-<PageTitle>@(Dominio?.Name ?? "Domínio") — Administração</PageTitle>
+<PageTitle>@(Dominio?.Name ?? T["Domain"]) — @T["Administration"]</PageTitle>
 
 <div class="container py-4">
     @if (Dominio is null)
@@ -16,10 +16,10 @@
     }
     else
     {
-        <nav aria-label="Trilha de navegação">
+        <nav aria-label="@T["Breadcrumb"]">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
-                <li class="breadcrumb-item"><a href="/admin/dominios">Domínios</a></li>
+                <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
+                <li class="breadcrumb-item"><a href="/admin/domains">@T["Domains"]</a></li>
                 <li class="breadcrumb-item active" aria-current="page">@Dominio.Name</li>
             </ol>
         </nav>
@@ -31,13 +31,13 @@
         @if (Falhou)
         {
             <div class="alert alert-warning" role="alert">
-                O registro ainda não foi encontrado. A propagação do DNS pode levar alguns minutos.
+                @T["The record was not found yet. DNS can take a few minutes to propagate."]
             </div>
         }
         @if (SemResponsavel)
         {
             <div class="alert alert-warning" role="alert">
-                Cadastre o email do responsável antes de enviar o link.
+                @T["Register the owner's email before sending the link."]
             </div>
         }
         @if (!string.IsNullOrWhiteSpace(Erro))
@@ -50,30 +50,30 @@
                 @if (!Dominio.IsVerified)
                 {
                     <div class="card border-warning mb-4">
-                        <div class="card-header">Comprovar a posse do domínio</div>
+                        <div class="card-header">@T["Prove ownership of the domain"]</div>
                         <div class="card-body">
-                            <p>Publique este registro no DNS de <strong>@Dominio.Name</strong>:</p>
+                            <p>@T.Format("Publish this record in the DNS of {0}:", Dominio.Name)</p>
 
                             <dl class="row mb-3">
-                                <dt class="col-sm-3">Tipo</dt>
+                                <dt class="col-sm-3">@T["Type"]</dt>
                                 <dd class="col-sm-9"><code>TXT</code></dd>
 
-                                <dt class="col-sm-3">Nome</dt>
+                                <dt class="col-sm-3">@T["Name"]</dt>
                                 <dd class="col-sm-9"><code class="user-select-all">@Dominio.VerificationRecordName</code></dd>
 
-                                <dt class="col-sm-3">Valor</dt>
+                                <dt class="col-sm-3">@T["Value"]</dt>
                                 <dd class="col-sm-9"><code class="user-select-all">@Dominio.ExpectedRecordValue</code></dd>
                             </dl>
 
                             <div class="d-flex gap-2">
-                                <form method="post" action="/admin/dominios/@Dominio.Id/verificar">
+                                <form method="post" action="/admin/domains/@Dominio.Id/verify">
                                     <AntiforgeryToken />
-                                    <button class="btn btn-primary" type="submit">Já publiquei, verificar</button>
+                                    <button class="btn btn-primary" type="submit">@T["I've published it, check"]</button>
                                 </form>
 
-                                <form method="post" action="/admin/dominios/@Dominio.Id/reemitir">
+                                <form method="post" action="/admin/domains/@Dominio.Id/reissue">
                                     <AntiforgeryToken />
-                                    <button class="btn btn-outline-secondary" type="submit">Gerar outro token</button>
+                                    <button class="btn btn-outline-secondary" type="submit">@T["Generate another token"]</button>
                                 </form>
                             </div>
                         </div>
@@ -83,21 +83,21 @@
                 {
                     <div class="card mb-4">
                         <div class="card-header d-flex justify-content-between align-items-center">
-                            <span>Porta de entrada</span>
+                            <span>@T["Entry page"]</span>
                             <span class="badge @(Dominio.EntryAvailable ? "text-bg-success" : "text-bg-secondary")">
-                                @(Dominio.EntryAvailable ? "No ar" : "Fechada")
+                                @(Dominio.EntryAvailable ? T["Live"] : T["Closed"])
                             </span>
                         </div>
                         <div class="card-body">
-                            <p class="mb-2">Endereço para repassar às pessoas do domínio:</p>
+                            <p class="mb-2">@T["Address to forward to people at the domain:"]</p>
                             <input class="form-control font-monospace mb-3" value="@Endereco" readonly
-                                   onclick="this.select()" aria-label="Endereço da porta de entrada" />
+                                   onclick="this.select()" aria-label="@T["Entry address"]" />
 
-                            <form method="post" action="/admin/dominios/@Dominio.Id/enviar-link">
+                            <form method="post" action="/admin/domains/@Dominio.Id/send-link">
                                 <AntiforgeryToken />
                                 <button class="btn btn-outline-primary" type="submit"
                                         disabled="@(Dominio.ContactEmail is null)">
-                                    Enviar ao responsável
+                                    @T["Send to the owner"]
                                 </button>
                                 @if (Dominio.ContactEmail is not null)
                                 {
@@ -109,13 +109,12 @@
                 }
 
                 <div class="card">
-                    <div class="card-header">Quem do domínio já tem acesso</div>
+                    <div class="card-header">@T["Who at the domain already has access"]</div>
 
                     @if (ConcessoesDoDominio.Count == 0)
                     {
                         <div class="card-body text-body-secondary">
-                            Nenhuma concessão para este domínio ainda. Conceda na página de um vídeo
-                            ou de uma coleção; a porta de entrada sozinha não libera conteúdo.
+                            @T["No grant for this domain yet. Grant one on a video or collection page; the entry page alone does not open content."]
                         </div>
                     }
                     else
@@ -126,7 +125,7 @@
                                 <li class="list-group-item d-flex justify-content-between">
                                     <span>@AlvoTexto(concessao)</span>
                                     <span class="small text-body-secondary">
-                                        @(concessao.IsRevoked ? "revogada" : "em vigor")
+                                        @(concessao.IsRevoked ? T["Revoked"] : T["in effect"])
                                     </span>
                                 </li>
                             }
@@ -137,49 +136,48 @@
 
             <div class="col-lg-5">
                 <div class="card">
-                    <div class="card-header">Configuração</div>
+                    <div class="card-header">@T["Configuration"]</div>
                     <div class="card-body">
-                        <form method="post" action="/admin/dominios/@Dominio.Id/salvar">
+                        <form method="post" action="/admin/domains/@Dominio.Id/save">
                             <AntiforgeryToken />
 
                             <div class="mb-3">
-                                <label class="form-label" for="endereco">Endereço da porta</label>
+                                <label class="form-label" for="endereco">@T["Entry address"]</label>
                                 <div class="input-group">
-                                    <span class="input-group-text">/d/</span>
+                                    <span class="input-group-text">/entry/</span>
                                     <input class="form-control" id="endereco" name="endereco"
                                            value="@Dominio.EntrySlug" maxlength="120" />
                                 </div>
                                 <div class="form-text">
-                                    Troque por um valor não adivinhável se não quiser que o endereço revele
-                                    que a organização usa a plataforma.
+                                    @T["Change this if you don't want the address to reveal that the organization uses the platform."]
                                 </div>
                             </div>
 
                             <div class="form-check form-switch mb-3">
                                 <input class="form-check-input" type="checkbox" id="portaAtiva" name="portaAtiva"
                                        checked="@Dominio.EntryEnabled" />
-                                <label class="form-check-label" for="portaAtiva">Porta de entrada no ar</label>
+                                <label class="form-check-label" for="portaAtiva">@T["Entry page is live"]</label>
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label" for="permitidos">Endereços permitidos</label>
+                                <label class="form-label" for="permitidos">@T["Allowed addresses"]</label>
                                 <textarea class="form-control" id="permitidos" name="permitidos" rows="3"
-                                          placeholder="deixe vazio para aceitar qualquer email do domínio">@string.Join(", ", Dominio.AllowedEmails)</textarea>
+                                          placeholder="@T["leave empty to accept any email at the domain"]">@string.Join(", ", Dominio.AllowedEmails)</textarea>
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label" for="responsavel">Email do responsável</label>
+                                <label class="form-label" for="responsavel">@T["Owner email"]</label>
                                 <input class="form-control" id="responsavel" name="responsavel" type="email"
                                        value="@Dominio.ContactEmail" />
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label" for="nota">Anotação</label>
+                                <label class="form-label" for="nota">@T["Note"]</label>
                                 <input class="form-control" id="nota" name="nota" maxlength="500"
                                        value="@Dominio.Note" />
                             </div>
 
-                            <button class="btn btn-primary w-100" type="submit">Salvar</button>
+                            <button class="btn btn-primary w-100" type="submit">@T["Save"]</button>
                         </form>
                     </div>
                 </div>
@@ -232,11 +230,11 @@
     {
         get
         {
-            if (Cadastrado == "1") yield return "Domínio cadastrado. Publique o registro DNS para comprovar a posse.";
-            if (Verificado == "1") yield return "Domínio verificado. A porta de entrada está no ar.";
-            if (Reemitido == "1") yield return "Token reemitido. Publique o novo valor e verifique de novo.";
-            if (Salvo == "1") yield return "Configuração salva.";
-            if (LinkEnviado == "1") yield return "Link enviado ao responsável.";
+            if (Cadastrado == "1") yield return T["Domain registered. Publish the DNS record to prove ownership."];
+            if (Verificado == "1") yield return T["Domain verified. The entry page is live."];
+            if (Reemitido == "1") yield return T["Token reissued. Publish the new value and check again."];
+            if (Salvo == "1") yield return T["Configuration saved."];
+            if (LinkEnviado == "1") yield return T["Link sent to the owner."];
         }
     }
 
@@ -254,10 +252,10 @@
         ConcessoesDoDominio = await Concessoes.ListForDomainAsync(Dominio.Name, Http.RequestAborted);
     }
 
-    private static string AlvoTexto(AccessGrant concessao) => concessao.TargetType switch
+    private string AlvoTexto(AccessGrant concessao) => concessao.TargetType switch
     {
-        OpenTube.Domain.Enums.GrantTargetType.All => "Todo o acervo",
-        OpenTube.Domain.Enums.GrantTargetType.Collection => "Uma coleção",
-        _ => "Um vídeo"
+        OpenTube.Domain.Enums.GrantTargetType.All => T["The whole library"],
+        OpenTube.Domain.Enums.GrantTargetType.Collection => T["A collection"],
+        _ => T["A video"]
     };
 }

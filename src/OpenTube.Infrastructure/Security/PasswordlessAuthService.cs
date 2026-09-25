@@ -118,7 +118,7 @@ public class PasswordlessAuthService(
 
         await db.SaveChangesAsync(cancellationToken);
 
-        var link = $"{_options.PublicUrl.TrimEnd('/')}/entrar/{token}";
+        var link = $"{_options.PublicUrl.TrimEnd('/')}/sign-in/{token}";
         await email.SendAsync(EmailTemplates.AccessCode(endereco.Value, codigo, link, purpose, validade), cancellationToken);
 
         return CodeRequestResult.Ok();
@@ -156,7 +156,7 @@ public class PasswordlessAuthService(
 
         await db.SaveChangesAsync(cancellationToken);
 
-        return new IssuedAccess(codigo, $"{_options.PublicUrl.TrimEnd('/')}/entrar/{token}", _options.InviteLifetime);
+        return new IssuedAccess(codigo, $"{_options.PublicUrl.TrimEnd('/')}/sign-in/{token}", _options.InviteLifetime);
     }
 
     /// <summary>Confere o código de seis dígitos e abre a sessão.</summary>

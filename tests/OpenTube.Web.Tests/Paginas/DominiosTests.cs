@@ -26,7 +26,7 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -36,19 +36,19 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = Admin });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = Admin });
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(Admin)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
     }
 
     private async Task<Guid> CadastrarAsync(HttpClient cliente, string dominio, string? responsavel = null)
     {
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/admin/dominios", "/admin/dominios/cadastrar",
+            cliente, "/admin/domains", "/admin/domains/register",
             new Dictionary<string, string>
             {
                 ["dominio"] = dominio,
@@ -86,11 +86,11 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         await EntrarComoAdminAsync(cliente);
         var id = await CadastrarAsync(cliente, "barcelos.dev");
 
-        var html = await cliente.GetStringAsync($"/admin/dominios/{id}");
+        var html = await cliente.GetStringAsync($"/admin/domains/{id}");
 
         Assert.Contains("_opentube-verify.barcelos.dev", html);
         Assert.Contains("opentube-verify=", html);
-        Assert.Contains("Já publiquei, verificar", html);
+        Assert.Contains("published it, check", html);
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         using var visitante = _app.CreateBrowser();
 
-        Assert.Equal(HttpStatusCode.NotFound, (await visitante.GetAsync("/d/barcelos.dev")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await visitante.GetAsync("/entry/barcelos.dev")).StatusCode);
     }
 
     [Fact]
@@ -113,10 +113,10 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var id = await CadastrarAsync(cliente, "barcelos.dev");
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/verificar", new Dictionary<string, string>());
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
 
         Assert.Contains("falhou=1", resposta.Headers.Location!.ToString());
-        Assert.Contains("ainda não foi encontrado", await cliente.GetStringAsync($"/admin/dominios/{id}?falhou=1"));
+        Assert.Contains("The record was not found yet.", await cliente.GetStringAsync($"/admin/domains/{id}?falhou=1"));
     }
 
     [Fact]
@@ -128,13 +128,13 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         await PublicarRegistroAsync(id);
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/verificar", new Dictionary<string, string>());
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
 
         using var visitante = _app.CreateBrowser();
-        var pagina = await visitante.GetAsync("/d/barcelos.dev");
+        var pagina = await visitante.GetAsync("/entry/barcelos.dev");
 
         Assert.Equal(HttpStatusCode.OK, pagina.StatusCode);
-        Assert.Contains("Acesso de barcelos.dev", await pagina.Content.ReadAsStringAsync());
+        Assert.Contains("Access for barcelos.dev", await pagina.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -145,11 +145,11 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var id = await CadastrarAsync(cliente, "barcelos.dev");
         await PublicarRegistroAsync(id);
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/verificar", new Dictionary<string, string>());
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
 
         using var visitante = _app.CreateBrowser();
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            visitante, "/d/barcelos.dev", "/d/barcelos.dev/codigo",
+            visitante, "/entry/barcelos.dev", "/entry/barcelos.dev/code",
             new Dictionary<string, string> { ["email"] = "alguem@outra.com" });
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
@@ -163,7 +163,7 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var id = await CadastrarAsync(cliente, "empresa.com");
         await PublicarRegistroAsync(id);
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/verificar", new Dictionary<string, string>());
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
 
         await ConcederAoDominioAsync("empresa.com");
 
@@ -171,15 +171,15 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            visitante, "/d/empresa.com", "/d/empresa.com/codigo",
+            visitante, "/entry/empresa.com", "/entry/empresa.com/code",
             new Dictionary<string, string> { ["email"] = "pessoa@empresa.com" });
 
         Assert.Single(_app.Emails.Sent);
 
         await FormularioHelpers.EnviarFormularioAsync(
             visitante,
-            "/d/empresa.com?email=pessoa%40empresa.com&enviado=1",
-            "/entrar/verificar",
+            "/entry/empresa.com?email=pessoa%40empresa.com&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string>
             {
                 ["email"] = "pessoa@empresa.com",
@@ -197,10 +197,10 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var id = await CadastrarAsync(cliente, "barcelos.dev");
         await PublicarRegistroAsync(id);
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/verificar", new Dictionary<string, string>());
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/salvar",
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/save",
             new Dictionary<string, string>
             {
                 ["endereco"] = "x7k2-privado",
@@ -212,8 +212,8 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         using var visitante = _app.CreateBrowser();
 
-        Assert.Equal(HttpStatusCode.NotFound, (await visitante.GetAsync("/d/barcelos.dev")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await visitante.GetAsync("/d/x7k2-privado")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await visitante.GetAsync("/entry/barcelos.dev")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await visitante.GetAsync("/entry/x7k2-privado")).StatusCode);
     }
 
     [Fact]
@@ -224,10 +224,10 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var id = await CadastrarAsync(cliente, "barcelos.dev");
         await PublicarRegistroAsync(id);
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/verificar", new Dictionary<string, string>());
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/salvar",
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/save",
             new Dictionary<string, string>
             {
                 ["endereco"] = "barcelos.dev",
@@ -237,7 +237,7 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
             });
 
         using var visitante = _app.CreateBrowser();
-        Assert.Equal(HttpStatusCode.NotFound, (await visitante.GetAsync("/d/barcelos.dev")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await visitante.GetAsync("/entry/barcelos.dev")).StatusCode);
 
         await using var db = postgres.CreateContext();
         Assert.True((await db.VerifiedDomains.SingleAsync()).IsVerified);
@@ -251,15 +251,15 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var id = await CadastrarAsync(cliente, "barcelos.dev", "ti@barcelos.dev");
         await PublicarRegistroAsync(id);
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/verificar", new Dictionary<string, string>());
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
 
         _app.Emails.Clear();
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/enviar-link", new Dictionary<string, string>());
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/send-link", new Dictionary<string, string>());
 
         Assert.Contains("linkEnviado=1", resposta.Headers.Location!.ToString());
-        Assert.Contains("/d/barcelos.dev", _app.Emails.Last!.TextBody);
+        Assert.Contains("/entry/barcelos.dev", _app.Emails.Last!.TextBody);
     }
 
     [Fact]
@@ -269,7 +269,7 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         await EntrarComoAdminAsync(cliente);
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/admin/dominios", "/admin/dominios/cadastrar",
+            cliente, "/admin/domains", "/admin/domains/register",
             new Dictionary<string, string> { ["dominio"] = "nao-e-dominio", ["responsavel"] = "", ["nota"] = "" });
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
@@ -280,9 +280,9 @@ public class DominiosTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
     {
         using var cliente = _app.CreateBrowser();
 
-        var resposta = await cliente.GetAsync("/admin/dominios");
+        var resposta = await cliente.GetAsync("/admin/domains");
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
-        Assert.Contains("/entrar", resposta.Headers.Location!.ToString());
+        Assert.Contains("/sign-in", resposta.Headers.Location!.ToString());
     }
 }

@@ -93,7 +93,7 @@ public class SupportServiceTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal("admin@opentube.org", aviso.To);
         Assert.Contains("Reunião Trimestral", aviso.Subject);
         Assert.Contains("Não consigo ouvir o áudio", aviso.TextBody);
-        Assert.Contains($"/admin/suporte/{conversa.Id}", aviso.TextBody);
+        Assert.Contains($"/admin/support/{conversa.Id}", aviso.TextBody);
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public class SupportServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var aviso = Assert.Single(_emails.Sent);
         Assert.Equal("allan@barcelos.dev", aviso.To);
         Assert.Contains("segundo canal", aviso.TextBody);
-        Assert.Contains($"/v/{video.Slug}", aviso.TextBody);
+        Assert.Contains($"/watch/{video.Slug}", aviso.TextBody);
 
         await using var leitura = postgres.CreateContext();
         Assert.Equal(SupportStatus.Answered, (await leitura.SupportThreads.SingleAsync()).Status);

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Access;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Web.Auth;
 
@@ -14,9 +15,9 @@ public static class AccessEndpoints
 {
     public static IEndpointRouteBuilder MapAccessEndpoints(this IEndpointRouteBuilder rotas)
     {
-        var grupo = rotas.MapGroup("/admin/acessos").RequireAuthorization(Policies.Administrator);
+        var grupo = rotas.MapGroup("/admin/access").RequireAuthorization(Policies.Administrator);
 
-        grupo.MapPost("/convidar", async (
+        grupo.MapPost("/invite", async (
             [FromForm] int alvoTipo,
             [FromForm] Guid? alvoId,
             [FromForm] string emails,
@@ -43,18 +44,21 @@ public static class AccessEndpoints
 
                 await contexto.RegistrarAsync(
                     AuditActions.AcessoConcedido, TipoDeEntidade((GrantTargetType)alvoTipo), alvoId,
-                    $"Convite enviado a {string.Join(", ", resultados.Select(r => r.Email))} ({MontarValidade(validade, valorDaValidade).Describe()})",
+                    LocalText.Format(
+                        "Invite sent to {0} ({1})",
+                        string.Join(", ", resultados.Select(r => r.Email)),
+                        MontarValidade(validade, valorDaValidade).Describe()),
                     cancellationToken);
 
                 return Results.Redirect($"{destino}?convidados={resultados.Count}");
             }
             catch (Exception e) when (e is ArgumentException or InvalidOperationException)
             {
-                return Results.Redirect($"{destino}?erro={Uri.EscapeDataString(e.Message)}");
+                return Results.Redirect($"{destino}?erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
             }
         });
 
-        grupo.MapPost("/dominio", async (
+        grupo.MapPost("/domain", async (
             [FromForm] int alvoTipo,
             [FromForm] Guid? alvoId,
             [FromForm] string dominio,
@@ -81,14 +85,17 @@ public static class AccessEndpoints
 
                 await contexto.RegistrarAsync(
                     AuditActions.AcessoConcedido, TipoDeEntidade((GrantTargetType)alvoTipo), alvoId,
-                    $"Domínio {dominio} liberado ({MontarValidade(validade, valorDaValidade).Describe()})",
+                    LocalText.Format(
+                        "Domain {0} granted ({1})",
+                        dominio,
+                        MontarValidade(validade, valorDaValidade).Describe()),
                     cancellationToken);
 
                 return Results.Redirect($"{destino}?dominio=1");
             }
             catch (Exception e) when (e is ArgumentException or InvalidOperationException)
             {
-                return Results.Redirect($"{destino}?erro={Uri.EscapeDataString(e.Message)}");
+                return Results.Redirect($"{destino}?erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
             }
         });
 
@@ -122,18 +129,18 @@ public static class AccessEndpoints
                 // mandá-lo na URL o deixaria no histórico e nos registros de acesso.
                 await contexto.RegistrarAsync(
                     AuditActions.LinkCriado, TipoDeEntidade((GrantTargetType)alvoTipo), alvoId,
-                    $"Link de compartilhamento criado ({MontarValidade(validade, valorDaValidade).Describe()})",
+                    LocalText.Format("Share link created ({0})", MontarValidade(validade, valorDaValidade).Describe()),
                     cancellationToken);
 
                 return Results.Redirect($"{destino}?link={flash.Store(link.Url)}");
             }
             catch (Exception e) when (e is ArgumentException or InvalidOperationException)
             {
-                return Results.Redirect($"{destino}?erro={Uri.EscapeDataString(e.Message)}");
+                return Results.Redirect($"{destino}?erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
             }
         });
 
-        grupo.MapPost("/{grantId:guid}/revogar", async (
+        grupo.MapPost("/{grantId:guid}/revoke", async (
             Guid grantId,
             [FromForm] int alvoTipo,
             [FromForm] Guid? alvoId,
@@ -144,12 +151,12 @@ public static class AccessEndpoints
             await concessoes.RevokeAsync(grantId, cancellationToken);
 
             await contexto.RegistrarAsync(
-                AuditActions.AcessoRevogado, AuditEntities.Concessao, grantId, "Acesso revogado", cancellationToken);
+                AuditActions.AcessoRevogado, AuditEntities.Concessao, grantId, LocalText.Get("Access revoked."), cancellationToken);
 
             return Results.Redirect($"{Destino((GrantTargetType)alvoTipo, alvoId)}?revogado=1");
         });
 
-        grupo.MapPost("/{grantId:guid}/restaurar", async (
+        grupo.MapPost("/{grantId:guid}/restore", async (
             Guid grantId,
             [FromForm] int alvoTipo,
             [FromForm] Guid? alvoId,
@@ -160,7 +167,7 @@ public static class AccessEndpoints
             await concessoes.RestoreAsync(grantId, cancellationToken);
 
             await contexto.RegistrarAsync(
-                AuditActions.AcessoRestaurado, AuditEntities.Concessao, grantId, "Acesso restaurado", cancellationToken);
+                AuditActions.AcessoRestaurado, AuditEntities.Concessao, grantId, LocalText.Get("Access restored"), cancellationToken);
 
             return Results.Redirect($"{Destino((GrantTargetType)alvoTipo, alvoId)}?restaurado=1");
         });
@@ -180,7 +187,7 @@ public static class AccessEndpoints
     private static string Destino(GrantTargetType tipo, Guid? alvoId) => tipo switch
     {
         GrantTargetType.Video => $"/admin/videos/{alvoId}",
-        GrantTargetType.Collection => $"/admin/colecoes/{alvoId}",
+        GrantTargetType.Collection => $"/admin/collections/{alvoId}",
         _ => "/admin"
     };
 

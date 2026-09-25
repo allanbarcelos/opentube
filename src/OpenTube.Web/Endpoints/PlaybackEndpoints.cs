@@ -30,7 +30,7 @@ public static class PlaybackEndpoints
             var resultado = await playback.GetMasterAsync(
                 videoId,
                 espectador,
-                versao => $"/api/videos/{videoId}/versoes/{versao}.m3u8",
+                versao => $"/api/videos/{videoId}/renditions/{versao}.m3u8",
                 privacidade.HashIp(contexto.Connection.RemoteIpAddress?.ToString()),
                 cancellationToken);
 
@@ -42,7 +42,7 @@ public static class PlaybackEndpoints
             return Responder(resultado, MediaTypes.HlsPlaylist);
         });
 
-        grupo.MapGet("/versoes/{rendition}.m3u8", async (
+        grupo.MapGet("/renditions/{rendition}.m3u8", async (
             Guid videoId,
             string rendition,
             PlaybackService playback,
@@ -55,7 +55,7 @@ public static class PlaybackEndpoints
             return Responder(resultado, MediaTypes.HlsPlaylist);
         });
 
-        grupo.MapGet("/miniatura", async (
+        grupo.MapGet("/thumbnail", async (
             Guid videoId,
             PlaybackService playback,
             CurrentViewer espectadores,

@@ -71,7 +71,7 @@ public partial class VerifiedDomain
         var normalizado = Normalize(name);
 
         if (!DomainPattern().IsMatch(normalizado))
-            throw new ArgumentException($"'{name}' não é um domínio válido.", nameof(name));
+            throw new ArgumentException("This is not a valid domain.", nameof(name));
 
         return new VerifiedDomain
         {

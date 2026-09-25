@@ -25,7 +25,7 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -55,7 +55,7 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         var resposta = await cliente.GetAsync(Caminho(url));
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
-        Assert.Equal($"/v/{slug}", resposta.Headers.Location!.ToString());
+        Assert.Equal($"/watch/{slug}", resposta.Headers.Location!.ToString());
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         using var cliente = _app.CreateBrowser();
         await cliente.GetAsync(Caminho(url));
 
-        var pagina = await cliente.GetAsync($"/v/{slug}");
+        var pagina = await cliente.GetAsync($"/watch/{slug}");
 
         Assert.Equal(HttpStatusCode.OK, pagina.StatusCode);
         Assert.Contains("Plano Confidencial", await pagina.Content.ReadAsStringAsync());
@@ -94,7 +94,7 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         using var cliente = _app.CreateBrowser();
         await cliente.GetAsync(Caminho(url));
 
-        var html = await cliente.GetStringAsync($"/v/{slug}");
+        var html = await cliente.GetStringAsync($"/watch/{slug}");
         var videoId = html.Split("/api/videos/")[1].Split('/')[0];
 
         Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/master.m3u8")).StatusCode);
@@ -107,7 +107,7 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
 
         using var cliente = _app.CreateBrowser();
 
-        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/v/{slug}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/watch/{slug}")).StatusCode);
     }
 
     [Fact]
@@ -116,10 +116,10 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         await CriarLinkAsync();
 
         using var cliente = _app.CreateBrowser();
-        var resposta = await cliente.GetAsync("/l/token-inventado");
+        var resposta = await cliente.GetAsync("/link/token-inventado");
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
-        Assert.Equal("/nao-encontrado", resposta.Headers.Location!.ToString());
+        Assert.Equal("/not-found", resposta.Headers.Location!.ToString());
     }
 
     [Fact]
@@ -129,13 +129,13 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
 
         using var cliente = _app.CreateBrowser();
         await cliente.GetAsync(Caminho(url));
-        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/v/{slug}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/watch/{slug}")).StatusCode);
 
         using (var escopo = _app.Services.CreateScope())
             await escopo.ServiceProvider.GetRequiredService<GrantService>().RevokeAsync(grantId);
 
         // O cookie continua no navegador, mas a concessão é conferida a cada requisição.
-        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/v/{slug}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/watch/{slug}")).StatusCode);
     }
 
     [Fact]
@@ -149,7 +149,7 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         using var cliente = _app.CreateBrowser();
         var resposta = await cliente.GetAsync(Caminho(url));
 
-        Assert.Equal("/nao-encontrado", resposta.Headers.Location!.ToString());
+        Assert.Equal("/not-found", resposta.Headers.Location!.ToString());
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         using var cliente = _app.CreateBrowser();
         await cliente.GetAsync(Caminho(url));
 
-        var html = await cliente.GetStringAsync($"/v/{slug}");
+        var html = await cliente.GetStringAsync($"/watch/{slug}");
         var videoId = html.Split("/api/videos/")[1].Split('/')[0];
 
         // A primeira playlist principal conta como uma visualização.
@@ -176,18 +176,18 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         using var cliente = _app.CreateBrowser();
         await cliente.GetAsync(Caminho(url));
 
-        var html = await cliente.GetStringAsync($"/v/{slug}");
+        var html = await cliente.GetStringAsync($"/watch/{slug}");
         var videoId = html.Split("/api/videos/")[1].Split('/')[0];
 
         Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/master.m3u8")).StatusCode);
 
         // A versão, a coleta de audiência e a página seguinte fazem parte da mesma reprodução
         // ou de uma nova: só as primeiras podem passar.
-        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/versoes/360p.m3u8")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/renditions/360p.m3u8")).StatusCode);
 
-        var sessao = await cliente.PostAsJsonAsync("/api/reproducao/iniciar", new { videoId });
+        var sessao = await cliente.PostAsJsonAsync("/api/playback/start", new { videoId });
         Assert.Equal(HttpStatusCode.OK, sessao.StatusCode);
 
-        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/v/{slug}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/watch/{slug}")).StatusCode);
     }
 }

@@ -2,18 +2,18 @@
 
 @if (Resultado.PageCount > 1)
 {
-    <nav aria-label="Paginação dos resultados" class="mt-4">
+    <nav aria-label="@T["Result pages"]" class="mt-4">
         <ul class="pagination justify-content-center">
             <li class="page-item @(Resultado.HasPrevious ? "" : "disabled")">
-                <a class="page-link" href="@Endereco(Resultado.Page - 1)">Anterior</a>
+                <a class="page-link" href="@Endereco(Resultado.Page - 1)">@T["Previous"]</a>
             </li>
 
             <li class="page-item disabled">
-                <span class="page-link">Página @Resultado.Page de @Resultado.PageCount</span>
+                <span class="page-link">@T.Format("Page {0} of {1}", Resultado.Page, Resultado.PageCount)</span>
             </li>
 
             <li class="page-item @(Resultado.HasNext ? "" : "disabled")">
-                <a class="page-link" href="@Endereco(Resultado.Page + 1)">Próxima</a>
+                <a class="page-link" href="@Endereco(Resultado.Page + 1)">@T["Next"]</a>
             </li>
         </ul>
     </nav>
@@ -31,7 +31,7 @@
 
     private string Endereco(int pagina)
     {
-        var parametros = new List<string> { $"pagina={pagina}" };
+        var parametros = new List<string> { $"page={pagina}" };
 
         if (!string.IsNullOrWhiteSpace(Termo))
             parametros.Add("q=" + Uri.EscapeDataString(Termo));

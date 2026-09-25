@@ -1,37 +1,43 @@
-@page "/admin/enviar"
+@page "/admin/upload"
 @using Microsoft.AspNetCore.Antiforgery
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject IAntiforgery Antifalsificacao
 
-<PageTitle>Enviar vídeo — OpenTube</PageTitle>
+<PageTitle>@T["Upload video — OpenTube"]</PageTitle>
 
 <div class="container py-4">
     <div class="row justify-content-center">
         <div class="col-lg-7">
-            <h1 class="h4 mb-3">Enviar vídeo</h1>
+            <h1 class="h4 mb-3">@T["Upload video"]</h1>
 
             <div class="card">
                 <div class="card-body">
-                    <form id="formulario-envio" data-token="@Token">
+                    <form id="formulario-envio" data-token="@Token"
+                          data-preparando="@T["Preparing the upload…"]"
+                          data-enviando="@T["Uploading… {0} of {1}"]"
+                          data-finalizando="@T["Finishing…"]"
+                          data-falha-servidor="@T["Could not reach the server."]"
+                          data-falha-pedaco="@T["A part of the file failed to upload."]"
+                          data-falha-storage="@T["Storage did not confirm the part."]">
                         <div class="mb-3">
-                            <label class="form-label" for="titulo">Título</label>
+                            <label class="form-label" for="titulo">@T["Title"]</label>
                             <input class="form-control" id="titulo" maxlength="300" required autofocus />
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label" for="descricao">Descrição</label>
+                            <label class="form-label" for="descricao">@T["Description"]</label>
                             <textarea class="form-control" id="descricao" rows="3" maxlength="10000"></textarea>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label" for="arquivo">Arquivo de vídeo</label>
+                            <label class="form-label" for="arquivo">@T["Video file"]</label>
                             <input class="form-control" id="arquivo" type="file" accept="video/*" required />
                             <div class="form-text">
                                 O arquivo vai direto do seu navegador para o storage, sem passar pelo servidor.
                             </div>
                         </div>
 
-                        <div class="progress d-none mb-2" role="progressbar" aria-label="Progresso do envio"
+                        <div class="progress d-none mb-2" role="progressbar" aria-label="@T["Upload progress"]"
                              aria-valuemin="0" aria-valuemax="100">
                             <div class="progress-bar" id="barra-progresso" style="width: 0%"></div>
                         </div>
@@ -41,16 +47,15 @@
                         <div class="alert alert-danger d-none" id="erro-envio" role="alert"></div>
 
                         <div class="d-flex gap-2">
-                            <button class="btn btn-primary" id="botao-enviar" type="submit">Enviar</button>
-                            <a class="btn btn-outline-secondary" href="/admin">Cancelar</a>
+                            <button class="btn btn-primary" id="botao-enviar" type="submit">@T["Send"]</button>
+                            <a class="btn btn-outline-secondary" href="/admin">@T["Cancel"]</a>
                         </div>
                     </form>
                 </div>
             </div>
 
             <div class="alert alert-light border mt-3 small mb-0">
-                Todo vídeo enviado nasce <strong>privado</strong>. A liberação é feita depois, na
-                página do vídeo.
+                @T["Every uploaded video starts private. Access is granted later, on the video page."]
             </div>
         </div>
     </div>

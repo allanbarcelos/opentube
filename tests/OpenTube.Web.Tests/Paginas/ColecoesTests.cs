@@ -24,7 +24,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -34,19 +34,19 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = email });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = email });
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(email)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(email)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = email, ["codigo"] = _app.Emails.LastCode() });
     }
 
     private async Task<Guid> CriarColecaoAsync(HttpClient cliente, string nome)
     {
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/admin/colecoes", "/admin/colecoes/criar",
+            cliente, "/admin/collections", "/admin/collections/create",
             new Dictionary<string, string> { ["nome"] = nome, ["descricao"] = "" });
 
         var destino = resposta.Headers.Location!.ToString();
@@ -67,7 +67,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         using var cliente = _app.CreateBrowser();
         await EntrarAsync(cliente, Convidado);
 
-        Assert.NotEqual(HttpStatusCode.OK, (await cliente.GetAsync("/admin/colecoes")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.OK, (await cliente.GetAsync("/admin/collections")).StatusCode);
     }
 
     [Fact]
@@ -78,10 +78,10 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         await CriarColecaoAsync(cliente, "Treinamentos Obrigatórios");
 
-        var html = await cliente.GetStringAsync("/admin/colecoes");
+        var html = await cliente.GetStringAsync("/admin/collections");
 
         Assert.Contains("Treinamentos Obrigatórios", html);
-        Assert.Contains("0 vídeos", html);
+        Assert.Contains("0 videos", html);
     }
 
     [Fact]
@@ -95,13 +95,13 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var colecao = await CriarColecaoAsync(cliente, "Treinamentos");
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/colecoes/{colecao}", $"/admin/colecoes/{colecao}/videos/adicionar",
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/add",
             new Dictionary<string, string> { ["videoId"] = video.Id.ToString() });
 
-        Assert.Contains("Segurança da Informação", await cliente.GetStringAsync($"/admin/colecoes/{colecao}"));
+        Assert.Contains("Segurança da Informação", await cliente.GetStringAsync($"/admin/collections/{colecao}"));
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/colecoes/{colecao}", $"/admin/colecoes/{colecao}/videos/remover",
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/remove",
             new Dictionary<string, string> { ["videoId"] = video.Id.ToString() });
 
         await using var db = postgres.CreateContext();
@@ -116,7 +116,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var colecao = await CriarColecaoAsync(cliente, "Treinamentos");
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/colecoes/{colecao}", $"/admin/colecoes/{colecao}/salvar",
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/save",
             new Dictionary<string, string> { ["nome"] = "Capacitação 2026", ["descricao"] = "Nova" });
 
         await using var db = postgres.CreateContext();
@@ -137,7 +137,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var colecao = await CriarColecaoAsync(cliente, "Treinamentos");
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/colecoes/{colecao}", $"/admin/colecoes/{colecao}/videos/adicionar",
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/add",
             new Dictionary<string, string> { ["videoId"] = video.Id.ToString() });
 
         using (var escopo = _app.Services.CreateScope())
@@ -150,7 +150,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         await EntrarAsync(convidado, Convidado);
 
         Assert.Contains("Segurança da Informação", await convidado.GetStringAsync("/"));
-        Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/v/{video.Slug}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
     }
 
     [Fact]
@@ -164,7 +164,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var colecao = await CriarColecaoAsync(cliente, "Treinamentos");
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/colecoes/{colecao}", $"/admin/colecoes/{colecao}/videos/adicionar",
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/add",
             new Dictionary<string, string> { ["videoId"] = video.Id.ToString() });
 
         using (var escopo = _app.Services.CreateScope())
@@ -175,13 +175,13 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         using var convidado = _app.CreateBrowser();
         await EntrarAsync(convidado, Convidado);
-        Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/v/{video.Slug}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/colecoes/{colecao}", $"/admin/colecoes/{colecao}/videos/remover",
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/remove",
             new Dictionary<string, string> { ["videoId"] = video.Id.ToString() });
 
-        Assert.Equal(HttpStatusCode.NotFound, (await convidado.GetAsync($"/v/{video.Slug}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
     }
 
     [Fact]
@@ -195,7 +195,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var colecao = await CriarColecaoAsync(cliente, "Treinamentos");
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/colecoes/{colecao}", $"/admin/colecoes/{colecao}/videos/adicionar",
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/add",
             new Dictionary<string, string> { ["videoId"] = video.Id.ToString() });
 
         using (var escopo = _app.Services.CreateScope())
@@ -205,7 +205,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         }
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/colecoes/{colecao}", $"/admin/colecoes/{colecao}/excluir",
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/delete",
             new Dictionary<string, string>());
 
         // A coleção excluída não deixa de existir no banco, mas o vínculo com os vídeos some
@@ -220,7 +220,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         using var cliente = _app.CreateBrowser();
         await EntrarAsync(cliente, Admin);
 
-        var resposta = await cliente.GetAsync($"/admin/colecoes/{Guid.CreateVersion7()}");
+        var resposta = await cliente.GetAsync($"/admin/collections/{Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
     }
@@ -232,7 +232,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         await EntrarAsync(cliente, Admin);
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/admin/colecoes", "/admin/colecoes/criar",
+            cliente, "/admin/collections", "/admin/collections/create",
             new Dictionary<string, string> { ["nome"] = "   ", ["descricao"] = "" });
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());

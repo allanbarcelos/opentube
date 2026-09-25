@@ -7,18 +7,18 @@
 @inject CurrentViewer Espectadores
 @inject OpenTube.Infrastructure.Support.SupportService Suporte
 
-<PageTitle>Administração — OpenTube</PageTitle>
+<PageTitle>@T["Administration — OpenTube"]</PageTitle>
 
 <div class="container py-4">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <h1 class="h4 mb-0">Administração</h1>
+        <h1 class="h4 mb-0">@T["Administration"]</h1>
         <div class="d-flex gap-2">
-            <a class="btn btn-outline-secondary" href="/admin/colecoes">Coleções</a>
-            <a class="btn btn-outline-secondary" href="/admin/dominios">Domínios</a>
-            <a class="btn btn-outline-secondary" href="/admin/pessoas">Pessoas</a>
-            <a class="btn btn-outline-secondary" href="/admin/auditoria">Auditoria</a>
-            <a class="btn btn-outline-secondary position-relative" href="/admin/suporte">
-                Suporte
+            <a class="btn btn-outline-secondary" href="/admin/collections">@T["Collections"]</a>
+            <a class="btn btn-outline-secondary" href="/admin/domains">@T["Domains"]</a>
+            <a class="btn btn-outline-secondary" href="/admin/people">@T["People"]</a>
+            <a class="btn btn-outline-secondary" href="/admin/audit">@T["Audit"]</a>
+            <a class="btn btn-outline-secondary position-relative" href="/admin/support">
+                @T["Support"]
                 @if (SuportePendente > 0)
                 {
                     <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger">
@@ -26,13 +26,13 @@
                     </span>
                 }
             </a>
-            <a class="btn btn-primary" href="/admin/enviar">Enviar vídeo</a>
+            <a class="btn btn-primary" href="/admin/upload">@T["Upload video"]</a>
         </div>
     </div>
 
     @if (Excluido)
     {
-        <div class="alert alert-success" role="status">Vídeo excluído.</div>
+        <div class="alert alert-success" role="status">@T["Video deleted."]</div>
     }
 
     <div class="row g-3 mb-4">
@@ -63,7 +63,7 @@
         @if (Resultado.Items.Count == 0)
         {
             <div class="card-body text-center text-body-secondary py-5">
-                Nenhum vídeo por aqui ainda.
+                @T["No videos here yet."]
             </div>
         }
         else
@@ -72,11 +72,11 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead>
                         <tr>
-                            <th scope="col">Título</th>
-                            <th scope="col">Estado</th>
-                            <th scope="col">Visibilidade</th>
-                            <th scope="col">Duração</th>
-                            <th scope="col">Enviado em</th>
+                            <th scope="col">@T["Title"]</th>
+                            <th scope="col">@T["Status"]</th>
+                            <th scope="col">@T["Visibility"]</th>
+                            <th scope="col">@T["Duration"]</th>
+                            <th scope="col">@T["Uploaded on"]</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -89,7 +89,7 @@
                                 <td><span class="badge @EstadoClasse(video)">@EstadoTexto(video)</span></td>
                                 <td><span class="badge @VisibilidadeClasse(video)">@VisibilidadeTexto(video)</span></td>
                                 <td>@(video.Status == (int)VideoStatus.Ready ? video.DurationLabel : "—")</td>
-                                <td>@video.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                <td>@video.CreatedAt.ToLocalTime().ToString("g")</td>
                             </tr>
                         }
                     </tbody>
@@ -108,7 +108,7 @@
     [SupplyParameterFromQuery(Name = "q")]
     private string? Q { get; set; }
 
-    [SupplyParameterFromQuery(Name = "pagina")]
+    [SupplyParameterFromQuery(Name = "page")]
     private int? Pagina { get; set; }
 
     [SupplyParameterFromQuery(Name = "excluido")]
@@ -132,20 +132,20 @@
         SuportePendente = await Suporte.PendingCountAsync(Http.RequestAborted);
 
         Indicadores.Clear();
-        Indicadores.Add(("Vídeos no acervo", Resultado.Total));
-        Indicadores.Add(("Na fila", fila.GetValueOrDefault(JobStatus.Pending)));
-        Indicadores.Add(("Processando", fila.GetValueOrDefault(JobStatus.Running)));
-        Indicadores.Add(("Falhas", fila.GetValueOrDefault(JobStatus.Failed)));
-        Indicadores.Add(("Suporte aguardando", SuportePendente));
+        Indicadores.Add((T["Videos in the library"], Resultado.Total));
+        Indicadores.Add((T["Queued"], fila.GetValueOrDefault(JobStatus.Pending)));
+        Indicadores.Add((T["Processing"], fila.GetValueOrDefault(JobStatus.Running)));
+        Indicadores.Add((T["Failures"], fila.GetValueOrDefault(JobStatus.Failed)));
+        Indicadores.Add((T["Support waiting"], SuportePendente));
     }
 
-    private static string EstadoTexto(VideoSummary video) => (VideoStatus)video.Status switch
+    private string EstadoTexto(VideoSummary video) => (VideoStatus)video.Status switch
     {
-        VideoStatus.Draft => "Rascunho",
-        VideoStatus.Uploaded => "Na fila",
-        VideoStatus.Processing => "Processando",
-        VideoStatus.Ready => "Pronto",
-        _ => "Falhou"
+        VideoStatus.Draft => T["Draft"],
+        VideoStatus.Uploaded => T["Queued"],
+        VideoStatus.Processing => T["Processing"],
+        VideoStatus.Ready => T["Ready"],
+        _ => T["Failed"]
     };
 
     private static string EstadoClasse(VideoSummary video) => (VideoStatus)video.Status switch
@@ -156,11 +156,11 @@
         _ => "text-bg-secondary"
     };
 
-    private static string VisibilidadeTexto(VideoSummary video) => (VideoVisibility)video.Visibility switch
+    private string VisibilidadeTexto(VideoSummary video) => (VideoVisibility)video.Visibility switch
     {
-        VideoVisibility.Public => "Público",
-        VideoVisibility.Restricted => "Restrito",
-        _ => "Privado"
+        VideoVisibility.Public => T["Public"],
+        VideoVisibility.Restricted => T["Restricted"],
+        _ => T["Private"]
     };
 
     private static string VisibilidadeClasse(VideoSummary video) => (VideoVisibility)video.Visibility switch

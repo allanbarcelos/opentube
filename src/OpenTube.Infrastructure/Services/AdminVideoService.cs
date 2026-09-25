@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Storage;
@@ -87,13 +88,13 @@ public class AdminVideoService(
         var video = await CarregarAsync(videoId, cancellationToken);
 
         if (video.Status is VideoStatus.Draft)
-            throw new InvalidOperationException("O arquivo deste vídeo ainda não terminou de ser enviado.");
+            throw new InvalidOperationException("This video's file has not finished uploading.");
 
         if (!await storage.ExistsAsync(StorageBucket.Originals, video.OriginalKey, cancellationToken))
-            throw new InvalidOperationException("O arquivo original não está mais no storage.");
+            throw new InvalidOperationException("The original file is no longer in storage.");
 
         if (await TranscodificacaoEmAbertoAsync(video.Id, cancellationToken))
-            throw new InvalidOperationException("Este vídeo já está na fila de transcodificação.");
+            throw new InvalidOperationException("This video is already in the transcoding queue.");
 
         var jobId = await queue.EnqueueAsync(
             JobKind.Transcode,
@@ -119,5 +120,5 @@ public class AdminVideoService(
 
     private async Task<Video> CarregarAsync(Guid videoId, CancellationToken cancellationToken) =>
         await db.Videos.FirstOrDefaultAsync(v => v.Id == videoId, cancellationToken)
-        ?? throw new InvalidOperationException($"Vídeo {videoId} não encontrado.");
+        ?? throw new InvalidOperationException(LocalText.Format("Video {0} was not found.", videoId));
 }

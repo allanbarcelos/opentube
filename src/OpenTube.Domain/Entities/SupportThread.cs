@@ -76,10 +76,10 @@ public class SupportThread
         ArgumentException.ThrowIfNullOrWhiteSpace(body);
 
         if (IsClosed)
-            throw new InvalidOperationException("Esta conversa está encerrada.");
+            throw new InvalidOperationException("This conversation is closed.");
 
         if (!fromAdmin && authorId != UserId)
-            throw new InvalidOperationException("Só o autor da conversa pode responder por ela.");
+            throw new InvalidOperationException("Only the author of the conversation can reply to it.");
 
         var mensagem = SupportMessage.Create(Id, authorId, body, fromAdmin, now);
 

@@ -36,7 +36,12 @@ public sealed record VideoViewer(
     Guid? UserId, string? Email, int Sessions, double WatchSeconds, bool Completed,
     DateTimeOffset FirstAt, DateTimeOffset LastAt, string Device)
 {
-    public string DisplayName => Email ?? "Visitante não identificado";
+    public string DisplayName => Email ?? System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName switch
+    {
+        "pt" => "Visitante não identificado",
+        "fr" => "Visiteur non identifié",
+        _ => "Unidentified visitor"
+    };
 }
 
 /// <summary>Um item da linha do tempo de uma pessoa.</summary>

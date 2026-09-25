@@ -24,14 +24,14 @@ public class ColetaDeAudienciaTests(PostgresFixture postgres, MinioFixture minio
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
 
     private async Task<Guid> AbrirSessaoAsync(HttpClient cliente, Guid videoId)
     {
-        var resposta = await cliente.PostAsJsonAsync("/api/reproducao/iniciar", new { videoId });
+        var resposta = await cliente.PostAsJsonAsync("/api/playback/start", new { videoId });
         resposta.EnsureSuccessStatusCode();
 
         var corpo = await resposta.Content.ReadFromJsonAsync<SessaoResposta>();
@@ -66,7 +66,7 @@ public class ColetaDeAudienciaTests(PostgresFixture postgres, MinioFixture minio
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Plano Confidencial", VideoVisibility.Private);
 
         using var cliente = _app.CreateBrowser();
-        var resposta = await cliente.PostAsJsonAsync("/api/reproducao/iniciar", new { videoId = video.Id });
+        var resposta = await cliente.PostAsJsonAsync("/api/playback/start", new { videoId = video.Id });
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
 
@@ -79,7 +79,7 @@ public class ColetaDeAudienciaTests(PostgresFixture postgres, MinioFixture minio
     {
         using var cliente = _app.CreateBrowser();
 
-        var resposta = await cliente.PostAsJsonAsync("/api/reproducao/iniciar", new { videoId = Guid.CreateVersion7() });
+        var resposta = await cliente.PostAsJsonAsync("/api/playback/start", new { videoId = Guid.CreateVersion7() });
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
     }
@@ -93,7 +93,7 @@ public class ColetaDeAudienciaTests(PostgresFixture postgres, MinioFixture minio
         using var cliente = _app.CreateBrowser();
         var sessao = await AbrirSessaoAsync(cliente, video.Id);
 
-        var resposta = await cliente.PostAsJsonAsync($"/api/reproducao/{sessao}/eventos", new
+        var resposta = await cliente.PostAsJsonAsync($"/api/playback/{sessao}/events", new
         {
             eventos = new[] { Progresso(0, 30), Progresso(30, 62) }
         });
@@ -118,7 +118,7 @@ public class ColetaDeAudienciaTests(PostgresFixture postgres, MinioFixture minio
 
         // Outro navegador não tem o cookie de visitante que abriu a sessão.
         using var intruso = _app.CreateBrowser();
-        var resposta = await intruso.PostAsJsonAsync($"/api/reproducao/{sessao}/eventos", new
+        var resposta = await intruso.PostAsJsonAsync($"/api/playback/{sessao}/events", new
         {
             eventos = new[] { Progresso(0, 600) }
         });
@@ -138,11 +138,11 @@ public class ColetaDeAudienciaTests(PostgresFixture postgres, MinioFixture minio
         using var cliente = _app.CreateBrowser();
         _app.Emails.Clear();
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = Admin });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = Admin });
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(Admin)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
 
         await AbrirSessaoAsync(cliente, video.Id);
@@ -180,7 +180,7 @@ public class ColetaDeAudienciaTests(PostgresFixture postgres, MinioFixture minio
         using var cliente = _app.CreateBrowser();
         var sessao = await AbrirSessaoAsync(cliente, video.Id);
 
-        var resposta = await cliente.PostAsync($"/api/reproducao/{sessao}/encerrar", null);
+        var resposta = await cliente.PostAsync($"/api/playback/{sessao}/close", null);
 
         Assert.Equal(HttpStatusCode.NoContent, resposta.StatusCode);
 

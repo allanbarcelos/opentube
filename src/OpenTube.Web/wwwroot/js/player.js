@@ -3,7 +3,7 @@
 window.openTubePlayer = (function () {
     const instancias = new Map();
 
-    function iniciar(elementId, manifestUrl, videoId) {
+    function iniciar(elementId, manifestUrl, videoId, semSuporte) {
         const video = document.getElementById(elementId);
         if (!video) {
             return;
@@ -23,7 +23,7 @@ window.openTubePlayer = (function () {
         if (!window.Hls || !window.Hls.isSupported()) {
             video.insertAdjacentHTML(
                 'afterend',
-                '<div class="alert alert-warning mt-3">Este navegador não consegue reproduzir o vídeo.</div>');
+                '<div class="alert alert-warning mt-3">' + (semSuporte || 'This browser cannot play the video.') + '</div>');
             return;
         }
 

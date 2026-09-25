@@ -26,9 +26,9 @@ public static class SessionAuthentication
                 options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                 options.SlidingExpiration = true;
                 options.ExpireTimeSpan = TimeSpan.FromDays(30);
-                options.LoginPath = "/entrar";
-                options.LogoutPath = "/sair";
-                options.AccessDeniedPath = "/entrar";
+                options.LoginPath = "/sign-in";
+                options.LogoutPath = "/sign-out";
+                options.AccessDeniedPath = "/sign-in";
 
                 options.Events.OnValidatePrincipal = async contexto =>
                 {

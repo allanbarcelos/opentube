@@ -30,7 +30,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -40,12 +40,12 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = Admin });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = Admin });
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(Admin)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
     }
 
@@ -65,7 +65,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         arquivo.Headers.ContentType = new MediaTypeHeaderValue("text/vtt");
         formulario.Add(arquivo, "arquivo", "legenda.vtt");
 
-        return await cliente.PostAsync($"/admin/videos/{videoId}/legendas", formulario);
+        return await cliente.PostAsync($"/admin/videos/{videoId}/captions", formulario);
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
         Assert.Contains("legenda=1", resposta.Headers.Location!.ToString());
 
-        var pagina = await cliente.GetStringAsync($"/v/{video.Slug}");
+        var pagina = await cliente.GetStringAsync($"/watch/{video.Slug}");
 
         Assert.Contains("<track", pagina);
         Assert.Contains("srclang=\"pt-br\"", pagina);
@@ -104,7 +104,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
             legendaId = (await db.VideoAssets.SingleAsync()).Id;
 
         using var visitante = _app.CreateBrowser();
-        var resposta = await visitante.GetAsync($"/api/videos/{video.Id}/legendas/{legendaId}.vtt");
+        var resposta = await visitante.GetAsync($"/api/videos/{video.Id}/captions/{legendaId}.vtt");
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
         Assert.Equal("text/vtt", resposta.Content.Headers.ContentType!.MediaType);
@@ -129,7 +129,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         // O texto falado costuma revelar tanto quanto a imagem.
         Assert.Equal(HttpStatusCode.NotFound,
-            (await visitante.GetAsync($"/api/videos/{video.Id}/legendas/{legendaId}.vtt")).StatusCode);
+            (await visitante.GetAsync($"/api/videos/{video.Id}/captions/{legendaId}.vtt")).StatusCode);
     }
 
     [Fact]
@@ -164,7 +164,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
             legendaId = (await db.VideoAssets.SingleAsync()).Id;
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/legendas/{legendaId}/excluir",
+            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/captions/{legendaId}/delete",
             new Dictionary<string, string>());
 
         await using var leitura = postgres.CreateContext();
@@ -183,7 +183,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         await EntrarComoAdminAsync(cliente);
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/legendas/transcrever",
+            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/captions/transcribe",
             new Dictionary<string, string>());
 
         Assert.Contains("transcrevendo=1", resposta.Headers.Location!.ToString());
@@ -202,7 +202,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         await EntrarComoAdminAsync(cliente);
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/legendas/transcrever",
+            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/captions/transcribe",
             new Dictionary<string, string>());
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
@@ -222,7 +222,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         };
         formulario.Add(new ByteArrayContent(Encoding.UTF8.GetBytes(Vtt)), "arquivo", "legenda.vtt");
 
-        var resposta = await cliente.PostAsync($"/admin/videos/{video.Id}/legendas", formulario);
+        var resposta = await cliente.PostAsync($"/admin/videos/{video.Id}/captions", formulario);
 
         Assert.NotEqual(HttpStatusCode.OK, resposta.StatusCode);
 

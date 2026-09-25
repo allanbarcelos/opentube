@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OpenTube.Infrastructure.Analytics;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Shared.Analytics;
 using OpenTube.Web.Auth;
@@ -14,9 +15,9 @@ public static class ExportEndpoints
 {
     public static IEndpointRouteBuilder MapExportEndpoints(this IEndpointRouteBuilder rotas)
     {
-        var grupo = rotas.MapGroup("/admin/exportar").RequireAuthorization(Policies.Administrator);
+        var grupo = rotas.MapGroup("/admin/export").RequireAuthorization(Policies.Administrator);
 
-        grupo.MapGet("/videos/{videoId:guid}/espectadores.csv", async (
+        grupo.MapGet("/videos/{videoId:guid}/viewers.csv", async (
             Guid videoId,
             AnalyticsQueries consultas,
             OpenTubeDbContext db,
@@ -33,16 +34,16 @@ public static class ExportEndpoints
             var espectadores = await consultas.ViewersAsync(videoId, 5000, cancellationToken);
 
             var csv = CsvWriter.Build(
-                ["Pessoa", "Sessões", "Segundos assistidos", "Chegou ao fim", "Primeira vez", "Última vez", "Aparelho"],
+                [LocalText.Get("Person"), LocalText.Get("Sessions"), LocalText.Get("Seconds watched"), LocalText.Get("Reached the end"), LocalText.Get("First time"), LocalText.Get("Last time"), LocalText.Get("Device")],
                 espectadores.Select(e => new object?[]
                 {
                     e.DisplayName, e.Sessions, e.WatchSeconds, e.Completed, e.FirstAt, e.LastAt, e.Device
                 }));
 
-            return Arquivo(csv, $"espectadores-{Nome(titulo)}.csv");
+            return Arquivo(csv, $"viewers-{Nome(titulo)}.csv");
         });
 
-        grupo.MapGet("/pessoas/{userId:guid}/atividade.csv", async (
+        grupo.MapGet("/people/{userId:guid}/activity.csv", async (
             Guid userId,
             AnalyticsQueries consultas,
             OpenTubeDbContext db,
@@ -59,13 +60,13 @@ public static class ExportEndpoints
             var atividade = await consultas.ViewerTimelineAsync(userId, 5000, cancellationToken);
 
             var csv = CsvWriter.Build(
-                ["Vídeo", "Quando", "Segundos assistidos", "Duração", "Fração assistida", "Chegou ao fim", "Aparelho"],
+                [LocalText.Get("Video"), LocalText.Get("When"), LocalText.Get("Seconds watched"), LocalText.Get("Duration"), LocalText.Get("Fraction watched"), LocalText.Get("Reached the end"), LocalText.Get("Device")],
                 atividade.Select(a => new object?[]
                 {
                     a.Title, a.At, a.WatchSeconds, a.DurationSeconds, Math.Round(a.Coverage * 100, 1), a.Completed, a.Device
                 }));
 
-            return Arquivo(csv, $"atividade-{Nome(email)}.csv");
+            return Arquivo(csv, $"activity-{Nome(email)}.csv");
         });
 
         return rotas;
@@ -82,6 +83,6 @@ public static class ExportEndpoints
     {
         var limpo = OpenTube.Domain.ValueObjects.Slug.From(valor);
 
-        return limpo.Length == 0 ? "relatorio" : limpo;
+        return limpo.Length == 0 ? "report" : limpo;
     }
 }

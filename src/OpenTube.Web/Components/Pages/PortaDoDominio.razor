@@ -1,10 +1,10 @@
-@page "/d/{slug}"
+@page "/entry/{slug}"
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Domains
 @inject DomainService Dominios
 @inject NavigationManager Navegacao
 
-<PageTitle>Acesso — OpenTube</PageTitle>
+<PageTitle>@T["Access — OpenTube"]</PageTitle>
 
 <div class="container py-5">
     @if (Dominio is null)
@@ -17,10 +17,9 @@
             <div class="col-md-6 col-lg-5">
                 <div class="card shadow-sm">
                     <div class="card-body p-4">
-                        <h1 class="h4 mb-1">Acesso de @Dominio.Name</h1>
+                        <h1 class="h4 mb-1">@T.Format("Access for {0}", Dominio.Name)</h1>
                         <p class="text-body-secondary small">
-                            Informe o seu email <strong>@@@Dominio.Name</strong>. Enviamos um código de seis
-                            dígitos; não há senha nem cadastro.
+                            @T.Format("Enter your email at {0}. We send a six-digit code; there is no password and no sign-up.", "@" + Dominio.Name)
                         </p>
 
                         @if (!string.IsNullOrWhiteSpace(Erro))
@@ -31,49 +30,49 @@
                         @if (Enviado)
                         {
                             <div class="alert alert-success" role="status">
-                                Se este endereço tiver acesso, o código já está a caminho.
+                                @T["If this address has access, the code is on its way."]
                             </div>
 
-                            <form method="post" action="/entrar/verificar">
+                            <form method="post" action="/sign-in/verify">
                                 <AntiforgeryToken />
                                 <input type="hidden" name="email" value="@Email" />
 
                                 <div class="mb-3">
-                                    <label class="form-label" for="codigo">Código recebido</label>
+                                    <label class="form-label" for="codigo">@T["Code you received"]</label>
                                     <input class="form-control codigo-acesso" id="codigo" name="codigo"
                                            inputmode="numeric" autocomplete="one-time-code" maxlength="6"
                                            pattern="[0-9]{6}" required autofocus />
                                 </div>
 
-                                <button class="btn btn-primary w-100" type="submit">Entrar</button>
+                                <button class="btn btn-primary w-100" type="submit">@T["Sign in"]</button>
                             </form>
 
-                            <form method="post" action="/d/@Slug/codigo" class="mt-3 text-center">
+                            <form method="post" action="/entry/@Slug/code" class="mt-3 text-center">
                                 <AntiforgeryToken />
                                 <input type="hidden" name="email" value="@Email" />
-                                <button class="btn btn-link btn-sm" type="submit">Enviar outro código</button>
+                                <button class="btn btn-link btn-sm" type="submit">@T["Send another code"]</button>
                             </form>
                         }
                         else
                         {
-                            <form method="post" action="/d/@Slug/codigo">
+                            <form method="post" action="/entry/@Slug/code">
                                 <AntiforgeryToken />
 
                                 <div class="mb-3">
-                                    <label class="form-label" for="email">Seu email</label>
+                                    <label class="form-label" for="email">@T["Your email"]</label>
                                     <input class="form-control" id="email" name="email" type="email"
                                            value="@Email" autocomplete="email" required autofocus
                                            placeholder="nome@@@Dominio.Name" />
                                 </div>
 
-                                <button class="btn btn-primary w-100" type="submit">Receber código</button>
+                                <button class="btn btn-primary w-100" type="submit">@T["Get a code"]</button>
                             </form>
                         }
                     </div>
                 </div>
 
                 <p class="text-center text-body-secondary small mt-3 mb-0">
-                    Os acessos a esta plataforma são registrados.
+                    @T["Access to this platform is recorded."]
                 </p>
             </div>
         </div>

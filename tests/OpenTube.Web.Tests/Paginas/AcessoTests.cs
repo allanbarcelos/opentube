@@ -21,7 +21,7 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
 
         // Força a inicialização da aplicação, que promove os administradores configurados.
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -31,9 +31,9 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
     {
         using var cliente = _app.CreateBrowser();
 
-        var html = await cliente.GetStringAsync("/entrar");
+        var html = await cliente.GetStringAsync("/sign-in");
 
-        Assert.Contains("código de seis dígitos", html);
+        Assert.Contains("six-digit code", html);
         Assert.DoesNotContain("type=\"password\"", html);
     }
 
@@ -53,7 +53,7 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
         using var cliente = _app.CreateBrowser();
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = Admin });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = Admin });
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
         Assert.Contains("enviado=1", resposta.Headers.Location!.ToString());
@@ -66,7 +66,7 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
         using var cliente = _app.CreateBrowser();
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = "ninguem@exemplo.com" });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = "ninguem@exemplo.com" });
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
         Assert.Contains("enviado=1", resposta.Headers.Location!.ToString());
@@ -79,7 +79,7 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
         using var cliente = _app.CreateBrowser();
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = "nao-e-email" });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = "nao-e-email" });
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
         Assert.Empty(_app.Emails.Sent);
@@ -93,15 +93,15 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(Admin)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
         Assert.Equal("/admin", resposta.Headers.Location!.ToString());
 
         var home = await cliente.GetStringAsync("/");
-        Assert.Contains("Administração", home);
+        Assert.Contains("Administration", home);
         Assert.Contains(Admin, home);
     }
 
@@ -113,12 +113,12 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(Admin)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = "000000" });
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
-        Assert.DoesNotContain("Administração", await cliente.GetStringAsync("/"));
+        Assert.DoesNotContain("Administration", await cliente.GetStringAsync("/"));
     }
 
     [Fact]
@@ -127,11 +127,11 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
         using var cliente = _app.CreateBrowser();
         await PedirCodigoAsync(cliente, Admin);
 
-        var resposta = await cliente.GetAsync($"/entrar/{_app.Emails.LastToken()}");
+        var resposta = await cliente.GetAsync($"/sign-in/{_app.Emails.LastToken()}");
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
         Assert.Equal("/admin", resposta.Headers.Location!.ToString());
-        Assert.Contains("Administração", await cliente.GetStringAsync("/"));
+        Assert.Contains("Administration", await cliente.GetStringAsync("/"));
     }
 
     [Fact]
@@ -141,10 +141,10 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
         await PedirCodigoAsync(cliente, Admin);
         var token = _app.Emails.LastToken();
 
-        await cliente.GetAsync($"/entrar/{token}");
+        await cliente.GetAsync($"/sign-in/{token}");
 
         using var outro = _app.CreateBrowser();
-        var resposta = await outro.GetAsync($"/entrar/{token}");
+        var resposta = await outro.GetAsync($"/sign-in/{token}");
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
     }
@@ -155,13 +155,13 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
         using var cliente = _app.CreateBrowser();
         await EntrarAsync(cliente, Admin);
 
-        var resposta = await FormularioHelpers.EnviarFormularioAsync(cliente, "/", "/sair", new Dictionary<string, string>());
+        var resposta = await FormularioHelpers.EnviarFormularioAsync(cliente, "/", "/sign-out", new Dictionary<string, string>());
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
 
         var home = await cliente.GetStringAsync("/");
-        Assert.DoesNotContain("Administração", home);
-        Assert.Contains("Entrar", home);
+        Assert.DoesNotContain("Administration", home);
+        Assert.Contains("Sign in", home);
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
         }
 
         // O cookie continua no navegador, mas a sessão não existe mais: o acesso cai na hora.
-        Assert.DoesNotContain("Administração", await cliente.GetStringAsync("/"));
+        Assert.DoesNotContain("Administration", await cliente.GetStringAsync("/"));
     }
 
     [Fact]
@@ -186,7 +186,7 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
     {
         using var cliente = _app.CreateBrowser();
 
-        var resposta = await cliente.PostAsync("/entrar/codigo",
+        var resposta = await cliente.PostAsync("/sign-in/code",
             new FormUrlEncodedContent(new Dictionary<string, string> { ["email"] = Admin }));
 
         Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
@@ -198,7 +198,7 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = email });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = email });
     }
 
     internal async Task EntrarAsync(HttpClient cliente, string email)
@@ -207,8 +207,8 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(email)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(email)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = email, ["codigo"] = _app.Emails.LastCode() });
     }
 }

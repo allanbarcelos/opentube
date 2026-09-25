@@ -23,7 +23,7 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -33,12 +33,12 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = email });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = email });
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(email)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(email)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = email, ["codigo"] = _app.Emails.LastCode() });
     }
 
@@ -58,7 +58,7 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         var resposta = await cliente.GetAsync("/admin");
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
-        Assert.Contains("/entrar", resposta.Headers.Location!.ToString());
+        Assert.Contains("/sign-in", resposta.Headers.Location!.ToString());
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         using var cliente = _app.CreateBrowser();
         await EntrarAsync(cliente, Convidado);
 
-        var resposta = await cliente.PostAsJsonAsync("/api/admin/envios/iniciar", new
+        var resposta = await cliente.PostAsJsonAsync("/api/admin/uploads/start", new
         {
             titulo = "Invasão",
             arquivo = "a.mp4",
@@ -103,8 +103,8 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         var html = await cliente.GetStringAsync("/admin");
 
         Assert.Contains("Plano Confidencial", html);
-        Assert.Contains("Vídeos no acervo", html);
-        Assert.Contains("Enviar vídeo", html);
+        Assert.Contains("Videos in the library", html);
+        Assert.Contains("Upload video", html);
     }
 
     [Fact]
@@ -113,10 +113,10 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         using var cliente = _app.CreateBrowser();
         await EntrarAsync(cliente, Admin);
 
-        var token = await FormularioHelpers.TokenAntifalsificacaoAsync(cliente, "/admin/enviar");
+        var token = await FormularioHelpers.TokenAntifalsificacaoAsync(cliente, "/admin/upload");
         cliente.DefaultRequestHeaders.Add("RequestVerificationToken", token);
 
-        var bilhete = await (await cliente.PostAsJsonAsync("/api/admin/envios/iniciar", new
+        var bilhete = await (await cliente.PostAsJsonAsync("/api/admin/uploads/start", new
         {
             titulo = "Reunião Trimestral",
             descricao = "Resultados do trimestre",
@@ -136,7 +136,7 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         var envio = await direto.PutAsync(bilhete.Partes[0].Url, new ByteArrayContent(dados));
         envio.EnsureSuccessStatusCode();
 
-        var conclusao = await cliente.PostAsJsonAsync($"/api/admin/envios/{bilhete.VideoId}/concluir", new
+        var conclusao = await cliente.PostAsJsonAsync($"/api/admin/uploads/{bilhete.VideoId}/complete", new
         {
             uploadId = bilhete.UploadId,
             partes = new[] { new { numero = 1, eTag = envio.Headers.ETag!.Tag } }
@@ -165,7 +165,7 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         using var cliente = _app.CreateBrowser();
         await EntrarAsync(cliente, Admin);
 
-        var resposta = await cliente.PostAsJsonAsync("/api/admin/envios/iniciar", new
+        var resposta = await cliente.PostAsJsonAsync("/api/admin/uploads/start", new
         {
             titulo = "Sem credencial",
             arquivo = "a.mp4",
@@ -182,10 +182,10 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         using var cliente = _app.CreateBrowser();
         await EntrarAsync(cliente, Admin);
 
-        var token = await FormularioHelpers.TokenAntifalsificacaoAsync(cliente, "/admin/enviar");
+        var token = await FormularioHelpers.TokenAntifalsificacaoAsync(cliente, "/admin/upload");
         cliente.DefaultRequestHeaders.Add("RequestVerificationToken", token);
 
-        var resposta = await cliente.PostAsJsonAsync("/api/admin/envios/iniciar", new
+        var resposta = await cliente.PostAsJsonAsync("/api/admin/uploads/start", new
         {
             titulo = "Planilha",
             arquivo = "orcamento.xlsx",
@@ -211,7 +211,7 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
             cliente,
             $"/admin/videos/{video.Id}",
-            $"/admin/videos/{video.Id}/salvar",
+            $"/admin/videos/{video.Id}/save",
             new Dictionary<string, string>
             {
                 ["titulo"] = "Reunião Trimestral",
@@ -240,7 +240,7 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         await EntrarAsync(cliente, Admin);
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/excluir", new Dictionary<string, string>());
+            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/delete", new Dictionary<string, string>());
 
         using var visitante = _app.CreateBrowser();
 
@@ -258,10 +258,10 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         await EntrarAsync(cliente, Admin);
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/excluir", new Dictionary<string, string>());
+            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/delete", new Dictionary<string, string>());
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/restaurar", new Dictionary<string, string>());
+            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/restore", new Dictionary<string, string>());
 
         await using var db = postgres.CreateContext();
         var restaurado = await db.Videos.SingleAsync(v => v.Id == video.Id);
@@ -280,7 +280,7 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         await EntrarAsync(cliente, Admin);
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/reprocessar", new Dictionary<string, string>());
+            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/reprocess", new Dictionary<string, string>());
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
     }
@@ -296,10 +296,10 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
 
         var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}");
 
-        Assert.Contains("Privado", html);
-        Assert.Contains("Público", html);
-        Assert.Contains("Restrito", html);
-        Assert.Contains("Reprocessar a partir do original", html);
+        Assert.Contains("Private", html);
+        Assert.Contains("Public", html);
+        Assert.Contains("Restricted", html);
+        Assert.Contains("Reprocess from the original", html);
     }
 
     private sealed record ParteResposta(int Numero, string Url);

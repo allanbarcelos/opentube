@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Domain.ValueObjects;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Queue;
@@ -67,10 +68,11 @@ public class VideoUploadService(
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(fileSizeBytes, 0);
 
         if (fileSizeBytes > _options.MaxUploadBytes)
-            throw new InvalidOperationException($"O arquivo excede o limite de {_options.MaxUploadBytes / (1024L * 1024 * 1024)} GiB.");
+            throw new InvalidOperationException(LocalText.Format(
+                "The file exceeds the limit of {0} GiB.", _options.MaxUploadBytes / (1024L * 1024 * 1024)));
 
         if (!MediaTypes.LooksLikeVideo(fileName, contentType))
-            throw new InvalidOperationException("O arquivo não parece ser um vídeo.");
+            throw new InvalidOperationException("The file does not look like a video.");
 
         var slug = await GerarSlugUnicoAsync(title, cancellationToken);
         var videoId = Guid.CreateVersion7();
@@ -149,10 +151,10 @@ public class VideoUploadService(
     private async Task<Video> CarregarRascunhoAsync(Guid videoId, CancellationToken cancellationToken)
     {
         var video = await db.Videos.FirstOrDefaultAsync(v => v.Id == videoId, cancellationToken)
-            ?? throw new InvalidOperationException($"Vídeo {videoId} não encontrado.");
+            ?? throw new InvalidOperationException(LocalText.Format("Video {0} was not found.", videoId));
 
         if (video.Status is not VideoStatus.Draft)
-            throw new InvalidOperationException($"O vídeo {videoId} não está mais em rascunho.");
+            throw new InvalidOperationException(LocalText.Format("Video {0} is no longer a draft.", videoId));
 
         return video;
     }

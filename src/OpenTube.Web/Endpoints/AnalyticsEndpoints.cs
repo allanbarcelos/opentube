@@ -51,9 +51,9 @@ public static class AnalyticsEndpoints
 
     public static IEndpointRouteBuilder MapAnalyticsEndpoints(this IEndpointRouteBuilder rotas)
     {
-        var grupo = rotas.MapGroup("/api/reproducao").RequireRateLimiting(PoliticaDeLimite);
+        var grupo = rotas.MapGroup("/api/playback").RequireRateLimiting(PoliticaDeLimite);
 
-        grupo.MapPost("/iniciar", async (
+        grupo.MapPost("/start", async (
             [FromBody] AbrirSessao pedido,
             AnalyticsCollector coletor,
             PlaybackService playback,
@@ -84,7 +84,7 @@ public static class AnalyticsEndpoints
             return Results.Ok(new { sessaoId = sessao.Id });
         });
 
-        grupo.MapPost("/{sessionId:guid}/eventos", async (
+        grupo.MapPost("/{sessionId:guid}/events", async (
             Guid sessionId,
             [FromBody] PlaybackBatch lote,
             AnalyticsCollector coletor,
@@ -104,7 +104,7 @@ public static class AnalyticsEndpoints
             return aceito ? Results.NoContent() : Results.NotFound();
         });
 
-        grupo.MapPost("/{sessionId:guid}/encerrar", async (
+        grupo.MapPost("/{sessionId:guid}/close", async (
             Guid sessionId,
             AnalyticsCollector coletor,
             CurrentViewer espectadores,

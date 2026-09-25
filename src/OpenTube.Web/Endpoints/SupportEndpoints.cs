@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Support;
 using OpenTube.Web.Auth;
 
@@ -12,9 +13,9 @@ public static class SupportEndpoints
 {
     public static IEndpointRouteBuilder MapSupportEndpoints(this IEndpointRouteBuilder rotas)
     {
-        var grupo = rotas.MapGroup("/suporte").RequireAuthorization();
+        var grupo = rotas.MapGroup("/support").RequireAuthorization();
 
-        grupo.MapPost("/abrir", async (
+        grupo.MapPost("/open", async (
             [FromForm] Guid videoId,
             [FromForm] string mensagem,
             [FromForm] string destino,
@@ -33,11 +34,11 @@ public static class SupportEndpoints
             }
             catch (Exception e) when (e is ArgumentException or InvalidOperationException)
             {
-                return Results.Redirect(Voltar(destino, "erro=" + Uri.EscapeDataString(e.Message)));
+                return Results.Redirect(Voltar(destino, "erro=" + Uri.EscapeDataString(LocalText.Get(e.Message))));
             }
         });
 
-        grupo.MapPost("/{threadId:guid}/responder", async (
+        grupo.MapPost("/{threadId:guid}/reply", async (
             Guid threadId,
             [FromForm] string mensagem,
             [FromForm] string destino,
@@ -55,13 +56,13 @@ public static class SupportEndpoints
             }
             catch (Exception e) when (e is ArgumentException or InvalidOperationException)
             {
-                return Results.Redirect(Voltar(destino, "erro=" + Uri.EscapeDataString(e.Message)));
+                return Results.Redirect(Voltar(destino, "erro=" + Uri.EscapeDataString(LocalText.Get(e.Message))));
             }
         });
 
-        var administracao = rotas.MapGroup("/admin/suporte").RequireAuthorization(Policies.Administrator);
+        var administracao = rotas.MapGroup("/admin/support").RequireAuthorization(Policies.Administrator);
 
-        administracao.MapPost("/{threadId:guid}/encerrar", async (
+        administracao.MapPost("/{threadId:guid}/close", async (
             Guid threadId,
             SupportService suporte,
             CurrentViewer espectadores,
@@ -69,10 +70,10 @@ public static class SupportEndpoints
         {
             await suporte.CloseAsync(threadId, await espectadores.GetAsync(cancellationToken), cancellationToken);
 
-            return Results.Redirect($"/admin/suporte/{threadId}?encerrada=1");
+            return Results.Redirect($"/admin/support/{threadId}?encerrada=1");
         });
 
-        administracao.MapPost("/{threadId:guid}/reabrir", async (
+        administracao.MapPost("/{threadId:guid}/reopen", async (
             Guid threadId,
             SupportService suporte,
             CurrentViewer espectadores,
@@ -80,7 +81,7 @@ public static class SupportEndpoints
         {
             await suporte.ReopenAsync(threadId, await espectadores.GetAsync(cancellationToken), cancellationToken);
 
-            return Results.Redirect($"/admin/suporte/{threadId}?reaberta=1");
+            return Results.Redirect($"/admin/support/{threadId}?reaberta=1");
         });
 
         return rotas;

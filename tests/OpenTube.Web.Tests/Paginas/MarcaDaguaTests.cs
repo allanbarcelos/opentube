@@ -21,7 +21,7 @@ public class MarcaDaguaTests(PostgresFixture postgres, MinioFixture minio) : IAs
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -31,12 +31,12 @@ public class MarcaDaguaTests(PostgresFixture postgres, MinioFixture minio) : IAs
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = email });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = email });
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(email)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(email)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = email, ["codigo"] = _app.Emails.LastCode() });
     }
 
@@ -49,7 +49,7 @@ public class MarcaDaguaTests(PostgresFixture postgres, MinioFixture minio) : IAs
         using var cliente = _app.CreateBrowser();
         await EntrarAsync(cliente, Admin);
 
-        var html = await cliente.GetStringAsync($"/v/{video.Slug}");
+        var html = await cliente.GetStringAsync($"/watch/{video.Slug}");
 
         Assert.Contains("marca-dagua", html);
         Assert.Contains($">{Admin}</span>", html);
@@ -63,7 +63,7 @@ public class MarcaDaguaTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var html = await cliente.GetStringAsync($"/v/{video.Slug}");
+        var html = await cliente.GetStringAsync($"/watch/{video.Slug}");
 
         // Sem identidade não há o que marcar; um rótulo genérico só atrapalharia a leitura.
         Assert.DoesNotContain("id=\"marca-dagua\"", html);

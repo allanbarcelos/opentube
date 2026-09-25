@@ -22,7 +22,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -32,12 +32,12 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = Admin });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = Admin });
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(Admin)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
     }
 
@@ -53,7 +53,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
         Assert.Equal("application/vnd.apple.mpegurl", resposta.Content.Headers.ContentType!.MediaType);
-        Assert.Contains($"/api/videos/{video.Id}/versoes/360p.m3u8", conteudo);
+        Assert.Contains($"/api/videos/{video.Id}/renditions/360p.m3u8", conteudo);
         // O endereço interno do storage não pode aparecer na playlist principal.
         Assert.DoesNotContain("X-Amz-Signature", conteudo);
     }
@@ -65,7 +65,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var conteudo = await cliente.GetStringAsync($"/api/videos/{video.Id}/versoes/360p.m3u8");
+        var conteudo = await cliente.GetStringAsync($"/api/videos/{video.Id}/renditions/360p.m3u8");
 
         Assert.Contains("X-Amz-Signature", conteudo);
         Assert.Contains("seg-00000.m4s?", conteudo);
@@ -81,8 +81,8 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         using var cliente = _app.CreateBrowser();
 
         Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/versoes/360p.m3u8")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/miniatura")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/renditions/360p.m3u8")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/thumbnail")).StatusCode);
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         using var cliente = _app.CreateBrowser();
 
         // Copiar o endereço da versão é o atalho mais óbvio; ele precisa ser barrado igual.
-        var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/versoes/360p.m3u8");
+        var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/renditions/360p.m3u8");
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
     }
@@ -123,7 +123,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         await EntrarComoAdminAsync(cliente);
         Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8")).StatusCode);
 
-        await FormularioHelpers.EnviarFormularioAsync(cliente, "/", "/sair", new Dictionary<string, string>());
+        await FormularioHelpers.EnviarFormularioAsync(cliente, "/", "/sign-out", new Dictionary<string, string>());
 
         Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8")).StatusCode);
     }
@@ -135,7 +135,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/miniatura");
+        var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/thumbnail");
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
         Assert.Contains("X-Amz-Signature", resposta.Headers.Location!.ToString());
@@ -158,7 +158,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/versoes/4320p.m3u8");
+        var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/renditions/4320p.m3u8");
 
         Assert.False(resposta.IsSuccessStatusCode);
     }

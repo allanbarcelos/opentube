@@ -73,7 +73,7 @@ public class CollectionService(OpenTubeDbContext db, TimeProvider clock, ILogger
         var colecao = await CarregarAsync(collectionId, cancellationToken);
 
         if (!await db.Videos.AnyAsync(v => v.Id == videoId && v.DeletedAt == null, cancellationToken))
-            throw new InvalidOperationException("Vídeo não encontrado.");
+            throw new InvalidOperationException("Video not found");
 
         colecao.Add(videoId);
         await db.SaveChangesAsync(cancellationToken);
@@ -172,7 +172,7 @@ public class CollectionService(OpenTubeDbContext db, TimeProvider clock, ILogger
 
     private async Task<Collection> CarregarAsync(Guid collectionId, CancellationToken cancellationToken) =>
         await db.Collections.Include(c => c.Videos).FirstOrDefaultAsync(c => c.Id == collectionId, cancellationToken)
-        ?? throw new InvalidOperationException("Coleção não encontrada.");
+        ?? throw new InvalidOperationException("Collection not found.");
 
     private async Task<string> GerarEnderecoAsync(string name, CancellationToken cancellationToken)
     {

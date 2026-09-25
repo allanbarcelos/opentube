@@ -84,7 +84,7 @@ cookie de 30 dias, renovável e revogável de imediato pelo administrador.
 
 1. O administrador cadastra `barcelos.dev` e recebe um token de verificação.
 2. O responsável pelo domínio publica `TXT _opentube-verify.barcelos.dev = <token>`.
-3. Verificado o registro, o sistema libera a porta de entrada `/d/barcelos.dev`.
+3. Verificado o registro, o sistema libera a porta de entrada `/entry/barcelos.dev`.
 4. Quem chega nessa página informa um email do domínio e recebe o código por email.
 
 A verificação por DNS existe para impedir que alguém cadastre um domínio que não controla. O envio
@@ -223,6 +223,10 @@ tests/
 
 Não há usuário de banco, senha nem chave no repositório. Na primeira vez o `make` gera o
 `.env` (modo 600) e nas seguintes reutiliza o arquivo. Não existe o alvo `make dev`.
+
+A interface é em inglês, português e francês. O inglês é a base: é o que aparece quando o
+navegador não pede outro idioma e quando falta uma tradução. O menu troca o idioma e guarda
+a escolha num cookie.
 
 | Comando | O que sobe | Ambiente | Código |
 | --- | --- | --- | --- |

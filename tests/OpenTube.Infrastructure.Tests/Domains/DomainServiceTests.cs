@@ -182,7 +182,7 @@ public class DomainServiceTests(PostgresFixture postgres) : IAsyncLifetime
 
         Assert.Null(await servico.FindOpenEntryAsync("barcelos.dev"));
         Assert.NotNull(await servico.FindOpenEntryAsync("x7k2-privado"));
-        Assert.Equal("https://opentube.org/d/x7k2-privado", servico.EntryUrl((await servico.FindAsync(dominio.Id))!));
+        Assert.Equal("https://opentube.org/entry/x7k2-privado", servico.EntryUrl((await servico.FindAsync(dominio.Id))!));
     }
 
     [Fact]
@@ -314,8 +314,8 @@ public class DomainServiceTests(PostgresFixture postgres) : IAsyncLifetime
 
         var mensagem = _emails.Last!;
         Assert.Equal("ti@barcelos.dev", mensagem.To);
-        Assert.Contains("https://opentube.org/d/barcelos.dev", mensagem.TextBody);
-        Assert.Contains("recebe um código", mensagem.TextBody);
+        Assert.Contains("https://opentube.org/entry/barcelos.dev", mensagem.TextBody);
+        Assert.Contains("receives an access code", mensagem.TextBody);
     }
 
     [Fact]

@@ -6,6 +6,7 @@ using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Access;
 using OpenTube.Infrastructure.Email;
+using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
 
@@ -46,13 +47,13 @@ public class SupportService(
         ArgumentNullException.ThrowIfNull(viewer);
 
         if (viewer.UserId is not { } userId)
-            throw new InvalidOperationException("É preciso entrar para abrir uma conversa.");
+            throw new InvalidOperationException("Sign in to start a conversation.");
 
         var video = await db.Videos.FirstOrDefaultAsync(v => v.Id == videoId, cancellationToken)
-            ?? throw new InvalidOperationException("Vídeo não encontrado.");
+            ?? throw new InvalidOperationException("Video not found");
 
         if (!(await acesso.EvaluateAsync(viewer, video, cancellationToken)).Allowed)
-            throw new InvalidOperationException("Vídeo não encontrado.");
+            throw new InvalidOperationException("Video not found");
 
         var conversa = SupportThread.Open(videoId, userId, message, clock.GetUtcNow(), timestampSeconds);
 
@@ -78,7 +79,7 @@ public class SupportService(
         var conversa = await CarregarAsync(threadId, viewer, cancellationToken);
 
         if (viewer.UserId is not { } authorId)
-            throw new InvalidOperationException("É preciso entrar para responder.");
+            throw new InvalidOperationException("Sign in to reply.");
 
         var mensagem = conversa.Reply(authorId, message, viewer.IsAdmin, clock.GetUtcNow());
 
@@ -196,9 +197,9 @@ public class SupportService(
 
         return [.. conversas.Select(t => new SupportThreadView(
             t,
-            videos.TryGetValue(t.VideoId, out var video) ? video.Title : "Vídeo removido",
+            videos.TryGetValue(t.VideoId, out var video) ? video.Title : LocalText.Get("Removed video"),
             videos.TryGetValue(t.VideoId, out var endereco) ? endereco.Slug : string.Empty,
-            usuarios.TryGetValue(t.UserId, out var usuario) ? usuario.Email : "desconhecido"))];
+            usuarios.TryGetValue(t.UserId, out var usuario) ? usuario.Email : LocalText.Get("unknown")))];
     }
 
     /// <summary>Quantas conversas aguardam resposta.</summary>
@@ -216,7 +217,7 @@ public class SupportService(
         // Conversa inexistente e conversa alheia respondem igual: a diferença já diria que
         // ela existe.
         if (conversa is null || !conversa.IsVisibleTo(viewer.UserId, viewer.IsAdmin))
-            throw new InvalidOperationException("Conversa não encontrada.");
+            throw new InvalidOperationException("Conversation not found.");
 
         return conversa;
     }
@@ -232,12 +233,12 @@ public class SupportService(
             .Select(u => u.Email)
             .ToListAsync(cancellationToken);
 
-        var endereco = $"{_options.PublicUrl.TrimEnd('/')}/admin/suporte/{conversa.Id}";
+        var endereco = $"{_options.PublicUrl.TrimEnd('/')}/admin/support/{conversa.Id}";
 
         foreach (var destinatario in administradores)
         {
             await email.SendAsync(EmailTemplates.SupportForAdmin(
-                destinatario, autor, videoTitle ?? "um vídeo", mensagem, endereco), cancellationToken);
+                destinatario, autor, videoTitle ?? LocalText.Get("A video"), mensagem, endereco), cancellationToken);
         }
     }
 
@@ -257,9 +258,9 @@ public class SupportService(
             .Select(v => v.Slug)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var endereco = $"{_options.PublicUrl.TrimEnd('/')}/v/{video}";
+        var endereco = $"{_options.PublicUrl.TrimEnd('/')}/watch/{video}";
 
         await email.SendAsync(EmailTemplates.SupportForUser(
-            destinatario, videoTitle ?? "um vídeo", mensagem, endereco), cancellationToken);
+            destinatario, videoTitle ?? LocalText.Get("A video"), mensagem, endereco), cancellationToken);
     }
 }

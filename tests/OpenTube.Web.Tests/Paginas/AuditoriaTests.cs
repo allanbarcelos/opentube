@@ -24,7 +24,7 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -34,12 +34,12 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = Admin });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = Admin });
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(Admin)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
     }
 
@@ -53,7 +53,7 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         await EntrarComoAdminAsync(cliente);
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/salvar",
+            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/save",
             new Dictionary<string, string>
             {
                 ["titulo"] = "Plano Confidencial",
@@ -80,7 +80,7 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         await EntrarComoAdminAsync(cliente);
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", "/admin/acessos/convidar",
+            cliente, $"/admin/videos/{video.Id}", "/admin/access/invite",
             new Dictionary<string, string>
             {
                 ["alvoTipo"] = ((int)GrantTargetType.Video).ToString(),
@@ -94,7 +94,7 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         var registro = await db.AuditEntries.SingleAsync(e => e.Action == AuditActions.AcessoConcedido);
 
         Assert.Contains("convidado@empresa.com", registro.Summary);
-        Assert.Contains("30 dias", registro.Summary);
+        Assert.Contains("30 days from the first visit", registro.Summary);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         await EntrarComoAdminAsync(cliente);
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", "/admin/acessos/convidar",
+            cliente, $"/admin/videos/{video.Id}", "/admin/access/invite",
             new Dictionary<string, string>
             {
                 ["alvoTipo"] = ((int)GrantTargetType.Video).ToString(),
@@ -122,7 +122,7 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
             concessaoId = (await db.AccessGrants.SingleAsync()).Id;
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/acessos/{concessaoId}/revogar",
+            cliente, $"/admin/videos/{video.Id}", $"/admin/access/{concessaoId}/revoke",
             new Dictionary<string, string>
             {
                 ["alvoTipo"] = ((int)GrantTargetType.Video).ToString(),
@@ -140,7 +140,7 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         await EntrarComoAdminAsync(cliente);
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/admin/dominios", "/admin/dominios/cadastrar",
+            cliente, "/admin/domains", "/admin/domains/register",
             new Dictionary<string, string> { ["dominio"] = "barcelos.dev", ["responsavel"] = "", ["nota"] = "" });
 
         var id = Guid.Parse(resposta.Headers.Location!.ToString().Split('/')[^1].Split('?')[0]);
@@ -152,7 +152,7 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         }
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/verificar", new Dictionary<string, string>());
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
 
         await using var leitura = postgres.CreateContext();
 
@@ -167,13 +167,13 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         await EntrarComoAdminAsync(cliente);
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/admin/dominios", "/admin/dominios/cadastrar",
+            cliente, "/admin/domains", "/admin/domains/register",
             new Dictionary<string, string> { ["dominio"] = "barcelos.dev", ["responsavel"] = "", ["nota"] = "" });
 
         var id = Guid.Parse(resposta.Headers.Location!.ToString().Split('/')[^1].Split('?')[0]);
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/dominios/{id}", $"/admin/dominios/{id}/verificar", new Dictionary<string, string>());
+            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
 
         await using var leitura = postgres.CreateContext();
         Assert.False(await leitura.AuditEntries.AnyAsync(e => e.Action == AuditActions.DominioVerificado));
@@ -189,12 +189,12 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         await EntrarComoAdminAsync(cliente);
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/excluir", new Dictionary<string, string>());
+            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/delete", new Dictionary<string, string>());
 
-        Assert.Contains("Vídeo excluído", await cliente.GetStringAsync("/admin/auditoria"));
-        Assert.Contains("Vídeo excluído", await cliente.GetStringAsync("/admin/auditoria?tipo=video"));
-        Assert.Contains("Nenhuma ação registrada", await cliente.GetStringAsync("/admin/auditoria?tipo=dominio"));
-        Assert.Contains("Nenhuma ação registrada", await cliente.GetStringAsync("/admin/auditoria?quem=outra@pessoa.com"));
+        Assert.Contains("Video deleted.", await cliente.GetStringAsync("/admin/audit"));
+        Assert.Contains("Video deleted.", await cliente.GetStringAsync("/admin/audit?type=video"));
+        Assert.Contains("No actions recorded", await cliente.GetStringAsync("/admin/audit?type=domain"));
+        Assert.Contains("No actions recorded", await cliente.GetStringAsync("/admin/audit?who=outra@pessoa.com"));
     }
 
     [Fact]
@@ -202,9 +202,9 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
     {
         using var cliente = _app.CreateBrowser();
 
-        var resposta = await cliente.GetAsync("/admin/auditoria");
+        var resposta = await cliente.GetAsync("/admin/audit");
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
-        Assert.Contains("/entrar", resposta.Headers.Location!.ToString());
+        Assert.Contains("/sign-in", resposta.Headers.Location!.ToString());
     }
 }

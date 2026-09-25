@@ -5,13 +5,13 @@
 
 @if (Pontos.Count == 0)
 {
-    <p class="text-body-secondary mb-0">Sem movimento no período.</p>
+    <p class="text-body-secondary mb-0">@T["No movement in this period."]</p>
 }
 else
 {
     <figure class="mb-0">
         <svg class="grafico" viewBox="0 0 @Largura @Altura" role="img"
-             aria-label="Visualizações por dia: @Total no total">
+             aria-label="@T.Format("Views per day: {0} in total", Total)">
             @foreach (var marca in new[] { 0, Maior })
             {
                 var y = EixoY(marca);
@@ -32,7 +32,7 @@ else
                       width="@Passo.ToString("0.##", Invariante)"
                       height="@altura.ToString("0.##", Invariante)"
                       rx="2">
-                    <title>@ponto.Day.ToString("dd/MM"): @ponto.Views visualizações</title>
+                    <title>@T.Format("{0}: {1} views", ponto.Day.ToString("d"), ponto.Views)</title>
                 </rect>
             }
 

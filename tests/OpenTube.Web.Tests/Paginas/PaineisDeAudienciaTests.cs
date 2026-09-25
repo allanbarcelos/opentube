@@ -23,7 +23,7 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
@@ -33,18 +33,18 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = Admin });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = Admin });
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(Admin)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
     }
 
     private async Task<Guid> AssistirAsync(HttpClient cliente, Guid videoId, double ate, bool concluiu = false)
     {
-        var abertura = await cliente.PostAsJsonAsync("/api/reproducao/iniciar", new { videoId });
+        var abertura = await cliente.PostAsJsonAsync("/api/playback/start", new { videoId });
         abertura.EnsureSuccessStatusCode();
 
         var sessao = (await abertura.Content.ReadFromJsonAsync<SessaoResposta>())!.SessaoId;
@@ -53,7 +53,7 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         if (concluiu)
             eventos.Add(new { tipo = "ended", em = ate, de = (double?)null, ate = (double?)null });
 
-        await cliente.PostAsJsonAsync($"/api/reproducao/{sessao}/eventos", new { eventos });
+        await cliente.PostAsJsonAsync($"/api/playback/{sessao}/events", new { eventos });
 
         return sessao;
     }
@@ -76,12 +76,12 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
 
-        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?aba=audiencia");
+        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=audience");
 
-        Assert.Contains("Visualizações", html);
-        Assert.Contains("Pessoas distintas", html);
-        Assert.Contains("Chegaram ao fim", html);
-        Assert.Contains("Visitante não identificado", html);
+        Assert.Contains("Views", html);
+        Assert.Contains("Distinct people", html);
+        Assert.Contains("Reached the end", html);
+        Assert.Contains("Unidentified visitor", html);
     }
 
     [Fact]
@@ -97,13 +97,13 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
 
-        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?aba=audiencia");
+        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=audience");
 
-        Assert.Contains("Onde o público abandona", html);
+        Assert.Contains("Where the audience drops off", html);
         Assert.Contains("data-grafico-retencao", html);
         Assert.Contains("grafico-linha", html);
         // A tabela ao lado do gráfico é o que torna o dado legível sem depender da cor.
-        Assert.Contains("Ver os números", html);
+        Assert.Contains("See the numbers", html);
     }
 
     [Fact]
@@ -115,10 +115,10 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
 
-        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?aba=audiencia");
+        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=audience");
 
-        Assert.Contains("Ainda não há audiência suficiente", html);
-        Assert.Contains("Ninguém assistiu a este vídeo ainda", html);
+        Assert.Contains("Not enough audience yet", html);
+        Assert.Contains("Nobody has watched this video yet", html);
     }
 
     [Fact]
@@ -137,10 +137,10 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
 
-        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?aba=audiencia");
+        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=audience");
 
-        Assert.Contains("Do convite ao fim do vídeo", html);
-        Assert.Contains("Ainda não assistiram", html);
+        Assert.Contains("From the invite to the end of the video", html);
+        Assert.Contains("Have not watched yet", html);
         Assert.Contains("pendente@barcelos.dev", html);
     }
 
@@ -150,10 +150,10 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
 
-        var html = await cliente.GetStringAsync("/admin/pessoas");
+        var html = await cliente.GetStringAsync("/admin/people");
 
         Assert.Contains(Admin, html);
-        Assert.Contains("Administrador", html);
+        Assert.Contains("Administrator", html);
     }
 
     [Fact]
@@ -162,8 +162,8 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
 
-        Assert.Contains(Admin, await cliente.GetStringAsync("/admin/pessoas?q=barcelos"));
-        Assert.Contains("Nenhuma pessoa corresponde", await cliente.GetStringAsync("/admin/pessoas?q=ninguem"));
+        Assert.Contains(Admin, await cliente.GetStringAsync("/admin/people?q=barcelos"));
+        Assert.Contains("No one matches", await cliente.GetStringAsync("/admin/people?q=ninguem"));
     }
 
     [Fact]
@@ -180,10 +180,10 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         await using (var db = postgres.CreateContext())
             usuarioId = (await db.Users.SingleAsync(u => u.Email == Admin)).Id;
 
-        var html = await cliente.GetStringAsync($"/admin/pessoas/{usuarioId}");
+        var html = await cliente.GetStringAsync($"/admin/people/{usuarioId}");
 
         Assert.Contains("Boas-vindas", html);
-        Assert.Contains("até o fim", html);
+        Assert.Contains("to the end", html);
     }
 
     [Fact]
@@ -192,7 +192,7 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
 
-        var resposta = await cliente.GetAsync($"/admin/pessoas/{Guid.CreateVersion7()}");
+        var resposta = await cliente.GetAsync($"/admin/people/{Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
     }
@@ -209,14 +209,14 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
 
-        var resposta = await cliente.GetAsync($"/admin/exportar/videos/{video.Id}/espectadores.csv");
+        var resposta = await cliente.GetAsync($"/admin/export/videos/{video.Id}/viewers.csv");
         var csv = await resposta.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
         Assert.Equal("text/csv", resposta.Content.Headers.ContentType!.MediaType);
         Assert.Contains("reuniao-trimestral", resposta.Content.Headers.ContentDisposition!.FileNameStar);
-        Assert.Contains("Pessoa;Sessões", csv);
-        Assert.Contains("sim", csv);
+        Assert.Contains("Person;Sessions", csv);
+        Assert.Contains("yes", csv);
     }
 
     [Fact]
@@ -233,7 +233,7 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         await using (var db = postgres.CreateContext())
             usuarioId = (await db.Users.SingleAsync(u => u.Email == Admin)).Id;
 
-        var resposta = await cliente.GetAsync($"/admin/exportar/pessoas/{usuarioId}/atividade.csv");
+        var resposta = await cliente.GetAsync($"/admin/export/people/{usuarioId}/activity.csv");
         var csv = await resposta.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
@@ -247,10 +247,10 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var resposta = await cliente.GetAsync($"/admin/exportar/videos/{video.Id}/espectadores.csv");
+        var resposta = await cliente.GetAsync($"/admin/export/videos/{video.Id}/viewers.csv");
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
-        Assert.Contains("/entrar", resposta.Headers.Location!.ToString());
+        Assert.Contains("/sign-in", resposta.Headers.Location!.ToString());
     }
 
     [Fact]
@@ -259,7 +259,7 @@ public class PaineisDeAudienciaTests(PostgresFixture postgres, MinioFixture mini
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
 
-        var resposta = await cliente.GetAsync($"/admin/exportar/videos/{Guid.CreateVersion7()}/espectadores.csv");
+        var resposta = await cliente.GetAsync($"/admin/export/videos/{Guid.CreateVersion7()}/viewers.csv");
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
     }

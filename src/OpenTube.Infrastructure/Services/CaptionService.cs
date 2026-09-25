@@ -48,16 +48,16 @@ public class CaptionService(
         ArgumentException.ThrowIfNullOrWhiteSpace(language);
 
         if (string.IsNullOrWhiteSpace(content))
-            throw new InvalidOperationException("O arquivo de legenda está vazio.");
+            throw new InvalidOperationException("The caption file is empty.");
 
         if (content.Length > MaxSizeBytes)
-            throw new InvalidOperationException("O arquivo de legenda é grande demais.");
+            throw new InvalidOperationException("The caption file is too large.");
 
         if (!EhWebVtt(content))
-            throw new InvalidOperationException("O arquivo precisa estar no formato WebVTT e começar com 'WEBVTT'.");
+            throw new InvalidOperationException("The file must be WebVTT and start with WEBVTT.");
 
         var video = await db.Videos.Include(v => v.Assets).FirstOrDefaultAsync(v => v.Id == videoId, cancellationToken)
-            ?? throw new InvalidOperationException("Vídeo não encontrado.");
+            ?? throw new InvalidOperationException("Video not found");
 
         var idioma = language.Trim().ToLowerInvariant();
         var chave = StorageKeys.Caption(videoId, idioma);
@@ -87,7 +87,7 @@ public class CaptionService(
     {
         var legenda = await db.VideoAssets.FirstOrDefaultAsync(
             a => a.Id == assetId && a.Kind == VideoAssetKind.Caption, cancellationToken)
-            ?? throw new InvalidOperationException("Legenda não encontrada.");
+            ?? throw new InvalidOperationException("Caption not found.");
 
         db.VideoAssets.Remove(legenda);
         await db.SaveChangesAsync(cancellationToken);
@@ -97,13 +97,13 @@ public class CaptionService(
     public async Task<Guid> RequestTranscriptionAsync(Guid videoId, CancellationToken cancellationToken = default)
     {
         var video = await db.Videos.FirstOrDefaultAsync(v => v.Id == videoId, cancellationToken)
-            ?? throw new InvalidOperationException("Vídeo não encontrado.");
+            ?? throw new InvalidOperationException("Video not found");
 
         if (video.Status is VideoStatus.Draft)
-            throw new InvalidOperationException("O arquivo deste vídeo ainda não terminou de ser enviado.");
+            throw new InvalidOperationException("This video's file has not finished uploading.");
 
         if (!await storage.ExistsAsync(StorageBucket.Originals, video.OriginalKey, cancellationToken))
-            throw new InvalidOperationException("O arquivo original não está mais no storage.");
+            throw new InvalidOperationException("The original file is no longer in storage.");
 
         return await fila.EnqueueAsync(
             JobKind.Transcript,

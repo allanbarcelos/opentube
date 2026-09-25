@@ -23,7 +23,7 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
-        await cliente.GetAsync("/saude");
+        await cliente.GetAsync("/health");
     }
 
     public async Task DisposeAsync()
@@ -37,12 +37,12 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         _app.Emails.Clear();
 
         await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/entrar", "/entrar/codigo", new Dictionary<string, string> { ["email"] = Admin });
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = Admin });
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente,
-            $"/entrar?email={Uri.EscapeDataString(Admin)}&enviado=1",
-            "/entrar/verificar",
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
     }
 
@@ -56,7 +56,7 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var html = await cliente.GetStringAsync("/");
 
         Assert.Contains("Boas-vindas", html);
-        Assert.Contains($"/v/{publico.Slug}", html);
+        Assert.Contains($"/watch/{publico.Slug}", html);
     }
 
     [Fact]
@@ -71,7 +71,7 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         Assert.DoesNotContain("Plano Confidencial", html);
         Assert.DoesNotContain("Somente Convidados", html);
-        Assert.Contains("Nenhum vídeo público disponível", html);
+        Assert.Contains("No public videos available.", html);
     }
 
     [Fact]
@@ -88,8 +88,8 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         Assert.Contains("Plano Confidencial", html);
         Assert.Contains("Boas-vindas", html);
-        Assert.Contains("Privado", html);
-        Assert.Contains("Público", html);
+        Assert.Contains("Private", html);
+        Assert.Contains("Public", html);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var html = await cliente.GetStringAsync("/?q=segredo");
 
         Assert.DoesNotContain("Segredo Industrial", html);
-        Assert.Contains("Nenhum vídeo corresponde", html);
+        Assert.Contains("No videos match your search.", html);
     }
 
     [Fact]
@@ -142,7 +142,7 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
             descricao: "Apresentação da plataforma");
 
         using var cliente = _app.CreateBrowser();
-        var html = await cliente.GetStringAsync($"/v/{video.Slug}");
+        var html = await cliente.GetStringAsync($"/watch/{video.Slug}");
 
         Assert.Contains("Boas-vindas", html);
         Assert.Contains("Apresentação da plataforma", html);
@@ -157,11 +157,11 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Plano Confidencial", VideoVisibility.Private);
 
         using var cliente = _app.CreateBrowser();
-        var resposta = await cliente.GetAsync($"/v/{video.Slug}");
+        var resposta = await cliente.GetAsync($"/watch/{video.Slug}");
         var html = await resposta.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
-        Assert.Contains("Vídeo não encontrado", html);
+        Assert.Contains("Video not found", html);
         // Nem o título pode vazar: saber que existe já é informação sobre o acervo.
         Assert.DoesNotContain("Plano Confidencial", html);
     }
@@ -171,7 +171,7 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
     {
         using var cliente = _app.CreateBrowser();
 
-        var resposta = await cliente.GetAsync("/v/nao-existe");
+        var resposta = await cliente.GetAsync("/watch/nao-existe");
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
     }

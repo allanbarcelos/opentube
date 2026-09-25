@@ -13,7 +13,7 @@ window.openTubeAnalytics = (function () {
 
         async function iniciar() {
             try {
-                const resposta = await fetch('/api/reproducao/iniciar', {
+                const resposta = await fetch('/api/playback/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ videoId: videoId })
@@ -63,7 +63,7 @@ window.openTubeAnalytics = (function () {
             const corpo = JSON.stringify({ eventos: pendentes });
             pendentes = [];
 
-            const endereco = `/api/reproducao/${sessaoId}/eventos`;
+            const endereco = `/api/playback/${sessaoId}/events`;
 
             if (usarBeacon && navigator.sendBeacon) {
                 // A aba pode estar fechando: sendBeacon é o único envio que sobrevive a isso.
@@ -94,7 +94,7 @@ window.openTubeAnalytics = (function () {
             }
 
             if (sessaoId && navigator.sendBeacon) {
-                navigator.sendBeacon(`/api/reproducao/${sessaoId}/encerrar`, new Blob([''], { type: 'application/json' }));
+                navigator.sendBeacon(`/api/playback/${sessaoId}/close`, new Blob([''], { type: 'application/json' }));
             }
         }
 
