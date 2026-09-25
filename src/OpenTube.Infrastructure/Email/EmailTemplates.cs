@@ -59,6 +59,40 @@ public static class EmailTemplates
         return new EmailMessage(to, $"Você recebeu acesso a {whatWasShared}", html, texto);
     }
 
+    /// <summary>
+    /// Endereço da porta de entrada, enviado ao responsável pelo domínio para que ele repasse
+    /// às pessoas da organização.
+    /// </summary>
+    public static EmailMessage DomainEntry(string to, string domain, string entryUrl)
+    {
+        var texto = $"""
+            O acesso da organização {domain} ao OpenTube está liberado.
+
+            Repasse este endereço às pessoas que devem assistir:
+            {entryUrl}
+
+            Quem abrir a página informa o próprio email do domínio {domain} e recebe um código
+            de acesso. Não existe senha a distribuir nem conta a criar.
+            """;
+
+        var html = $"""
+            <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#212529">
+              <h1 style="font-size:20px;margin:0 0 16px">OpenTube</h1>
+              <p style="margin:0 0 16px">O acesso da organização <strong>{WebUtility.HtmlEncode(domain)}</strong> está liberado.</p>
+              <p style="margin:0 0 8px">Repasse este endereço às pessoas que devem assistir:</p>
+              <p style="margin:0 0 24px">
+                <a href="{WebUtility.HtmlEncode(entryUrl)}" style="word-break:break-all">{WebUtility.HtmlEncode(entryUrl)}</a>
+              </p>
+              <p style="font-size:14px;color:#6c757d;margin:0">
+                Quem abrir a página informa o próprio email do domínio {WebUtility.HtmlEncode(domain)} e recebe um
+                código de acesso. Não existe senha a distribuir nem conta a criar.
+              </p>
+            </div>
+            """;
+
+        return new EmailMessage(to, $"Acesso ao OpenTube para {domain}", html, texto);
+    }
+
     public static EmailMessage AccessCode(string to, string code, string link, AuthPurpose purpose, TimeSpan validity)
     {
         var assunto = purpose switch

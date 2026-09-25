@@ -16,6 +16,7 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<AccessGrant> AccessGrants => Set<AccessGrant>();
     public DbSet<Collection> Collections => Set<Collection>();
     public DbSet<CollectionVideo> CollectionVideos => Set<CollectionVideo>();
+    public DbSet<VerifiedDomain> VerifiedDomains => Set<VerifiedDomain>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

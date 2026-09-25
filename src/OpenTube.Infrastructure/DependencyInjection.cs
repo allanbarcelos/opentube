@@ -6,6 +6,7 @@ using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Playback;
 using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Access;
+using OpenTube.Infrastructure.Domains;
 using OpenTube.Infrastructure.Email;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
@@ -54,6 +55,8 @@ public static class DependencyInjection
         services.AddScoped<AdminSeeder>();
         services.AddScoped<AccessService>();
         services.AddScoped<GrantService>();
+        services.AddSingleton<IDnsTxtLookup, DnsTxtLookup>();
+        services.AddScoped<DomainService>();
         services.AddScoped<PlaybackService>();
         services.AddScoped<VideoCatalog>();
 
