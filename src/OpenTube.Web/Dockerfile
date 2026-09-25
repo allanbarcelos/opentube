@@ -17,8 +17,13 @@ RUN dotnet publish src/OpenTube.Web/OpenTube.Web.csproj -c Release -o /app --no-
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
+# curl atende o healthcheck; nc espera o banco e o storage no entrypoint do Swarm.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y curl netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 1001 --create-home opentube
+
 # Não roda como administrador: se algo der errado no processo, o estrago fica contido.
-RUN useradd --uid 1001 --create-home opentube
 USER 1001
 
 COPY --from=build /app .

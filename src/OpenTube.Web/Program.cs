@@ -13,6 +13,9 @@ using OpenTube.Web.Endpoints;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddEnvironmentVariables("OPENTUBE_");
+// No Swarm os segredos chegam como arquivos em /run/secrets, nunca como variável de
+// ambiente. Fora de produção o diretório não existe e esta fonte fica inativa.
+builder.Configuration.AddKeyPerFile("/run/secrets", optional: true);
 
 // Sem isto o codificador padrão transforma todo acento em entidade numérica, o que incha
 // cada página de um site em português e atrapalha qualquer inspeção do HTML.

@@ -1,0 +1,16 @@
+# Portas só para o hot-reload: a aplicação roda no host e precisa alcançar banco,
+# storage e SMTP. Não use este arquivo no `make up`.
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  mailpit:
+    ports:
+      - "1025:1025"

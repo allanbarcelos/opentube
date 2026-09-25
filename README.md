@@ -122,18 +122,19 @@ separado desde o primeiro dia.
 2. **Análise** — `ffprobe` extrai duração, resolução e codecs, e rejeita arquivo inválido cedo.
 3. **Transcodificação** — FFmpeg gera um ladder adaptativo (360p a 1080p, nunca acima da resolução
    original) em CMAF/fMP4, segmentos de 4 s com keyframes alinhados entre as versões.
-4. **Derivados** — thumbnail, folha de sprites para prévia na barra de progresso e, futuramente,
-   legendas automáticas.
+4. **Derivados** — thumbnail, folha de sprites para prévia na barra de progresso e, se um
+   transcritor estiver configurado, legenda automática. Sem executável, essa etapa fica desligada.
 5. **Publicação** — estado `Ready`, vídeo disponível conforme sua visibilidade.
 
 O original é preservado no bucket `originals` para permitir reprocessamento.
 
 ### Entrega autorizada
 
-A playlist HLS é servida por um endpoint da aplicação que valida o acesso e devolve o manifesto com
-URLs assinadas de curta duração. Quando o volume justificar, a mesma verificação passa a ser feita
-por `forward_auth` no Caddy (ou `auth_request` no nginx), que autoriza cada segmento e deixa o
-servidor web empurrar os bytes — a aplicação só decide, não transporta.
+A playlist HLS é servida por um endpoint da aplicação, que valida o acesso. No `make watch` o
+manifesto sai com URLs assinadas de curta duração, porque o navegador fala direto com o MinIO.
+Na pilha local (`make up`) e na produção, o Caddy autoriza cada segmento com `forward_auth`: a
+aplicação decide, ele transporta os bytes. Revogar um acesso vale no segmento seguinte, em vez
+de esperar a assinatura vencer. O original continua indo por URL assinada, no caminho `/originals`.
 
 Sobre proteção de conteúdo, sem rodeios: sem DRM, quem tem acesso legítimo consegue baixar. O que
 funciona na prática é token curto, limite de sessões simultâneas por usuário, marca d'água dinâmica
@@ -184,17 +185,24 @@ estar ancorada a um instante do vídeo e é visível apenas ao autor e aos admin
 ## Estrutura do repositório
 
 ```
+Makefile                      alvos locais (não existe `make dev`)
+install.sh / uninstall.sh     produção em Docker Swarm
+docker-compose.yml            pilha inteira em container
+docker-compose.dev.yml        publica as portas das dependências no host
+Caddyfile
+scripts/                      geração do .env, ambiente do `dotnet watch`, entrypoint do Swarm
 src/
-  OpenTube.Shared/          contratos e DTOs compartilhados
-  OpenTube.Domain/          entidades e regras de acesso (sem dependência de infraestrutura)
-  OpenTube.Infrastructure/  EF Core, storage S3, email, verificação DNS, fila
-  OpenTube.Web/             Blazor: home, busca, player e área administrativa
-  OpenTube.Worker/          transcodificação, derivados e agregação de analytics
+  OpenTube.Shared/            contratos e DTOs compartilhados
+  OpenTube.Domain/            entidades e regras de acesso (sem dependência de infraestrutura)
+  OpenTube.Infrastructure/    EF Core, storage S3, email, verificação DNS, fila
+  OpenTube.Web/               Blazor: home, busca, player e área administrativa
+  OpenTube.Worker/            transcodificação, derivados e agregação de analytics
 tests/
   OpenTube.Domain.Tests/
   OpenTube.Infrastructure.Tests/
   OpenTube.Worker.Tests/
   OpenTube.Web.Tests/
+  OpenTube.TestSupport/
 ```
 
 ---
@@ -203,55 +211,79 @@ tests/
 
 **Requisitos:** Docker e .NET SDK 10.
 
-```bash
-# sobe PostgreSQL, MinIO e Mailpit
-docker compose up -d
+Não há usuário de banco, senha nem chave no repositório. Na primeira vez o `make` gera o
+`.env` (modo 600) e nas seguintes reutiliza o arquivo. Não existe o alvo `make dev`.
 
-# aplica as migrações e inicia a aplicação
-dotnet run --project src/OpenTube.Web
-```
+| Comando | O que sobe | Ambiente | Código |
+| --- | --- | --- | --- |
+| `make watch` | Banco, MinIO e Mailpit em container; aplicação e worker no host | `Development` | `dotnet watch`, recarrega ao salvar |
+| `make up` / `make up-d` | Pilha inteira em container, com Caddy | `Development` | Imagem já compilada, sem hot-reload |
+| `sudo bash install.sh` | Swarm de um nó | `Production` | Imagens construídas no servidor |
 
-| Serviço | Endereço | Credenciais |
-| --- | --- | --- |
-| Aplicação | http://localhost:5080 | — |
-| MinIO (console) | http://localhost:9001 | `opentube` / `opentube123` |
-| Mailpit | http://localhost:8025 | — |
-| PostgreSQL | `localhost:5432` | `opentube` / `opentube` |
+`make` sozinho lista os alvos.
 
-O worker roda em processo separado:
+### Desenvolvimento (`make watch`)
 
-```bash
-dotnet run --project src/OpenTube.Worker
-```
-
-Configure ao menos um administrador em `src/OpenTube.Web/appsettings.Development.json`; é
-esse endereço que recebe o código de acesso.
-
-### Em produção
+Este é o modo de desenvolver. Só as dependências ficam em container; a aplicação e o worker
+rodam na máquina, com `ASPNETCORE_ENVIRONMENT=Development`.
 
 ```bash
-cp .env.example .env    # preencha as variáveis
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+make watch
 ```
 
-`OPENTUBE_HOST` precisa ser um domínio que aponte para esta máquina: o Caddy pede um
-certificado real para esse nome e só responde por ele. Deixar o valor de exemplo faz a
-emissão falhar em repetição e nada atender. Para experimentar na própria máquina, use
-`OPENTUBE_HOST=localhost`, que recebe um certificado interno — o navegador vai avisar que
-ele não é de uma autoridade conhecida, o que é esperado.
+| Serviço | Endereço |
+| --- | --- |
+| Aplicação | http://localhost:5080 |
+| Worker | processo local |
+| MinIO (console) | http://localhost:9001 |
+| Mailpit | http://localhost:8025 |
+| PostgreSQL | `localhost:5432` |
 
-A produção usa volumes próprios de banco e storage, separados dos de desenvolvimento. É de
-propósito: o PostgreSQL só aplica a senha na primeira inicialização, então reaproveitar o
-volume de desenvolvimento manteria a senha antiga e a aplicação não conseguiria entrar.
+O navegador envia o arquivo direto ao MinIO em `localhost:9000`. Usuário e senha estão no
+`.env`. O administrador é o email de `src/OpenTube.Web/appsettings.Development.json`; o código
+de entrada cai no Mailpit. Ctrl+C encerra aplicação e worker. Os containers continuam até
+`make deps-down`.
 
-O Caddy resolve o TLS e, com `Storage__SegmentAuthorization` ligado, entrega os segmentos de
-vídeo depois de consultar a aplicação a cada pedido: ela decide, ele transporta. A vantagem
-sobre o endereço assinado é que revogar um acesso vale já no segmento seguinte, em vez de
-esperar a assinatura vencer.
+`make watch-web` e `make watch-worker` sobem cada processo sozinho, com as dependências já no ar.
 
-Para ligar a transcrição automática, aponte `OPENTUBE_WHISPER_PATH` para o executável e
-`OPENTUBE_WHISPER_MODEL` para o modelo. Sem isso o recurso fica desligado, que é o padrão:
-é a etapa mais cara do pipeline.
+### Pilha local (`make up`)
+
+Sobe tudo em container, também com `ASPNETCORE_ENVIRONMENT=Development`, mas sem recarregar
+quando o código muda. Serve para ver a aplicação atrás do Caddy, com autorização por segmento.
+
+```bash
+make up-d
+```
+
+| Serviço | Endereço |
+| --- | --- |
+| Aplicação | https://localhost |
+| Mailpit | http://localhost:8025 |
+| Credenciais | `.env` |
+
+O certificado de `localhost` é interno. O navegador avisa uma vez — é esperado. Aqui o
+administrador é `OPENTUBE_ADMIN_EMAIL` do `.env` (o gerador sugere `admin@localhost`), não o
+email do `appsettings.Development.json`.
+
+Um volume criado com o usuário fixo antigo não aceita a senha nova: o PostgreSQL só aplica a
+senha na primeira inicialização. `make clean` apaga esse volume para o banco nascer de novo.
+
+### Produção
+
+```bash
+sudo bash install.sh
+```
+
+O instalador sobe um Docker Swarm de um nó, gera usuário, senha e chaves e grava isso só
+como segredo do Swarm. Nada disso vai para o disco nem para o repositório. Na primeira vez o
+resumo é impresso no terminal; copie e guarde. Rodar de novo não troca segredo que já existe.
+
+O ambiente dentro dos containers é `Production`. Para publicar um código novo, atualize o
+checkout e rode `/opt/<nome>/scripts/update.sh`. Para remover o que o instalador criou:
+`sudo bash uninstall.sh`.
+
+A transcrição automática lê `Transcription__Executable` e `Transcription__ModelPath` no
+worker. Os dois vazios desligam o recurso, que é o padrão: é a etapa mais cara do pipeline.
 
 > **Sobre a imagem do MinIO:** as imagens públicas do MinIO deixaram de ser distribuídas pelo Docker
 > Hub e pelo quay.io. O `docker-compose.yml` usa a última versão comunitária publicada, suficiente

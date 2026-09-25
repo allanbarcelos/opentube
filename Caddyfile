@@ -18,6 +18,14 @@
 		reverse_proxy minio:9000
 	}
 
+	# Envio direto do navegador. A autorização é a assinatura da URL; o Host tem de ser
+	# o que foi assinado, senão o storage recusa o pedaço.
+	handle /originals/* {
+		reverse_proxy minio:9000 {
+			header_up Host {http.request.host}
+		}
+	}
+
 	handle {
 		reverse_proxy app:8080
 	}

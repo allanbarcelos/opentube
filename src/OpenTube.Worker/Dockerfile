@@ -17,7 +17,7 @@ FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y ffmpeg \
+    && apt-get install --no-install-recommends -y ffmpeg netcat-openbsd \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 1001 --create-home opentube
 

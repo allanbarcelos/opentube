@@ -11,8 +11,10 @@ public class OpenTubeDbContextFactory : IDesignTimeDbContextFactory<OpenTubeDbCo
 {
     public OpenTubeDbContext CreateDbContext(string[] args)
     {
-        var connectionString = Environment.GetEnvironmentVariable("OPENTUBE_DB")
-            ?? "Host=localhost;Port=5432;Database=opentube;Username=opentube;Password=opentube";
+        var connectionString = Environment.GetEnvironmentVariable("OPENTUBE_DB");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new InvalidOperationException(
+                "Defina OPENTUBE_DB. Usuário e senha são gerados no .env (make) e não ficam no código.");
 
         var options = new DbContextOptionsBuilder<OpenTubeDbContext>()
             .UseNpgsql(connectionString, npgsql => npgsql.MigrationsAssembly(typeof(OpenTubeDbContext).Assembly.FullName))

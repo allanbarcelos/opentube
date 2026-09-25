@@ -5,6 +5,8 @@ using OpenTube.Worker.Media;
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Configuration.AddEnvironmentVariables("OPENTUBE_");
+// Mesma fonte da aplicação: no Swarm o segredo é um arquivo, não uma variável.
+builder.Configuration.AddKeyPerFile("/run/secrets", optional: true);
 
 builder.Services.AddOpenTubeInfrastructure(builder.Configuration);
 

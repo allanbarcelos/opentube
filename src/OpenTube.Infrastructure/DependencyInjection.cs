@@ -24,9 +24,13 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var connectionString = configuration.GetConnectionString("Default")
-            ?? configuration["OPENTUBE_DB"]
-            ?? throw new InvalidOperationException("Cadeia de conexão do banco não configurada (ConnectionStrings:Default ou OPENTUBE_DB).");
+        // Vazio não é "ausente": um appsettings sem senha deixaria o EF tentar entrar
+        // com uma cadeia em branco em vez de falhar com uma mensagem útil.
+        var connectionString = configuration.GetConnectionString("Default");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            connectionString = configuration["OPENTUBE_DB"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new InvalidOperationException("Cadeia de conexão do banco não configurada (ConnectionStrings:Default ou OPENTUBE_DB).");
 
         services.AddDbContext<OpenTubeDbContext>(options => options
             .UseNpgsql(connectionString, npgsql => npgsql.MigrationsAssembly(typeof(OpenTubeDbContext).Assembly.FullName))

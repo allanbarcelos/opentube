@@ -7,3 +7,5 @@ tests/
 data/
 storage/
 *.md
+.env
+**/.env
