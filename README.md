@@ -259,8 +259,8 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | 2 | Acesso: concessões, convites e coleções | **concluída** |
 | 3 | Domínios: verificação por DNS e porta de entrada dedicada | **concluída** |
 | 4 | Analytics: coleta, agregação, painéis e exportação | **concluída** |
-| 5 | Suporte: conversas privadas por vídeo | em andamento |
-| 6 | Refino: legendas automáticas, marca d'água, auditoria, autorização por segmento | pendente |
+| 5 | Suporte: conversas privadas por vídeo | **concluída** |
+| 6 | Refino: legendas automáticas, marca d'água, auditoria, autorização por segmento | em andamento |
 
 ---
 

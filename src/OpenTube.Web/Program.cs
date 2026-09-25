@@ -61,6 +61,7 @@ app.MapAccessEndpoints();
 app.MapDomainEndpoints();
 app.MapAnalyticsEndpoints();
 app.MapExportEndpoints();
+app.MapSupportEndpoints();
 app.MapHealthChecks("/saude");
 
 await PrepararAsync(app);

@@ -1,0 +1,210 @@
+@page "/admin/suporte/{threadId:guid}"
+@using OpenTube.Domain.Entities
+@using OpenTube.Domain.Enums
+@using OpenTube.Infrastructure.Persistence
+@using OpenTube.Infrastructure.Support
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject SupportService Servico
+@inject CurrentViewer Espectadores
+@inject OpenTubeDbContext Db
+@inject NavigationManager Navegacao
+
+<PageTitle>Conversa — Administração</PageTitle>
+
+<div class="container py-4">
+    @if (Conversa is null)
+    {
+        @* A navegação já foi desviada para a página de não encontrado. *@
+    }
+    else
+    {
+        <nav aria-label="Trilha de navegação">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
+                <li class="breadcrumb-item"><a href="/admin/suporte">Suporte</a></li>
+                <li class="breadcrumb-item active" aria-current="page">@Autor</li>
+            </ol>
+        </nav>
+
+        @if (Encerrada)
+        {
+            <div class="alert alert-success" role="status">Conversa encerrada.</div>
+        }
+        @if (Reaberta)
+        {
+            <div class="alert alert-success" role="status">Conversa reaberta.</div>
+        }
+        @if (Respondida)
+        {
+            <div class="alert alert-success" role="status">Resposta enviada.</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Erro))
+        {
+            <div class="alert alert-danger" role="alert">@Erro</div>
+        }
+
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>@Autor</span>
+                        <span class="badge @Classe">@Texto</span>
+                    </div>
+
+                    <div class="card-body">
+                        @foreach (var mensagem in Conversa.Messages.OrderBy(m => m.CreatedAt))
+                        {
+                            <div class="mb-3">
+                                <p class="small mb-1">
+                                    <strong>@(mensagem.FromAdmin ? "Administração" : Autor)</strong>
+                                    <span class="text-body-secondary ms-1">
+                                        @mensagem.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                    </span>
+                                </p>
+                                <p class="mb-0" style="white-space: pre-wrap">@mensagem.Body</p>
+                            </div>
+                        }
+
+                        @if (!Conversa.IsClosed)
+                        {
+                            <form method="post" action="/suporte/@Conversa.Id/responder" class="mt-4">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="destino" value="/admin/suporte/@Conversa.Id" />
+
+                                <div class="mb-2">
+                                    <label class="form-label" for="resposta">Sua resposta</label>
+                                    <textarea class="form-control" id="resposta" name="mensagem" rows="4"
+                                              maxlength="4000" required autofocus></textarea>
+                                </div>
+
+                                <button class="btn btn-primary" type="submit">Responder</button>
+                            </form>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card mb-3">
+                    <div class="card-header">Contexto</div>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Vídeo</span>
+                            <a href="/admin/videos/@Conversa.VideoId" class="text-decoration-none">@VideoTitulo</a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Pessoa</span>
+                            <a href="/admin/pessoas/@Conversa.UserId" class="text-decoration-none">@Autor</a>
+                        </li>
+                        @if (Conversa.TimestampSeconds is { } instante)
+                        {
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span>Instante citado</span><span>@Tempo(instante)</span>
+                            </li>
+                        }
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Aberta em</span>
+                            <span>@Conversa.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                        </li>
+                    </ul>
+                    <div class="card-body">
+                        @if (Conversa.IsClosed)
+                        {
+                            <form method="post" action="/admin/suporte/@Conversa.Id/reabrir">
+                                <AntiforgeryToken />
+                                <button class="btn btn-outline-secondary w-100" type="submit">Reabrir conversa</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <form method="post" action="/admin/suporte/@Conversa.Id/encerrar">
+                                <AntiforgeryToken />
+                                <button class="btn btn-outline-secondary w-100" type="submit">Encerrar conversa</button>
+                            </form>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [Parameter]
+    public Guid ThreadId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "encerrada")]
+    private string? EncerradaBruta { get; set; }
+
+    [SupplyParameterFromQuery(Name = "reaberta")]
+    private string? ReabertaBruta { get; set; }
+
+    [SupplyParameterFromQuery(Name = "respondida")]
+    private string? RespondidaBruta { get; set; }
+
+    [SupplyParameterFromQuery(Name = "erro")]
+    private string? Erro { get; set; }
+
+    private bool Encerrada => EncerradaBruta == "1";
+    private bool Reaberta => ReabertaBruta == "1";
+    private bool Respondida => RespondidaBruta == "1";
+
+    private SupportThread? Conversa;
+
+    private string Autor = string.Empty;
+
+    private string VideoTitulo = string.Empty;
+
+    private string Texto => Conversa?.Status switch
+    {
+        SupportStatus.Answered => "Respondida",
+        SupportStatus.Closed => "Encerrada",
+        _ => "Aguardando resposta"
+    };
+
+    private string Classe => Conversa?.Status switch
+    {
+        SupportStatus.Answered => "text-bg-success",
+        SupportStatus.Closed => "text-bg-secondary",
+        _ => "text-bg-warning"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var espectador = await Espectadores.GetAsync(Http.RequestAborted);
+
+        Conversa = await Servico.FindAsync(ThreadId, espectador, Http.RequestAborted);
+
+        if (Conversa is null)
+        {
+            Navegacao.NotFound();
+            return;
+        }
+
+        Autor = await Db.Users
+            .Where(u => u.Id == Conversa.UserId)
+            .Select(u => u.Email)
+            .FirstOrDefaultAsync(Http.RequestAborted) ?? "desconhecido";
+
+        VideoTitulo = await Db.Videos
+            .Where(v => v.Id == Conversa.VideoId)
+            .Select(v => v.Title)
+            .FirstOrDefaultAsync(Http.RequestAborted) ?? "Vídeo removido";
+
+        // Abrir a conversa já conta como leitura: o distintivo de pendência some da fila.
+        await Servico.MarkReadAsync(ThreadId, espectador, Http.RequestAborted);
+    }
+
+    private static string Tempo(double segundos)
+    {
+        var tempo = TimeSpan.FromSeconds(Math.Max(0, segundos));
+
+        return tempo.TotalHours >= 1
+            ? $"{(int)tempo.TotalHours}:{tempo.Minutes:D2}:{tempo.Seconds:D2}"
+            : $"{tempo.Minutes}:{tempo.Seconds:D2}";
+    }
+}

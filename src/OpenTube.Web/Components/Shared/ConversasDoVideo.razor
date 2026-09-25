@@ -1,0 +1,164 @@
+@* Canal privado entre quem assiste e a administração. Ninguém além do autor e dos
+   administradores enxerga o que é escrito aqui. *@
+@using OpenTube.Domain.Entities
+@using OpenTube.Domain.Enums
+@using OpenTube.Infrastructure.Support
+@inject SupportService Suporte
+@inject CurrentViewer Espectadores
+
+<div class="card mt-4">
+    <div class="card-header">Fale com a administração</div>
+    <div class="card-body">
+        @if (!Espectador.IsAuthenticated)
+        {
+            <p class="text-body-secondary mb-0">
+                <a href="/entrar">Entre</a> para enviar uma mensagem sobre este vídeo.
+            </p>
+        }
+        else
+        {
+            @if (Enviada)
+            {
+                <div class="alert alert-success" role="status">Mensagem enviada.</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Erro))
+            {
+                <div class="alert alert-danger" role="alert">@Erro</div>
+            }
+
+            @foreach (var conversa in Conversas)
+            {
+                <div class="border rounded p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge @SituacaoClasse(conversa)">@SituacaoTexto(conversa)</span>
+                        @if (conversa.TimestampSeconds is { } instante)
+                        {
+                            <span class="small text-body-secondary">sobre @Tempo(instante)</span>
+                        }
+                    </div>
+
+                    @foreach (var mensagem in conversa.Messages.OrderBy(m => m.CreatedAt))
+                    {
+                        <div class="mb-2">
+                            <p class="small mb-1">
+                                <strong>@(mensagem.FromAdmin ? "Administração" : "Você")</strong>
+                                <span class="text-body-secondary ms-1">
+                                    @mensagem.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                </span>
+                            </p>
+                            <p class="mb-0" style="white-space: pre-wrap">@mensagem.Body</p>
+                        </div>
+                    }
+
+                    @if (!conversa.IsClosed)
+                    {
+                        <form method="post" action="/suporte/@conversa.Id/responder" class="mt-3">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="destino" value="@Destino" />
+
+                            <div class="mb-2">
+                                <label class="form-label visually-hidden" for="resposta-@conversa.Id">Sua resposta</label>
+                                <textarea class="form-control" id="resposta-@conversa.Id" name="mensagem"
+                                          rows="2" maxlength="4000" required placeholder="Escreva uma resposta"></textarea>
+                            </div>
+
+                            <button class="btn btn-sm btn-outline-primary" type="submit">Responder</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <p class="small text-body-secondary mb-0">Esta conversa foi encerrada.</p>
+                    }
+                </div>
+            }
+
+            <form method="post" action="/suporte/abrir">
+                <AntiforgeryToken />
+                <input type="hidden" name="videoId" value="@VideoId" />
+                <input type="hidden" name="destino" value="@Destino" />
+
+                <div class="mb-2">
+                    <label class="form-label" for="nova-mensagem">
+                        @(Conversas.Count == 0 ? "Sua mensagem" : "Abrir outra conversa")
+                    </label>
+                    <textarea class="form-control" id="nova-mensagem" name="mensagem" rows="3"
+                              maxlength="4000" required
+                              placeholder="Dúvida sobre o conteúdo, problema para assistir…"></textarea>
+                </div>
+
+                <div class="row g-2 align-items-end">
+                    <div class="col-sm-4">
+                        <label class="form-label small" for="instante">Instante do vídeo</label>
+                        <input class="form-control form-control-sm" id="instante" name="instante"
+                               type="number" min="0" step="1" placeholder="em segundos" />
+                    </div>
+                    <div class="col-sm-8">
+                        <button class="btn btn-primary" type="submit">Enviar</button>
+                    </div>
+                </div>
+            </form>
+
+            <p class="small text-body-secondary mt-3 mb-0">
+                Só você e a administração enxergam o que é escrito aqui.
+            </p>
+        }
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public Guid VideoId { get; set; }
+
+    /// <summary>Endereço para onde os formulários voltam.</summary>
+    [Parameter, EditorRequired]
+    public string Destino { get; set; } = "/";
+
+    [SupplyParameterFromQuery(Name = "conversa")]
+    private string? ConversaBruta { get; set; }
+
+    [SupplyParameterFromQuery(Name = "respondida")]
+    private string? RespondidaBruta { get; set; }
+
+    [SupplyParameterFromQuery(Name = "erro")]
+    private string? Erro { get; set; }
+
+    private bool Enviada => ConversaBruta == "1" || RespondidaBruta == "1";
+
+    private OpenTube.Domain.Access.Viewer Espectador = OpenTube.Domain.Access.Viewer.Anonymous;
+
+    private IReadOnlyList<SupportThread> Conversas = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Espectador = await Espectadores.GetAsync(Http.RequestAborted);
+
+        if (Espectador.IsAuthenticated)
+            Conversas = await Suporte.ForVideoAsync(VideoId, Espectador, Http.RequestAborted);
+    }
+
+    private static string SituacaoTexto(SupportThread conversa) => conversa.Status switch
+    {
+        SupportStatus.Answered => "Respondida",
+        SupportStatus.Closed => "Encerrada",
+        _ => "Aguardando resposta"
+    };
+
+    private static string SituacaoClasse(SupportThread conversa) => conversa.Status switch
+    {
+        SupportStatus.Answered => "text-bg-success",
+        SupportStatus.Closed => "text-bg-secondary",
+        _ => "text-bg-warning"
+    };
+
+    private static string Tempo(double segundos)
+    {
+        var tempo = TimeSpan.FromSeconds(Math.Max(0, segundos));
+
+        return tempo.TotalHours >= 1
+            ? $"{(int)tempo.TotalHours}:{tempo.Minutes:D2}:{tempo.Seconds:D2}"
+            : $"{tempo.Minutes}:{tempo.Seconds:D2}";
+    }
+}

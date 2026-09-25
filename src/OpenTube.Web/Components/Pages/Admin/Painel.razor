@@ -5,6 +5,7 @@
 @inject VideoCatalog Catalogo
 @inject AdminVideoService Admin
 @inject CurrentViewer Espectadores
+@inject OpenTube.Infrastructure.Support.SupportService Suporte
 
 <PageTitle>Administração — OpenTube</PageTitle>
 
@@ -15,6 +16,15 @@
             <a class="btn btn-outline-secondary" href="/admin/colecoes">Coleções</a>
             <a class="btn btn-outline-secondary" href="/admin/dominios">Domínios</a>
             <a class="btn btn-outline-secondary" href="/admin/pessoas">Pessoas</a>
+            <a class="btn btn-outline-secondary position-relative" href="/admin/suporte">
+                Suporte
+                @if (SuportePendente > 0)
+                {
+                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger">
+                        @SuportePendente
+                    </span>
+                }
+            </a>
             <a class="btn btn-primary" href="/admin/enviar">Enviar vídeo</a>
         </div>
     </div>
@@ -109,6 +119,8 @@
 
     private readonly List<(string Rotulo, int Valor)> Indicadores = [];
 
+    private int SuportePendente;
+
     protected override async Task OnInitializedAsync()
     {
         var espectador = await Espectadores.GetAsync(Http.RequestAborted);
@@ -116,12 +128,14 @@
         Resultado = await Catalogo.BrowseAsync(espectador, Q, Pagina ?? 1, cancellationToken: Http.RequestAborted);
 
         var fila = await Admin.QueueSummaryAsync(Http.RequestAborted);
+        SuportePendente = await Suporte.PendingCountAsync(Http.RequestAborted);
 
         Indicadores.Clear();
         Indicadores.Add(("Vídeos no acervo", Resultado.Total));
         Indicadores.Add(("Na fila", fila.GetValueOrDefault(JobStatus.Pending)));
         Indicadores.Add(("Processando", fila.GetValueOrDefault(JobStatus.Running)));
         Indicadores.Add(("Falhas", fila.GetValueOrDefault(JobStatus.Failed)));
+        Indicadores.Add(("Suporte aguardando", SuportePendente));
     }
 
     private static string EstadoTexto(VideoSummary video) => (VideoStatus)video.Status switch

@@ -1,0 +1,115 @@
+@page "/admin/suporte"
+@using OpenTube.Domain.Enums
+@using OpenTube.Infrastructure.Support
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject SupportService Servico
+
+<PageTitle>Suporte — Administração</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="Trilha de navegação">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Suporte</li>
+        </ol>
+    </nav>
+
+    <ul class="nav nav-pills mb-3">
+        <li class="nav-item">
+            <a class="nav-link @(Filtro is null ? "active" : "")" href="/admin/suporte">Todas</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(Filtro == SupportStatus.Open ? "active" : "")" href="/admin/suporte?situacao=abertas">
+                Aguardando resposta
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(Filtro == SupportStatus.Answered ? "active" : "")" href="/admin/suporte?situacao=respondidas">
+                Respondidas
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(Filtro == SupportStatus.Closed ? "active" : "")" href="/admin/suporte?situacao=encerradas">
+                Encerradas
+            </a>
+        </li>
+    </ul>
+
+    <div class="card">
+        @if (Fila.Count == 0)
+        {
+            <div class="card-body text-center text-body-secondary py-5">
+                Nenhuma conversa por aqui.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col">Quem</th>
+                            <th scope="col">Vídeo</th>
+                            <th scope="col">Última mensagem</th>
+                            <th scope="col">Situação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Fila)
+                        {
+                            <tr>
+                                <td>
+                                    <a href="/admin/suporte/@item.Thread.Id" class="text-decoration-none">
+                                        @item.UserEmail
+                                    </a>
+                                    @if (item.Thread.NeedsAdminAttention)
+                                    {
+                                        <span class="badge text-bg-danger ms-1">nova</span>
+                                    }
+                                </td>
+                                <td class="small">@item.VideoTitle</td>
+                                <td class="small">@item.Thread.LastMessageAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                <td><span class="badge @Classe(item.Thread.Status)">@Texto(item.Thread.Status)</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "situacao")]
+    private string? Situacao { get; set; }
+
+    private SupportStatus? Filtro => Situacao switch
+    {
+        "abertas" => SupportStatus.Open,
+        "respondidas" => SupportStatus.Answered,
+        "encerradas" => SupportStatus.Closed,
+        _ => null
+    };
+
+    private IReadOnlyList<SupportThreadView> Fila = [];
+
+    protected override async Task OnInitializedAsync() =>
+        Fila = await Servico.QueueAsync(Filtro, cancellationToken: Http.RequestAborted);
+
+    private static string Texto(SupportStatus situacao) => situacao switch
+    {
+        SupportStatus.Answered => "Respondida",
+        SupportStatus.Closed => "Encerrada",
+        _ => "Aguardando"
+    };
+
+    private static string Classe(SupportStatus situacao) => situacao switch
+    {
+        SupportStatus.Answered => "text-bg-success",
+        SupportStatus.Closed => "text-bg-secondary",
+        _ => "text-bg-warning"
+    };
+}
