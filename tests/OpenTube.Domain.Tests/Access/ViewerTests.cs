@@ -14,7 +14,7 @@ public class ViewerTests
         Assert.False(Viewer.Anonymous.IsAuthenticated);
         Assert.False(Viewer.Anonymous.IsAdmin);
         Assert.Null(Viewer.Anonymous.Email);
-        Assert.Null(Viewer.Anonymous.LinkToken);
+        Assert.Null(Viewer.Anonymous.LinkGrantId);
     }
 
     [Fact]
@@ -45,33 +45,39 @@ public class ViewerTests
     [Fact]
     public void Visitante_com_link_secreto_continua_anonimo()
     {
-        var viewer = Viewer.WithLink("  tok_abc  ");
+        var concessao = Guid.CreateVersion7();
+
+        var viewer = Viewer.WithLink(concessao);
 
         Assert.False(viewer.IsAuthenticated);
-        Assert.Equal("tok_abc", viewer.LinkToken);
+        Assert.Equal(concessao, viewer.LinkGrantId);
     }
 
     [Fact]
-    public void Link_em_branco_e_descartado()
+    public void Link_sem_concessao_e_descartado()
     {
-        Assert.Null(Viewer.WithLink("   ").LinkToken);
+        Assert.Null(Viewer.WithLink(Guid.Empty).LinkGrantId);
     }
 
     [Fact]
     public void Acrescenta_link_a_quem_ja_esta_identificado()
     {
+        var concessao = Guid.CreateVersion7();
+
         var viewer = Viewer.Authenticated(Guid.CreateVersion7(), EmailAddress.Parse("a@b.com"))
-            .PresentingLink("tok_1");
+            .PresentingLink(concessao);
 
         Assert.True(viewer.IsAuthenticated);
-        Assert.Equal("tok_1", viewer.LinkToken);
+        Assert.Equal(concessao, viewer.LinkGrantId);
     }
 
     [Fact]
-    public void Link_em_branco_nao_apaga_o_token_ja_apresentado()
+    public void Link_vazio_nao_apaga_a_concessao_ja_apresentada()
     {
-        var viewer = Viewer.WithLink("tok_1").PresentingLink("   ");
+        var concessao = Guid.CreateVersion7();
 
-        Assert.Equal("tok_1", viewer.LinkToken);
+        var viewer = Viewer.WithLink(concessao).PresentingLink(Guid.Empty);
+
+        Assert.Equal(concessao, viewer.LinkGrantId);
     }
 }
