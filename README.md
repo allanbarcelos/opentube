@@ -218,6 +218,31 @@ dotnet run --project src/OpenTube.Web
 | Mailpit | http://localhost:8025 | — |
 | PostgreSQL | `localhost:5432` | `opentube` / `opentube` |
 
+O worker roda em processo separado:
+
+```bash
+dotnet run --project src/OpenTube.Worker
+```
+
+Configure ao menos um administrador em `src/OpenTube.Web/appsettings.Development.json`; é
+esse endereço que recebe o código de acesso.
+
+### Em produção
+
+```bash
+cp .env.example .env    # preencha as variáveis
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+O Caddy resolve o TLS e, com `Storage__SegmentAuthorization` ligado, entrega os segmentos de
+vídeo depois de consultar a aplicação a cada pedido: ela decide, ele transporta. A vantagem
+sobre o endereço assinado é que revogar um acesso vale já no segmento seguinte, em vez de
+esperar a assinatura vencer.
+
+Para ligar a transcrição automática, aponte `OPENTUBE_WHISPER_PATH` para o executável e
+`OPENTUBE_WHISPER_MODEL` para o modelo. Sem isso o recurso fica desligado, que é o padrão:
+é a etapa mais cara do pipeline.
+
 > **Sobre a imagem do MinIO:** as imagens públicas do MinIO deixaram de ser distribuídas pelo Docker
 > Hub e pelo quay.io. O `docker-compose.yml` usa a última versão comunitária publicada, suficiente
 > para desenvolvimento. Em produção, use o registro oficial com credenciais ou troque por qualquer
@@ -260,7 +285,7 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | 3 | Domínios: verificação por DNS e porta de entrada dedicada | **concluída** |
 | 4 | Analytics: coleta, agregação, painéis e exportação | **concluída** |
 | 5 | Suporte: conversas privadas por vídeo | **concluída** |
-| 6 | Refino: legendas automáticas, marca d'água, auditoria, autorização por segmento | em andamento |
+| 6 | Refino: legendas automáticas, marca d'água, auditoria, autorização por segmento | **concluída** |
 
 ---
 

@@ -63,6 +63,7 @@ app.MapAnalyticsEndpoints();
 app.MapExportEndpoints();
 app.MapSupportEndpoints();
 app.MapCaptionEndpoints();
+app.MapSegmentAuthorization();
 app.MapHealthChecks("/saude");
 
 await PrepararAsync(app);

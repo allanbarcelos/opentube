@@ -1,0 +1,32 @@
+# Servidor da frente em produção. Ele resolve o TLS e, quando a autorização por segmento
+# está ligada, entrega os arquivos de vídeo depois de perguntar à aplicação se pode.
+
+{$OPENTUBE_HOST:localhost} {
+	encode zstd gzip
+
+	# Autorização por segmento: a aplicação decide, o Caddy transporta. Assim a revogação
+	# vale já no segmento seguinte, em vez de esperar uma assinatura vencer, e a aplicação
+	# não gasta banda nem memória com bytes de vídeo.
+	handle_path /vod/* {
+		forward_auth app:8080 {
+			uri /_authz
+			copy_headers Cookie
+			header_up X-Forwarded-Uri {http.request.orig_uri}
+		}
+
+		rewrite * /vod{uri}
+		reverse_proxy minio:9000
+	}
+
+	handle {
+		reverse_proxy app:8080
+	}
+
+	header {
+		Referrer-Policy "same-origin"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		# O conteúdo desta plataforma não deve aparecer em resultado de busca.
+		X-Robots-Tag "noindex, nofollow"
+	}
+}

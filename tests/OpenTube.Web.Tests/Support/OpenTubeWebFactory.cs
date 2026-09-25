@@ -21,6 +21,9 @@ public class OpenTubeWebFactory(PostgresFixture postgres, MinioFixture minio, pa
     /// <summary>Consulta de DNS controlada pelo teste, no lugar da consulta real.</summary>
     public FakeDnsTxtLookup Dns { get; } = new();
 
+    /// <summary>Entrega os segmentos por caminho autorizado, em vez de endereço assinado.</summary>
+    public bool ComAutorizacaoDeSegmento { get; set; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -31,6 +34,7 @@ public class OpenTubeWebFactory(PostgresFixture postgres, MinioFixture minio, pa
         builder.UseSetting("Storage:SecretKey", minio.Options.SecretKey);
         builder.UseSetting("Storage:OriginalsBucket", minio.Options.OriginalsBucket);
         builder.UseSetting("Storage:VodBucket", minio.Options.VodBucket);
+        builder.UseSetting("Storage:SegmentAuthorization", ComAutorizacaoDeSegmento ? "true" : "false");
         builder.UseSetting("Security:TokenPepper", "segredo-de-teste");
         builder.UseSetting("Security:IpHashPepper", "segredo-de-ip");
         builder.UseSetting("Security:PublicUrl", "http://localhost");

@@ -90,12 +90,20 @@ public class PlaybackService(
 
         var playlist = await storage.GetTextAsync(StorageBucket.Vod, chave, cancellationToken);
 
-        var assinado = HlsManifestRewriter.Rewrite(playlist, uri =>
-            uri.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                ? uri
-                : storage.SignDownloadUrl(StorageBucket.Vod, prefixo + uri, _options.PlaybackUrlLifetime));
+        var reescrito = HlsManifestRewriter.Rewrite(playlist, uri =>
+        {
+            if (uri.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                return uri;
 
-        return PlaybackResult.Allow(resultado.Reason, assinado);
+            // Com autorização por pedido, o segmento sai por um caminho da própria aplicação
+            // e a revogação passa a valer no segmento seguinte, em vez de esperar a
+            // assinatura vencer.
+            return _options.SegmentAuthorization
+                ? $"{_options.SegmentPath.TrimEnd('/')}/{prefixo}{uri}"
+                : storage.SignDownloadUrl(StorageBucket.Vod, prefixo + uri, _options.PlaybackUrlLifetime);
+        });
+
+        return PlaybackResult.Allow(resultado.Reason, reescrito);
     }
 
     /// <summary>Endereço assinado da miniatura, ou <c>null</c> quando não há acesso.</summary>

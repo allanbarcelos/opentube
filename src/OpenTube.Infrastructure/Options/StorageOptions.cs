@@ -37,6 +37,16 @@ public class StorageOptions
     /// <summary>Validade das URLs assinadas de reprodução.</summary>
     public TimeSpan PlaybackUrlLifetime { get; set; } = TimeSpan.FromHours(8);
 
+    /// <summary>
+    /// Entrega os segmentos por um caminho da própria aplicação, autorizado a cada pedido,
+    /// em vez de por endereço assinado. Exige um servidor na frente capaz de consultar a
+    /// autorização e entregar o arquivo — a aplicação decide, não transporta.
+    /// </summary>
+    public bool SegmentAuthorization { get; set; }
+
+    /// <summary>Caminho por onde os segmentos são servidos quando a autorização é por pedido.</summary>
+    public string SegmentPath { get; set; } = "/vod";
+
     /// <summary>Maior arquivo aceito num envio. Padrão de 20 GiB.</summary>
     public long MaxUploadBytes { get; set; } = 20L * 1024 * 1024 * 1024;
 
