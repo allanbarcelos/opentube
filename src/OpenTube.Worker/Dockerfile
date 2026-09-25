@@ -2,7 +2,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY Directory.Build.props Directory.Packages.props OpenTube.sln ./
+COPY Directory.Build.props Directory.Packages.props ./
 COPY src/OpenTube.Shared/OpenTube.Shared.csproj src/OpenTube.Shared/
 COPY src/OpenTube.Domain/OpenTube.Domain.csproj src/OpenTube.Domain/
 COPY src/OpenTube.Infrastructure/OpenTube.Infrastructure.csproj src/OpenTube.Infrastructure/
