@@ -1,0 +1,255 @@
+@page "/admin/videos/{videoId:guid}"
+@using OpenTube.Domain.Entities
+@using OpenTube.Infrastructure.Services
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject AdminVideoService Admin
+@inject NavigationManager Navegacao
+
+<PageTitle>@(Video?.Title ?? "Vídeo") — Administração</PageTitle>
+
+<div class="container py-4">
+    @if (Video is null)
+    {
+        @* A navegação já foi desviada para a página de não encontrado. *@
+    }
+    else
+    {
+        <nav aria-label="Trilha de navegação">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
+                <li class="breadcrumb-item active" aria-current="page">@Video.Title</li>
+            </ol>
+        </nav>
+
+        @if (Salvo)
+        {
+            <div class="alert alert-success" role="status">Alterações salvas.</div>
+        }
+        @if (Enfileirado)
+        {
+            <div class="alert alert-success" role="status">O vídeo voltou para a fila de processamento.</div>
+        }
+        @if (Restaurado)
+        {
+            <div class="alert alert-success" role="status">Vídeo restaurado. Ele continua privado.</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Erro))
+        {
+            <div class="alert alert-danger" role="alert">@Erro</div>
+        }
+        @if (Video.IsDeleted)
+        {
+            <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <span>Este vídeo está excluído e não aparece para ninguém.</span>
+                <form method="post" action="/admin/videos/@Video.Id/restaurar">
+                    <AntiforgeryToken />
+                    <button class="btn btn-sm btn-outline-dark" type="submit">Restaurar</button>
+                </form>
+            </div>
+        }
+
+        <div class="row g-4">
+            <div class="col-lg-7">
+                <div class="card">
+                    <div class="card-header">Dados do vídeo</div>
+                    <div class="card-body">
+                        <form method="post" action="/admin/videos/@Video.Id/salvar">
+                            <AntiforgeryToken />
+
+                            <div class="mb-3">
+                                <label class="form-label" for="titulo">Título</label>
+                                <input class="form-control" id="titulo" name="titulo" value="@Video.Title"
+                                       maxlength="300" required />
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label" for="descricao">Descrição</label>
+                                <textarea class="form-control" id="descricao" name="descricao" rows="4"
+                                          maxlength="10000">@Video.Description</textarea>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label" for="etiquetas">Etiquetas</label>
+                                <input class="form-control" id="etiquetas" name="etiquetas"
+                                       value="@string.Join(", ", Video.Tags)" />
+                                <div class="form-text">Separe por vírgula. Elas entram na busca.</div>
+                            </div>
+
+                            <fieldset class="mb-3">
+                                <legend class="form-label">Visibilidade</legend>
+
+                                @foreach (var opcao in Opcoes)
+                                {
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="visibilidade"
+                                               id="visibilidade-@((int)opcao.Valor)" value="@((int)opcao.Valor)"
+                                               checked="@(Video.Visibility == opcao.Valor)"
+                                               disabled="@(!Video.IsPlayable && opcao.Valor != VideoVisibility.Private)" />
+                                        <label class="form-check-label" for="visibilidade-@((int)opcao.Valor)">
+                                            <strong>@opcao.Rotulo</strong>
+                                            <span class="d-block small text-body-secondary">@opcao.Explicacao</span>
+                                        </label>
+                                    </div>
+                                }
+
+                                @if (!Video.IsPlayable)
+                                {
+                                    <div class="form-text">
+                                        Só um vídeo pronto pode deixar de ser privado.
+                                    </div>
+                                }
+                            </fieldset>
+
+                            <button class="btn btn-primary" type="submit">Salvar</button>
+                            @if (Video.IsPlayable)
+                            {
+                                <a class="btn btn-outline-secondary ms-2" href="/v/@Video.Slug">Ver a página do vídeo</a>
+                            }
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="card mb-3">
+                    <div class="card-header">Processamento</div>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Estado</span><span class="badge @EstadoClasse">@EstadoTexto</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Duração</span><span>@(Video.IsPlayable ? DuracaoTexto : "—")</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Resolução</span>
+                            <span>@(Video.Width > 0 ? $"{Video.Width}×{Video.Height}" : "—")</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Tamanho do original</span><span>@TamanhoTexto</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Endereço</span><code class="small">/v/@Video.Slug</code>
+                        </li>
+                    </ul>
+                    <div class="card-body">
+                        <form method="post" action="/admin/videos/@Video.Id/reprocessar">
+                            <AntiforgeryToken />
+                            <button class="btn btn-outline-secondary w-100" type="submit">
+                                Reprocessar a partir do original
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                @if (!Video.IsDeleted)
+                {
+                    <div class="card border-danger">
+                        <div class="card-header text-danger">Excluir</div>
+                        <div class="card-body">
+                            <p class="small text-body-secondary">
+                                O vídeo sai do acervo e do acesso na hora. O registro é preservado para
+                                que o histórico de quem assistiu continue fazendo sentido.
+                            </p>
+                            <form method="post" action="/admin/videos/@Video.Id/excluir">
+                                <AntiforgeryToken />
+                                <button class="btn btn-outline-danger w-100" type="submit">Excluir vídeo</button>
+                            </form>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly (VideoVisibility Valor, string Rotulo, string Explicacao)[] Opcoes =
+    [
+        (VideoVisibility.Private, "Privado", "Somente administradores."),
+        (VideoVisibility.Public, "Público", "Qualquer visitante do site, sem entrar."),
+        (VideoVisibility.Restricted, "Restrito", "Somente quem tiver uma concessão de acesso.")
+    ];
+
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [Parameter]
+    public Guid VideoId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "salvo")]
+    private string? SalvoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "enfileirado")]
+    private string? EnfileiradoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "restaurado")]
+    private string? RestauradoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "erro")]
+    private string? Erro { get; set; }
+
+    private bool Salvo => SalvoBruto == "1";
+    private bool Enfileirado => EnfileiradoBruto == "1";
+    private bool Restaurado => RestauradoBruto == "1";
+
+    private Video? Video;
+
+    private string EstadoTexto => Video?.Status switch
+    {
+        VideoStatus.Draft => "Aguardando o envio do arquivo",
+        VideoStatus.Uploaded => "Na fila",
+        VideoStatus.Processing => "Processando",
+        VideoStatus.Ready => "Pronto",
+        _ => "Falhou"
+    };
+
+    private string EstadoClasse => Video?.Status switch
+    {
+        VideoStatus.Ready => "text-bg-success",
+        VideoStatus.Failed => "text-bg-danger",
+        VideoStatus.Processing => "text-bg-info",
+        _ => "text-bg-secondary"
+    };
+
+    private string DuracaoTexto
+    {
+        get
+        {
+            var tempo = TimeSpan.FromSeconds(Video?.DurationSeconds ?? 0);
+
+            return tempo.TotalHours >= 1
+                ? $"{(int)tempo.TotalHours}:{tempo.Minutes:D2}:{tempo.Seconds:D2}"
+                : $"{tempo.Minutes}:{tempo.Seconds:D2}";
+        }
+    }
+
+    private string TamanhoTexto
+    {
+        get
+        {
+            var bytes = (double)(Video?.SizeBytes ?? 0);
+
+            if (bytes <= 0)
+                return "—";
+
+            string[] unidades = ["B", "KiB", "MiB", "GiB", "TiB"];
+            var indice = 0;
+
+            while (bytes >= 1024 && indice < unidades.Length - 1)
+            {
+                bytes /= 1024;
+                indice++;
+            }
+
+            return $"{bytes:0.#} {unidades[indice]}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Video = await Admin.FindAsync(VideoId, Http.RequestAborted);
+
+        if (Video is null)
+            Navegacao.NotFound();
+    }
+}

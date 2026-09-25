@@ -1,0 +1,151 @@
+@page "/admin"
+@using OpenTube.Infrastructure.Playback
+@using OpenTube.Infrastructure.Services
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject VideoCatalog Catalogo
+@inject AdminVideoService Admin
+
+<PageTitle>Administração — OpenTube</PageTitle>
+
+<div class="container py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h1 class="h4 mb-0">Administração</h1>
+        <a class="btn btn-primary" href="/admin/enviar">Enviar vídeo</a>
+    </div>
+
+    @if (Excluido)
+    {
+        <div class="alert alert-success" role="status">Vídeo excluído.</div>
+    }
+
+    <div class="row g-3 mb-4">
+        @foreach (var indicador in Indicadores)
+        {
+            <div class="col-6 col-lg-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <p class="text-body-secondary small mb-1">@indicador.Rotulo</p>
+                        <p class="h4 mb-0">@indicador.Valor</p>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span>Acervo</span>
+
+            <form action="/admin" method="get" class="d-flex" role="search">
+                <input class="form-control form-control-sm" type="search" name="q" value="@Q"
+                       placeholder="Filtrar" aria-label="Filtrar o acervo" />
+                <button class="btn btn-sm btn-outline-secondary ms-2" type="submit">Filtrar</button>
+            </form>
+        </div>
+
+        @if (Resultado.Items.Count == 0)
+        {
+            <div class="card-body text-center text-body-secondary py-5">
+                Nenhum vídeo por aqui ainda.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col">Título</th>
+                            <th scope="col">Estado</th>
+                            <th scope="col">Visibilidade</th>
+                            <th scope="col">Duração</th>
+                            <th scope="col">Enviado em</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var video in Resultado.Items)
+                        {
+                            <tr>
+                                <td>
+                                    <a href="/admin/videos/@video.Id" class="text-decoration-none">@video.Title</a>
+                                </td>
+                                <td><span class="badge @EstadoClasse(video)">@EstadoTexto(video)</span></td>
+                                <td><span class="badge @VisibilidadeClasse(video)">@VisibilidadeTexto(video)</span></td>
+                                <td>@(video.Status == (int)VideoStatus.Ready ? video.DurationLabel : "—")</td>
+                                <td>@video.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <Paginacao Resultado="Resultado" BasePath="/admin" Termo="Q" />
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "q")]
+    private string? Q { get; set; }
+
+    [SupplyParameterFromQuery(Name = "pagina")]
+    private int? Pagina { get; set; }
+
+    [SupplyParameterFromQuery(Name = "excluido")]
+    private string? ExcluidoBruto { get; set; }
+
+    private bool Excluido => ExcluidoBruto == "1";
+
+    private PagedResult<VideoSummary> Resultado = PagedResult<VideoSummary>.Empty(VideoCatalog.DefaultPageSize);
+
+    private readonly List<(string Rotulo, int Valor)> Indicadores = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var espectador = ViewerContext.From(Http.User);
+
+        Resultado = await Catalogo.BrowseAsync(espectador, Q, Pagina ?? 1, cancellationToken: Http.RequestAborted);
+
+        var fila = await Admin.QueueSummaryAsync(Http.RequestAborted);
+
+        Indicadores.Clear();
+        Indicadores.Add(("Vídeos no acervo", Resultado.Total));
+        Indicadores.Add(("Na fila", fila.GetValueOrDefault(JobStatus.Pending)));
+        Indicadores.Add(("Processando", fila.GetValueOrDefault(JobStatus.Running)));
+        Indicadores.Add(("Falhas", fila.GetValueOrDefault(JobStatus.Failed)));
+    }
+
+    private static string EstadoTexto(VideoSummary video) => (VideoStatus)video.Status switch
+    {
+        VideoStatus.Draft => "Rascunho",
+        VideoStatus.Uploaded => "Na fila",
+        VideoStatus.Processing => "Processando",
+        VideoStatus.Ready => "Pronto",
+        _ => "Falhou"
+    };
+
+    private static string EstadoClasse(VideoSummary video) => (VideoStatus)video.Status switch
+    {
+        VideoStatus.Ready => "text-bg-success",
+        VideoStatus.Failed => "text-bg-danger",
+        VideoStatus.Processing => "text-bg-info",
+        _ => "text-bg-secondary"
+    };
+
+    private static string VisibilidadeTexto(VideoSummary video) => (VideoVisibility)video.Visibility switch
+    {
+        VideoVisibility.Public => "Público",
+        VideoVisibility.Restricted => "Restrito",
+        _ => "Privado"
+    };
+
+    private static string VisibilidadeClasse(VideoSummary video) => (VideoVisibility)video.Visibility switch
+    {
+        VideoVisibility.Public => "text-bg-success",
+        VideoVisibility.Restricted => "text-bg-warning",
+        _ => "text-bg-secondary"
+    };
+}

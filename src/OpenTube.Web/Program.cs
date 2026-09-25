@@ -37,15 +37,20 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStaticFiles();
-app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// A proteção contra falsificação precisa vir depois da autenticação: o token é vinculado à
+// identidade de quem carregou a página, e validá-lo antes faria todo formulário de pessoa
+// autenticada ser recusado.
+app.UseAntiforgery();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapAuthEndpoints();
 app.MapPlaybackEndpoints();
+app.MapAdminEndpoints();
 app.MapHealthChecks("/saude");
 
 await PrepararAsync(app);
