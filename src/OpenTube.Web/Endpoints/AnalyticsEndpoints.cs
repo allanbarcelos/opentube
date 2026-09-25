@@ -42,7 +42,8 @@ public static class AnalyticsEndpoints
             // conseguiria criar sessões para vídeos que não tem permissão de ver.
             var permissao = await playback.GetThumbnailUrlAsync(pedido.VideoId, espectador, cancellationToken);
             var autorizado = permissao is not null
-                || (await playback.GetMasterAsync(pedido.VideoId, espectador, v => v, cancellationToken)).Allowed;
+                || (await playback.GetMasterAsync(
+                        pedido.VideoId, espectador, v => v, cancellationToken: cancellationToken)).Allowed;
 
             if (!autorizado)
                 return Results.NotFound();

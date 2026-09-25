@@ -3,6 +3,7 @@
 @using OpenTube.Infrastructure.Playback
 @inject VideoCatalog Catalogo
 @inject CurrentViewer Espectadores
+@inject Microsoft.Extensions.Options.IOptions<OpenTube.Infrastructure.Options.SecurityOptions> Seguranca
 @inject NavigationManager Navegacao
 
 <PageTitle>@(Video?.Title ?? "Vídeo não encontrado") — OpenTube</PageTitle>
@@ -23,9 +24,14 @@
     {
         <div class="row g-4">
             <div class="col-lg-8">
-                <div class="player-shell rounded overflow-hidden shadow-sm">
+                <div class="player-shell rounded overflow-hidden shadow-sm position-relative">
                     <video id="player-video" controls playsinline preload="metadata"
                            poster="/api/videos/@Video.Id/miniatura"></video>
+
+                    @if (!string.IsNullOrWhiteSpace(MarcaDagua))
+                    {
+                        <span class="marca-dagua" id="marca-dagua">@MarcaDagua</span>
+                    }
                 </div>
 
                 <h1 class="h4 mt-3 mb-1">@Video.Title</h1>
@@ -69,11 +75,13 @@
             </div>
         </div>
 
+        <script src="js/marca-dagua.js"></script>
         <script src="lib/hlsjs/hls.min.js"></script>
         <script src="js/analytics.js"></script>
         <script src="js/player.js"></script>
         <script>
             window.openTubePlayer.iniciar('player-video', '/api/videos/@Video.Id/master.m3u8', '@Video.Id');
+            window.openTubeMarcaDagua && window.openTubeMarcaDagua.iniciar('marca-dagua');
         </script>
     }
 </div>
@@ -88,6 +96,12 @@
     private Viewer Espectador = Viewer.Anonymous;
 
     private Video? Video;
+
+    /// <summary>
+    /// Identificação exibida sobre o vídeo. Não impede a gravação de tela, mas identifica a
+    /// origem de um vazamento e inibe o repasse casual.
+    /// </summary>
+    private string? MarcaDagua;
 
     private string DuracaoTexto
     {
@@ -105,6 +119,9 @@
     {
         Espectador = await Espectadores.GetAsync(Http.RequestAborted);
         Video = await Catalogo.FindBySlugAsync(Espectador, Slug, Http.RequestAborted);
+
+        if (Seguranca.Value.WatermarkEnabled && Espectador.IsAuthenticated)
+            MarcaDagua = Espectador.Email;
 
         // Vídeo inexistente e vídeo sem acesso respondem exatamente igual. A diferença entre
         // "não existe" e "existe mas não é para você" já seria informação sobre o acervo.

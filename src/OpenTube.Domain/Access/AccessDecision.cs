@@ -43,7 +43,10 @@ public enum AccessReason
     VideoNotReady = 21,
 
     /// <summary>A conta do espectador está desativada.</summary>
-    ViewerDisabled = 22
+    ViewerDisabled = 22,
+
+    /// <summary>Reproduções simultâneas demais com a mesma conta.</summary>
+    TooManyStreams = 23
 }
 
 /// <summary>Resultado da avaliação de acesso, com o motivo preservado para auditoria.</summary>

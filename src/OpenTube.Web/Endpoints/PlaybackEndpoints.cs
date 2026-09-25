@@ -1,5 +1,6 @@
 using OpenTube.Domain.Access;
 using OpenTube.Infrastructure.Playback;
+using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Storage;
 using OpenTube.Web.Auth;
 
@@ -20,6 +21,8 @@ public static class PlaybackEndpoints
             Guid videoId,
             PlaybackService playback,
             CurrentViewer espectadores,
+            PrivacyHasher privacidade,
+            HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
             var espectador = await espectadores.GetAsync(cancellationToken);
@@ -28,6 +31,7 @@ public static class PlaybackEndpoints
                 videoId,
                 espectador,
                 versao => $"/api/videos/{videoId}/versoes/{versao}.m3u8",
+                privacidade.HashIp(contexto.Connection.RemoteIpAddress?.ToString()),
                 cancellationToken);
 
             return Responder(resultado, MediaTypes.HlsPlaylist);
@@ -71,6 +75,9 @@ public static class PlaybackEndpoints
         return resultado.Reason switch
         {
             AccessReason.VideoNotReady => Results.StatusCode(StatusCodes.Status409Conflict),
+            // Reproduções simultâneas demais merecem resposta própria: aqui o acesso existe,
+            // e esconder o motivo deixaria a pessoa sem saber o que fazer.
+            AccessReason.TooManyStreams => Results.StatusCode(StatusCodes.Status429TooManyRequests),
             _ => Results.NotFound()
         };
     }

@@ -106,3 +106,19 @@
     border-radius: 4px;
     background-color: var(--grafico-serie);
 }
+
+/* Marca d'água -------------------------------------------------------------- */
+
+.marca-dagua {
+    position: absolute;
+    z-index: 2;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background-color: rgba(0, 0, 0, 0.35);
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+    /* Não pode atrapalhar o clique nos controles do player. */
+    pointer-events: none;
+    user-select: none;
+    transition: top 0.6s ease, left 0.6s ease, right 0.6s ease, bottom 0.6s ease;
+}

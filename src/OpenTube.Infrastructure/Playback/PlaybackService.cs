@@ -29,6 +29,7 @@ public class PlaybackService(
     OpenTubeDbContext db,
     IVideoStorage storage,
     AccessService acesso,
+    PlaybackGuard limite,
     IOptions<StorageOptions> options)
 {
     private readonly StorageOptions _options = options.Value;
@@ -38,12 +39,18 @@ public class PlaybackService(
         Guid videoId,
         Viewer viewer,
         Func<string, string> renditionUrl,
+        string? ipHash = null,
         CancellationToken cancellationToken = default)
     {
         var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
 
         if (video is null || !resultado.Allowed)
             return PlaybackResult.Deny(resultado.Reason);
+
+        // A verificação fica na playlist principal, pedida uma vez por reprodução: fazê-la a
+        // cada segmento transformaria o limite em um enxame de consultas.
+        if (!await limite.AllowsAnotherAsync(viewer.UserId, ipHash, cancellationToken))
+            return PlaybackResult.Deny(AccessReason.TooManyStreams);
 
         // O uso é registrado aqui, e não a cada segmento: a playlist principal é pedida uma
         // vez por reprodução, então é o ponto que corresponde a "assistiu".

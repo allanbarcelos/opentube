@@ -31,6 +31,7 @@ public class PlaybackServiceTests(PostgresFixture postgres, MinioFixture minio) 
     private PlaybackService Criar(OpenTube.Infrastructure.Persistence.OpenTubeDbContext db, IVideoStorage storage) =>
         new(db, storage,
             new AccessService(db, Microsoft.Extensions.Options.Options.Create(Seguranca), TimeProvider.System),
+            new PlaybackGuard(db, Microsoft.Extensions.Options.Options.Create(Seguranca), TimeProvider.System),
             Microsoft.Extensions.Options.Options.Create(minio.Options));
 
     private async Task<Video> PublicarAsync(IVideoStorage storage, VideoVisibility visibilidade)

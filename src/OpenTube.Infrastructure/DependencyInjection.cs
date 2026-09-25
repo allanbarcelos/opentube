@@ -60,6 +60,7 @@ public static class DependencyInjection
         services.AddScoped<GrantService>();
         services.AddSingleton<IDnsTxtLookup, DnsTxtLookup>();
         services.AddScoped<DomainService>();
+        services.AddScoped<PlaybackGuard>();
         services.AddScoped<PlaybackService>();
         services.AddScoped<AnalyticsCollector>();
         services.AddScoped<AnalyticsAggregator>();

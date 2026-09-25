@@ -36,6 +36,19 @@ public class SecurityOptions
     /// <summary>Quantos códigos um mesmo domínio pode receber por dia.</summary>
     public int CodesPerDayPerDomain { get; set; } = 100;
 
+    /// <summary>
+    /// Quantas origens distintas podem reproduzir ao mesmo tempo com a mesma conta. Zero
+    /// desliga a verificação. Detecta credencial repassada; não a impede em rede compartilhada,
+    /// onde várias pessoas saem pelo mesmo endereço.
+    /// </summary>
+    public int MaxConcurrentPlaybacks { get; set; } = 3;
+
+    /// <summary>
+    /// Exibe o endereço de quem assiste sobre o vídeo. Não impede a gravação de tela, mas
+    /// identifica a origem de um vazamento e inibe o repasse casual.
+    /// </summary>
+    public bool WatermarkEnabled { get; set; } = true;
+
     /// <summary>Emails que recebem o papel de administrador ao subir a aplicação.</summary>
     public string[] AdminEmails { get; set; } = [];
 
