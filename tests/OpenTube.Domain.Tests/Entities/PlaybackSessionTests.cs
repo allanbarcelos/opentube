@@ -120,6 +120,31 @@ public class PlaybackSessionTests
     }
 
     [Fact]
+    public void Em_video_curto_a_folga_encolhe_junto()
+    {
+        // Cinco segundos de folga num vídeo de oito fariam parar no meio virar "concluiu".
+        var sessao = PlaybackSession.Start(Video, Agora, Usuario);
+
+        sessao.Record(new WatchInterval(0, 4), Agora, videoDuration: 8);
+
+        Assert.False(sessao.Completed);
+
+        sessao.Record(new WatchInterval(4, 7.7), Agora, videoDuration: 8);
+
+        Assert.True(sessao.Completed);
+    }
+
+    [Theory]
+    [InlineData(600, 5)]
+    [InlineData(100, 5)]
+    [InlineData(8, 0.4)]
+    [InlineData(0, 0)]
+    public void A_folga_de_conclusao_e_proporcional_ate_o_limite(double duracao, double esperado)
+    {
+        Assert.Equal(esperado, PlaybackSession.CompletionTolerance(duracao), 3);
+    }
+
+    [Fact]
     public void Parar_antes_do_fim_nao_conta_como_concluida()
     {
         var sessao = Nova();

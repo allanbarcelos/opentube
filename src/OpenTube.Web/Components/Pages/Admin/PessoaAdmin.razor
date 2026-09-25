@@ -1,0 +1,162 @@
+@page "/admin/pessoas/{userId:guid}"
+@using OpenTube.Domain.Entities
+@using OpenTube.Infrastructure.Access
+@using OpenTube.Infrastructure.Analytics
+@using OpenTube.Infrastructure.Persistence
+@using Microsoft.EntityFrameworkCore
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject AnalyticsQueries Consultas
+@inject GrantService Concessoes
+@inject OpenTubeDbContext Db
+@inject NavigationManager Navegacao
+
+<PageTitle>@(Pessoa?.Email ?? "Pessoa") — Administração</PageTitle>
+
+<div class="container py-4">
+    @if (Pessoa is null)
+    {
+        @* A navegação já foi desviada para a página de não encontrado. *@
+    }
+    else
+    {
+        <nav aria-label="Trilha de navegação">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
+                <li class="breadcrumb-item"><a href="/admin/pessoas">Pessoas</a></li>
+                <li class="breadcrumb-item active" aria-current="page">@Pessoa.Email</li>
+            </ol>
+        </nav>
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h1 class="h4 mb-0">
+                @Pessoa.Email
+                @if (Pessoa.IsAdmin)
+                {
+                    <span class="badge text-bg-primary align-middle ms-1">Administrador</span>
+                }
+                @if (!Pessoa.IsActive)
+                {
+                    <span class="badge text-bg-secondary align-middle ms-1">Desativado</span>
+                }
+            </h1>
+
+            @if (Atividade.Count > 0)
+            {
+                <a class="btn btn-outline-secondary btn-sm" href="/admin/exportar/pessoas/@UserId/atividade.csv">
+                    Exportar CSV
+                </a>
+            }
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header">O que assistiu</div>
+
+                    @if (Atividade.Count == 0)
+                    {
+                        <div class="card-body text-center text-body-secondary py-5">
+                            Esta pessoa ainda não assistiu a nada.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Vídeo</th>
+                                        <th scope="col">Quando</th>
+                                        <th scope="col">Assistiu</th>
+                                        <th scope="col">Aparelho</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in Atividade)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <a href="/admin/videos/@item.VideoId" class="text-decoration-none">@item.Title</a>
+                                            </td>
+                                            <td class="small">@item.At.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td>
+                                                @((item.Coverage * 100).ToString("0")) %
+                                                @if (item.Completed)
+                                                {
+                                                    <span class="badge text-bg-success ms-1">até o fim</span>
+                                                }
+                                            </td>
+                                            <td class="small">@item.Device</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header">Acessos concedidos</div>
+
+                    @if (Acessos.Count == 0)
+                    {
+                        <div class="card-body text-body-secondary small">
+                            Nenhuma concessão individual. O acesso pode vir do domínio do email.
+                        </div>
+                    }
+                    else
+                    {
+                        <ul class="list-group list-group-flush">
+                            @foreach (var concessao in Acessos)
+                            {
+                                <li class="list-group-item d-flex justify-content-between small">
+                                    <span>@AlvoTexto(concessao)</span>
+                                    <span class="text-body-secondary">
+                                        @(concessao.IsRevoked ? "revogado" : "em vigor")
+                                    </span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [Parameter]
+    public Guid UserId { get; set; }
+
+    private User? Pessoa;
+
+    private IReadOnlyList<ViewerActivity> Atividade = [];
+
+    private IReadOnlyList<AccessGrant> Acessos = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Pessoa = await Db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == UserId, Http.RequestAborted);
+
+        if (Pessoa is null)
+        {
+            Navegacao.NotFound();
+            return;
+        }
+
+        Atividade = await Consultas.ViewerTimelineAsync(UserId, cancellationToken: Http.RequestAborted);
+        Acessos = await Concessoes.ListForEmailAsync(Pessoa.Email, Http.RequestAborted);
+    }
+
+    private static string AlvoTexto(AccessGrant concessao) => concessao.TargetType switch
+    {
+        OpenTube.Domain.Enums.GrantTargetType.All => "Todo o acervo",
+        OpenTube.Domain.Enums.GrantTargetType.Collection => "Uma coleção",
+        _ => "Um vídeo"
+    };
+}

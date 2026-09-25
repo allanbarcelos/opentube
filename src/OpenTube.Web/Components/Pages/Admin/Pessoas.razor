@@ -1,0 +1,98 @@
+@page "/admin/pessoas"
+@using OpenTube.Infrastructure.Analytics
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject AnalyticsQueries Consultas
+
+<PageTitle>Pessoas — Administração</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="Trilha de navegação">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Pessoas</li>
+        </ol>
+    </nav>
+
+    <div class="card">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span>Quem tem acesso à plataforma</span>
+
+            <form action="/admin/pessoas" method="get" class="d-flex" role="search">
+                <input class="form-control form-control-sm" type="search" name="q" value="@Q"
+                       placeholder="Buscar por email" aria-label="Buscar pessoa por email" />
+                <button class="btn btn-sm btn-outline-secondary ms-2" type="submit">Buscar</button>
+            </form>
+        </div>
+
+        @if (Lista.Count == 0)
+        {
+            <div class="card-body text-center text-body-secondary py-5">
+                @(string.IsNullOrWhiteSpace(Q) ? "Ninguém entrou ainda." : "Nenhuma pessoa corresponde à busca.")
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col">Email</th>
+                            <th scope="col">Acessos concedidos</th>
+                            <th scope="col">Vídeos assistidos</th>
+                            <th scope="col">Tempo assistido</th>
+                            <th scope="col">Último acesso</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var pessoa in Lista)
+                        {
+                            <tr>
+                                <td>
+                                    <a href="/admin/pessoas/@pessoa.UserId" class="text-decoration-none">@pessoa.Email</a>
+                                    @if (pessoa.IsAdmin)
+                                    {
+                                        <span class="badge text-bg-primary ms-1">Administrador</span>
+                                    }
+                                    @if (!pessoa.IsActive)
+                                    {
+                                        <span class="badge text-bg-secondary ms-1">Desativado</span>
+                                    }
+                                </td>
+                                <td>@pessoa.ActiveGrants</td>
+                                <td>@pessoa.VideosWatched</td>
+                                <td>@Tempo(pessoa.WatchSeconds)</td>
+                                <td class="small">
+                                    @(pessoa.LastSeenAt is { } quando
+                                        ? quando.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                        : "nunca entrou")
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "q")]
+    private string? Q { get; set; }
+
+    private IReadOnlyList<Person> Lista = [];
+
+    protected override async Task OnInitializedAsync() =>
+        Lista = await Consultas.PeopleAsync(Q, cancellationToken: Http.RequestAborted);
+
+    private static string Tempo(double segundos)
+    {
+        var tempo = TimeSpan.FromSeconds(Math.Max(0, segundos));
+
+        return tempo.TotalHours >= 1
+            ? $"{(int)tempo.TotalHours}h{tempo.Minutes:D2}"
+            : $"{tempo.Minutes}min";
+    }
+}

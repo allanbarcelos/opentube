@@ -193,6 +193,51 @@ public class AnalyticsQueries(OpenTubeDbContext db)
         return new InviteFunnel(convidados.Count, usuarios.Count, assistiram.Count, concluiram, pendentes);
     }
 
+    /// <summary>
+    /// Pessoas conhecidas pelo sistema, com o resumo do que assistiram. O filtro busca por
+    /// parte do endereço, que é como o administrador costuma procurar alguém.
+    /// </summary>
+    public async Task<IReadOnlyList<Person>> PeopleAsync(
+        string? search = null, int limit = 100, CancellationToken cancellationToken = default)
+    {
+        var termo = string.IsNullOrWhiteSpace(search) ? null : "%" + search.Trim().ToLowerInvariant() + "%";
+
+        var linhas = await db.Database.GetDbConnection().QueryAsync<PersonRow>(new CommandDefinition("""
+            SELECT u.id            AS "UserId",
+                   u.email         AS "Email",
+                   u.is_admin      AS "IsAdmin",
+                   u.disabled_at IS NULL AS "IsActive",
+                   u.created_at    AS "CreatedAt",
+                   u.last_seen_at  AS "LastSeenAt",
+                   COALESCE(a.videos, 0)   AS "VideosWatched",
+                   COALESCE(a.segundos, 0) AS "WatchSeconds",
+                   COALESCE(g.total, 0)    AS "ActiveGrants"
+              FROM users u
+              LEFT JOIN (
+                    SELECT user_id,
+                           COUNT(DISTINCT video_id) AS videos,
+                           SUM(watched_seconds)     AS segundos
+                      FROM playback_sessions
+                     WHERE user_id IS NOT NULL
+                     GROUP BY user_id
+              ) a ON a.user_id = u.id
+              LEFT JOIN (
+                    SELECT subject_value, COUNT(*) AS total
+                      FROM access_grants
+                     WHERE subject_type = 1 AND revoked_at IS NULL
+                     GROUP BY subject_value
+              ) g ON g.subject_value = u.email
+             WHERE @Termo IS NULL OR u.email LIKE @Termo
+             ORDER BY u.last_seen_at DESC NULLS LAST, u.created_at DESC
+             LIMIT @Limite
+            """, new { Termo = termo, Limite = limit }, cancellationToken: cancellationToken));
+
+        return [.. linhas.Select(l => new Person(
+            l.UserId, l.Email, l.IsAdmin, l.IsActive,
+            Momento(l.CreatedAt), l.LastSeenAt is null ? null : Momento(l.LastSeenAt.Value),
+            l.VideosWatched, l.WatchSeconds, l.ActiveGrants))];
+    }
+
     private static DateTimeOffset Momento(DateTime valor) =>
         new(DateTime.SpecifyKind(valor, DateTimeKind.Utc));
 
@@ -236,6 +281,19 @@ public class AnalyticsQueries(OpenTubeDbContext db)
         public double DurationSeconds { get; init; }
         public bool Completed { get; init; }
         public int Device { get; init; }
+    }
+
+    private sealed class PersonRow
+    {
+        public Guid UserId { get; init; }
+        public string Email { get; init; } = string.Empty;
+        public bool IsAdmin { get; init; }
+        public bool IsActive { get; init; }
+        public DateTime CreatedAt { get; init; }
+        public DateTime? LastSeenAt { get; init; }
+        public int VideosWatched { get; init; }
+        public double WatchSeconds { get; init; }
+        public int ActiveGrants { get; init; }
     }
 
     private sealed class BreakdownRow

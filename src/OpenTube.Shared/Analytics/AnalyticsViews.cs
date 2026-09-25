@@ -55,6 +55,21 @@ public sealed record ViewerActivity(
     public double Coverage => DurationSeconds <= 0 ? 0 : Math.Clamp(WatchSeconds / DurationSeconds, 0, 1);
 }
 
+/// <summary>Uma pessoa na listagem administrativa, com o resumo do que assistiu.</summary>
+/// <param name="UserId">Identificador.</param>
+/// <param name="Email">Endereço.</param>
+/// <param name="IsAdmin">Se é administrador.</param>
+/// <param name="IsActive">Se o acesso está ativo.</param>
+/// <param name="CreatedAt">Quando passou a existir no sistema.</param>
+/// <param name="LastSeenAt">Último acesso.</param>
+/// <param name="VideosWatched">Vídeos distintos assistidos.</param>
+/// <param name="WatchSeconds">Segundos assistidos somados.</param>
+/// <param name="ActiveGrants">Concessões em vigor.</param>
+public sealed record Person(
+    Guid UserId, string Email, bool IsAdmin, bool IsActive,
+    DateTimeOffset CreatedAt, DateTimeOffset? LastSeenAt,
+    int VideosWatched, double WatchSeconds, int ActiveGrants);
+
 /// <summary>Contagem de um valor qualquer, usada nos quadros de distribuição.</summary>
 /// <param name="Label">Rótulo.</param>
 /// <param name="Count">Quantidade.</param>

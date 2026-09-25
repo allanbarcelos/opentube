@@ -60,6 +60,7 @@ app.MapCollectionEndpoints();
 app.MapAccessEndpoints();
 app.MapDomainEndpoints();
 app.MapAnalyticsEndpoints();
+app.MapExportEndpoints();
 app.MapHealthChecks("/saude");
 
 await PrepararAsync(app);

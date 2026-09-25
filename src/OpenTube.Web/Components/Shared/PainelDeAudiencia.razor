@@ -1,0 +1,219 @@
+@* Audiência de um vídeo: o resumo, onde o público abandona, quem assistiu e quem ainda não. *@
+@using OpenTube.Domain.Enums
+@using OpenTube.Infrastructure.Analytics
+@inject AnalyticsQueries Consultas
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-body-secondary small mb-1">Visualizações</p>
+                <p class="h4 mb-0">@Resumo.Views</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-body-secondary small mb-1">Pessoas distintas</p>
+                <p class="h4 mb-0">@Resumo.UniqueViewers</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-body-secondary small mb-1">Tempo médio assistido</p>
+                <p class="h4 mb-0">@Tempo(Resumo.AverageWatchSeconds)</p>
+                <p class="small text-body-secondary mb-0">@((Resumo.AverageCoverage * 100).ToString("0")) % do vídeo</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-body-secondary small mb-1">Chegaram ao fim</p>
+                <p class="h4 mb-0">@((Resumo.CompletionRate * 100).ToString("0")) %</p>
+                @if (Resumo.Errors > 0)
+                {
+                    <p class="small text-danger mb-0">@Resumo.Errors com erro de reprodução</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">Onde o público abandona</div>
+    <div class="card-body">
+        <CurvaDeRetencao Pontos="Retencao" DuracaoSegundos="Resumo.DurationSeconds" />
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header">Visualizações por dia</div>
+            <div class="card-body">
+                <BarrasDiarias Pontos="Serie" />
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header">Aparelhos</div>
+            <div class="card-body">
+                <BarrasHorizontais Itens="Aparelhos" />
+
+                @if (Navegadores.Count > 0)
+                {
+                    <hr />
+                    <p class="small text-body-secondary mb-2">Navegadores</p>
+                    <BarrasHorizontais Itens="Navegadores" />
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Convites.Invited > 0)
+{
+    <div class="card mb-4">
+        <div class="card-header">Do convite ao fim do vídeo</div>
+        <div class="card-body">
+            <div class="row text-center g-3 mb-3">
+                <div class="col-6 col-lg-3">
+                    <p class="h5 mb-0">@Convites.Invited</p>
+                    <p class="small text-body-secondary mb-0">convidados</p>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <p class="h5 mb-0">@Convites.SignedIn</p>
+                    <p class="small text-body-secondary mb-0">entraram</p>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <p class="h5 mb-0">@Convites.Watched</p>
+                    <p class="small text-body-secondary mb-0">assistiram</p>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <p class="h5 mb-0">@Convites.Completed</p>
+                    <p class="small text-body-secondary mb-0">terminaram</p>
+                </div>
+            </div>
+
+            @if (Convites.Pending.Count > 0)
+            {
+                <p class="small text-body-secondary mb-1">Ainda não assistiram:</p>
+                <p class="small mb-0">@string.Join(", ", Convites.Pending)</p>
+            }
+            else
+            {
+                <p class="small text-success mb-0">Todo mundo que foi convidado já assistiu.</p>
+            }
+        </div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Quem assistiu</span>
+        @if (Espectadores.Count > 0)
+        {
+            <a class="btn btn-sm btn-outline-secondary" href="/admin/exportar/videos/@VideoId/espectadores.csv">
+                Exportar CSV
+            </a>
+        }
+    </div>
+
+    @if (Espectadores.Count == 0)
+    {
+        <div class="card-body text-center text-body-secondary py-4">
+            Ninguém assistiu a este vídeo ainda.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th scope="col">Pessoa</th>
+                        <th scope="col">Assistiu</th>
+                        <th scope="col">Sessões</th>
+                        <th scope="col">Aparelho</th>
+                        <th scope="col">Última vez</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var espectador in Espectadores)
+                    {
+                        <tr>
+                            <td>
+                                @if (espectador.UserId is { } id)
+                                {
+                                    <a href="/admin/pessoas/@id" class="text-decoration-none">@espectador.DisplayName</a>
+                                }
+                                else
+                                {
+                                    <span class="text-body-secondary">@espectador.DisplayName</span>
+                                }
+                            </td>
+                            <td>
+                                @Tempo(espectador.WatchSeconds)
+                                @if (espectador.Completed)
+                                {
+                                    <span class="badge text-bg-success ms-1">até o fim</span>
+                                }
+                            </td>
+                            <td>@espectador.Sessions</td>
+                            <td class="small">@espectador.Device</td>
+                            <td class="small">@espectador.LastAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<script src="js/graficos.js"></script>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public Guid VideoId { get; set; }
+
+    private VideoAudience Resumo = VideoAudience.Empty(0);
+    private IReadOnlyList<double> Retencao = [];
+    private IReadOnlyList<VideoViewer> Espectadores = [];
+    private IReadOnlyList<AudienceBreakdown> Aparelhos = [];
+    private IReadOnlyList<AudienceBreakdown> Navegadores = [];
+    private IReadOnlyList<DailyPoint> Serie = [];
+    private InviteFunnel Convites = new(0, 0, 0, 0, []);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var cancelamento = Http.RequestAborted;
+
+        Resumo = await Consultas.VideoAudienceAsync(VideoId, cancelamento);
+        Retencao = await Consultas.RetentionAsync(VideoId, cancelamento);
+        Espectadores = await Consultas.ViewersAsync(VideoId, cancellationToken: cancelamento);
+        Aparelhos = await Consultas.BreakdownAsync(VideoId, "aparelho", cancelamento);
+        Navegadores = await Consultas.BreakdownAsync(VideoId, "navegador", cancelamento);
+        Serie = await Consultas.DailySeriesAsync(VideoId, cancellationToken: cancelamento);
+        Convites = await Consultas.InviteFunnelAsync(GrantTargetType.Video, VideoId, cancelamento);
+    }
+
+    private static string Tempo(double segundos)
+    {
+        var tempo = TimeSpan.FromSeconds(Math.Max(0, segundos));
+
+        return tempo.TotalHours >= 1
+            ? $"{(int)tempo.TotalHours}h{tempo.Minutes:D2}"
+            : tempo.TotalMinutes >= 1
+                ? $"{tempo.Minutes}min{tempo.Seconds:D2}"
+                : $"{tempo.Seconds}s";
+    }
+}

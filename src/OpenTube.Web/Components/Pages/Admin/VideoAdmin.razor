@@ -71,6 +71,21 @@
             </div>
         }
 
+        <ul class="nav nav-tabs mb-4">
+            <li class="nav-item">
+                <a class="nav-link @(MostrarAudiencia ? "" : "active")" href="/admin/videos/@Video.Id">Configuração</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(MostrarAudiencia ? "active" : "")" href="/admin/videos/@Video.Id?aba=audiencia">Audiência</a>
+            </li>
+        </ul>
+
+        @if (MostrarAudiencia)
+        {
+            <PainelDeAudiencia VideoId="Video.Id" />
+        }
+        else
+        {
         <div class="row g-4">
             <div class="col-lg-7">
                 <div class="card">
@@ -184,6 +199,7 @@
                 }
             </div>
         </div>
+        }
     }
 </div>
 
@@ -224,6 +240,11 @@
 
     [SupplyParameterFromQuery(Name = "link")]
     private string? LinkBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "aba")]
+    private string? Aba { get; set; }
+
+    private bool MostrarAudiencia => Aba == "audiencia";
 
     private int Convidados => ConvidadosBruto ?? 0;
     private bool DominioLiberado => DominioBruto == "1";

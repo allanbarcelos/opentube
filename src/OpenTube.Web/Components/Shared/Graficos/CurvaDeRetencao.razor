@@ -1,0 +1,138 @@
+@using OpenTube.Web.Components.Shared.Graficos
+
+@* Quanto do público ainda estava assistindo em cada ponto do vídeo. Série única: o título
+   nomeia o dado, então não há legenda a desenhar. *@
+
+@if (Pontos.Count == 0)
+{
+    <p class="text-body-secondary mb-0">Ainda não há audiência suficiente para desenhar a curva.</p>
+}
+else
+{
+    <figure class="mb-0">
+        <svg class="grafico" viewBox="0 0 @Largura @Altura" role="img"
+             aria-label="Curva de retenção: @Resumo"
+             data-grafico-retencao
+             data-duracao="@DuracaoSegundos.ToString(Invariante)">
+            <defs>
+                <linearGradient id="preenchimento-retencao" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--grafico-serie)" stop-opacity="0.22" />
+                    <stop offset="100%" stop-color="var(--grafico-serie)" stop-opacity="0.02" />
+                </linearGradient>
+            </defs>
+
+            @* Grade discreta: referência para leitura, nunca protagonista. *@
+            @foreach (var marca in new[] { 0, 25, 50, 75, 100 })
+            {
+                var y = EixoY(marca);
+
+                <line class="grafico-grade" x1="@Esquerda" y1="@y" x2="@(Largura - Direita)" y2="@y" />
+                @RotuloDeEixo.Criar(Esquerda - 8, y + 4, "end", marca + "%")
+            }
+
+            <path class="grafico-area" d="@Area" fill="url(#preenchimento-retencao)" />
+            <path class="grafico-linha" d="@Linha" />
+
+            @foreach (var marca in new[] { 0, 25, 50, 75, 100 })
+            {
+                var x = EixoX(marca);
+
+                @RotuloDeEixo.Criar(x, Altura - 8, "middle", Instante(marca))
+            }
+
+            <line class="grafico-cursor d-none" x1="0" y1="@Topo" x2="0" y2="@(Altura - Base)" data-cursor />
+            <circle class="grafico-ponto d-none" r="4" data-marcador />
+        </svg>
+
+        <figcaption class="small text-body-secondary mt-2" data-legenda-retencao>@Resumo</figcaption>
+    </figure>
+
+    <details class="mt-3">
+        <summary class="small">Ver os números</summary>
+        <div class="table-responsive mt-2">
+            <table class="table table-sm mb-0">
+                <caption class="visually-hidden">Retenção por trecho do vídeo</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Trecho</th>
+                        <th scope="col">Público restante</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < Pontos.Count; i += 10)
+                    {
+                        <tr>
+                            <td>@Instante(i)</td>
+                            <td>@Pontos[i].ToString("0") %</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </details>
+}
+
+@code {
+    private const int Largura = 720;
+    private const int Altura = 260;
+    private const int Esquerda = 44;
+    private const int Direita = 12;
+    private const int Topo = 12;
+    private const int Base = 28;
+
+    private static readonly System.Globalization.CultureInfo Invariante =
+        System.Globalization.CultureInfo.InvariantCulture;
+
+    /// <summary>Percentual de público restante em cada fatia do vídeo.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<double> Pontos { get; set; } = [];
+
+    /// <summary>Duração do vídeo, usada para rotular o eixo com o instante.</summary>
+    [Parameter]
+    public double DuracaoSegundos { get; set; }
+
+    private string Resumo
+    {
+        get
+        {
+            if (Pontos.Count == 0)
+                return string.Empty;
+
+            var final = Pontos[^1];
+            var queda = Pontos
+                .Select((valor, indice) => (valor, indice))
+                .Skip(1)
+                .OrderBy(p => p.valor - Pontos[p.indice - 1])
+                .First();
+
+            return $"{final:0}% do público chegou ao fim; a maior queda acontece perto de {Instante(queda.indice)}.";
+        }
+    }
+
+    private double EixoX(int indice) =>
+        Esquerda + (Largura - Esquerda - Direita) * (Pontos.Count <= 1 ? 0 : indice / (double)(Pontos.Count - 1));
+
+    private double EixoY(double percentual) =>
+        Topo + (Altura - Topo - Base) * (1 - Math.Clamp(percentual, 0, 100) / 100);
+
+    private string Linha => string.Join(' ', Pontos.Select((valor, indice) =>
+        $"{(indice == 0 ? "M" : "L")}{EixoX(indice).ToString("0.##", Invariante)},{EixoY(valor).ToString("0.##", Invariante)}"));
+
+    private string Area =>
+        Pontos.Count == 0
+            ? string.Empty
+            : $"{Linha} L{EixoX(Pontos.Count - 1).ToString("0.##", Invariante)},{EixoY(0).ToString("0.##", Invariante)} " +
+              $"L{EixoX(0).ToString("0.##", Invariante)},{EixoY(0).ToString("0.##", Invariante)} Z";
+
+    private string Instante(int indice)
+    {
+        if (DuracaoSegundos <= 0 || Pontos.Count <= 1)
+            return $"{indice}%";
+
+        var tempo = TimeSpan.FromSeconds(DuracaoSegundos * indice / (Pontos.Count - 1));
+
+        return tempo.TotalHours >= 1
+            ? $"{(int)tempo.TotalHours}:{tempo.Minutes:D2}:{tempo.Seconds:D2}"
+            : $"{tempo.Minutes}:{tempo.Seconds:D2}";
+    }
+}

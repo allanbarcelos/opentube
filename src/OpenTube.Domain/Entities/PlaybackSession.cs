@@ -108,8 +108,9 @@ public class PlaybackSession
         FurthestPosition = Math.Max(FurthestPosition, interval.End);
 
         // "Assistiu até o fim" com folga: os últimos segundos costumam ficar de fora por
-        // causa dos créditos ou de um corte na última batida.
-        if (videoDuration > 0 && FurthestPosition >= videoDuration - 5)
+        // causa dos créditos ou de um corte na última batida. A folga é proporcional, senão
+        // num vídeo de oito segundos parar no meio já contaria como concluído.
+        if (videoDuration > 0 && FurthestPosition >= videoDuration - CompletionTolerance(videoDuration))
             Completed = true;
     }
 
@@ -153,6 +154,13 @@ public class PlaybackSession
     /// <summary>Trechos assistidos no formato usado pelos cálculos.</summary>
     public IReadOnlyList<WatchInterval> ToWatchIntervals() =>
         [.. _intervals.Select(i => new WatchInterval(i.StartSeconds, i.EndSeconds))];
+
+    /// <summary>
+    /// Folga aceita para considerar o vídeo assistido até o fim: cinco por cento da duração,
+    /// limitada a cinco segundos.
+    /// </summary>
+    public static double CompletionTolerance(double videoDuration) =>
+        Math.Min(5, Math.Max(0, videoDuration) * 0.05);
 
     private static int Altura(string qualidade)
     {

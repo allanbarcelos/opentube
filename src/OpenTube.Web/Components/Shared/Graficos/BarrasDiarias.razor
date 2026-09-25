@@ -1,0 +1,76 @@
+@using OpenTube.Web.Components.Shared.Graficos
+
+@* Visualizações por dia. Série única de grandeza: uma barra por dia, com rótulo apenas nos
+   extremos — número em cada ponto vira ruído. *@
+
+@if (Pontos.Count == 0)
+{
+    <p class="text-body-secondary mb-0">Sem movimento no período.</p>
+}
+else
+{
+    <figure class="mb-0">
+        <svg class="grafico" viewBox="0 0 @Largura @Altura" role="img"
+             aria-label="Visualizações por dia: @Total no total">
+            @foreach (var marca in new[] { 0, Maior })
+            {
+                var y = EixoY(marca);
+
+                <line class="grafico-grade" x1="@Esquerda" y1="@y" x2="@(Largura - Direita)" y2="@y" />
+                @RotuloDeEixo.Criar(Esquerda - 8, y + 4, "end", marca.ToString())
+            }
+
+            @for (var i = 0; i < Pontos.Count; i++)
+            {
+                var ponto = Pontos[i];
+                var x = Esquerda + i * (Passo + Espaco);
+                var altura = Math.Max(2, (Altura - Topo - Base) * (Maior <= 0 ? 0 : ponto.Views / (double)Maior));
+
+                <rect class="grafico-barra"
+                      x="@x.ToString("0.##", Invariante)"
+                      y="@((Altura - Base - altura).ToString("0.##", Invariante))"
+                      width="@Passo.ToString("0.##", Invariante)"
+                      height="@altura.ToString("0.##", Invariante)"
+                      rx="2">
+                    <title>@ponto.Day.ToString("dd/MM"): @ponto.Views visualizações</title>
+                </rect>
+            }
+
+            @* Rótulo só nos extremos: um número em cada barra vira ruído. *@
+            @RotuloDeEixo.Criar(Esquerda, Altura - 8, "start", Pontos[0].Day.ToString("dd/MM"))
+            @RotuloDeEixo.Criar(Largura - Direita, Altura - 8, "end", Pontos[^1].Day.ToString("dd/MM"))
+        </svg>
+    </figure>
+}
+
+@code {
+    private const int Largura = 720;
+    private const int Altura = 180;
+    private const int Esquerda = 40;
+    private const int Direita = 12;
+    private const int Topo = 12;
+    private const int Base = 26;
+    private const double Espaco = 2;
+
+    private static readonly System.Globalization.CultureInfo Invariante =
+        System.Globalization.CultureInfo.InvariantCulture;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<DailyPoint> Pontos { get; set; } = [];
+
+    private int Maior => Pontos.Count == 0 ? 0 : Math.Max(1, Pontos.Max(p => p.Views));
+
+    private int Total => Pontos.Sum(p => p.Views);
+
+    /// <summary>
+    /// Largura de cada barra. O teto evita que um único dia vire um bloco atravessando o
+    /// gráfico inteiro, que passa a impressão errada de volume.
+    /// </summary>
+    private double Passo =>
+        Pontos.Count == 0
+            ? 0
+            : Math.Clamp((Largura - Esquerda - Direita - Espaco * Pontos.Count) / Pontos.Count, 3, 28);
+
+    private double EixoY(double valor) =>
+        Topo + (Altura - Topo - Base) * (1 - (Maior <= 0 ? 0 : Math.Clamp(valor, 0, Maior) / Maior));
+}

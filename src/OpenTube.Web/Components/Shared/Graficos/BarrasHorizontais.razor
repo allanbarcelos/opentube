@@ -1,0 +1,36 @@
+@* Distribuição por categoria. A barra já carrega a comparação, então tudo usa um tom só:
+   cor aqui mede grandeza, não identidade. *@
+
+@if (Itens.Count == 0)
+{
+    <p class="text-body-secondary mb-0">Sem dados ainda.</p>
+}
+else
+{
+    <ul class="list-unstyled mb-0">
+        @foreach (var item in Itens)
+        {
+            var fracao = Maior <= 0 ? 0 : item.Count / (double)Maior;
+
+            <li class="mb-2">
+                <div class="d-flex justify-content-between small">
+                    <span>@item.Label</span>
+                    <span class="text-body-secondary">@item.Count</span>
+                </div>
+                <div class="barra" role="img" aria-label="@item.Label: @item.Count">
+                    <div class="barra-preenchimento" style="width: @((fracao * 100).ToString("0.#", Invariante))%"></div>
+                </div>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo Invariante =
+        System.Globalization.CultureInfo.InvariantCulture;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<AudienceBreakdown> Itens { get; set; } = [];
+
+    private int Maior => Itens.Count == 0 ? 0 : Itens.Max(i => i.Count);
+}

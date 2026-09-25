@@ -37,3 +37,72 @@
     font-size: 1.5rem;
     text-align: center;
 }
+
+/* Gráficos --------------------------------------------------------------- */
+
+/* Um tom só em todos os gráficos: nenhum deles compara séries, então a cor mede
+   grandeza e não identidade. O azul padrão do Bootstrap atende ao contraste
+   mínimo tanto sobre fundo claro quanto sobre fundo escuro. */
+:root {
+    --grafico-serie: #0d6efd;
+    --grafico-grade: rgba(33, 37, 41, 0.12);
+    --grafico-tinta: rgba(33, 37, 41, 0.62);
+}
+
+[data-bs-theme="dark"] {
+    --grafico-grade: rgba(222, 226, 230, 0.16);
+    --grafico-tinta: rgba(222, 226, 230, 0.68);
+}
+
+.grafico {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.grafico-grade {
+    stroke: var(--grafico-grade);
+    stroke-width: 1;
+}
+
+.grafico-linha {
+    fill: none;
+    stroke: var(--grafico-serie);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+
+.grafico-barra {
+    fill: var(--grafico-serie);
+}
+
+.grafico-rotulo {
+    fill: var(--grafico-tinta);
+    font-size: 11px;
+}
+
+.grafico-cursor {
+    stroke: var(--grafico-tinta);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+}
+
+.grafico-ponto {
+    fill: var(--grafico-serie);
+    stroke: var(--bs-body-bg);
+    stroke-width: 2;
+}
+
+.barra {
+    height: 8px;
+    border-radius: 4px;
+    background-color: var(--bs-secondary-bg);
+    overflow: hidden;
+}
+
+.barra-preenchimento {
+    height: 100%;
+    border-radius: 4px;
+    background-color: var(--grafico-serie);
+}
