@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using OpenTube.Domain.Access;
 using OpenTube.Domain.Entities;
+using OpenTube.Infrastructure.Access;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Storage;
@@ -24,7 +25,11 @@ public readonly record struct PlaybackResult(bool Allowed, AccessReason Reason, 
 /// playlist principal e na de cada versão — para que um endereço de versão copiado não
 /// contorne a decisão tomada na entrada.
 /// </summary>
-public class PlaybackService(OpenTubeDbContext db, IVideoStorage storage, IOptions<StorageOptions> options)
+public class PlaybackService(
+    OpenTubeDbContext db,
+    IVideoStorage storage,
+    AccessService acesso,
+    IOptions<StorageOptions> options)
 {
     private readonly StorageOptions _options = options.Value;
 
@@ -35,10 +40,15 @@ public class PlaybackService(OpenTubeDbContext db, IVideoStorage storage, IOptio
         Func<string, string> renditionUrl,
         CancellationToken cancellationToken = default)
     {
-        var (video, decisao) = await AutorizarAsync(videoId, viewer, cancellationToken);
+        var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
 
-        if (video is null || !decisao.Allowed)
-            return PlaybackResult.Deny(decisao.Reason);
+        if (video is null || !resultado.Allowed)
+            return PlaybackResult.Deny(resultado.Reason);
+
+        // O uso é registrado aqui, e não a cada segmento: a playlist principal é pedida uma
+        // vez por reprodução, então é o ponto que corresponde a "assistiu".
+        if (resultado.GrantId is { } concessao)
+            await acesso.RegisterUseAsync(concessao, cancellationToken);
 
         var master = await storage.GetTextAsync(StorageBucket.Vod, StorageKeys.Master(videoId), cancellationToken);
 
@@ -49,7 +59,7 @@ public class PlaybackService(OpenTubeDbContext db, IVideoStorage storage, IOptio
             return versao is null ? uri : renditionUrl(versao);
         });
 
-        return PlaybackResult.Allow(decisao.Reason, reescrito);
+        return PlaybackResult.Allow(resultado.Reason, reescrito);
     }
 
     /// <summary>
@@ -63,10 +73,10 @@ public class PlaybackService(OpenTubeDbContext db, IVideoStorage storage, IOptio
         Viewer viewer,
         CancellationToken cancellationToken = default)
     {
-        var (video, decisao) = await AutorizarAsync(videoId, viewer, cancellationToken);
+        var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
 
-        if (video is null || !decisao.Allowed)
-            return PlaybackResult.Deny(decisao.Reason);
+        if (video is null || !resultado.Allowed)
+            return PlaybackResult.Deny(resultado.Reason);
 
         var chave = StorageKeys.RenditionPlaylist(videoId, rendition);
         var prefixo = StorageKeys.RenditionPrefix(videoId, rendition);
@@ -78,26 +88,26 @@ public class PlaybackService(OpenTubeDbContext db, IVideoStorage storage, IOptio
                 ? uri
                 : storage.SignDownloadUrl(StorageBucket.Vod, prefixo + uri, _options.PlaybackUrlLifetime));
 
-        return PlaybackResult.Allow(decisao.Reason, assinado);
+        return PlaybackResult.Allow(resultado.Reason, assinado);
     }
 
     /// <summary>Endereço assinado da miniatura, ou <c>null</c> quando não há acesso.</summary>
     public async Task<string?> GetThumbnailUrlAsync(Guid videoId, Viewer viewer, CancellationToken cancellationToken = default)
     {
-        var (video, decisao) = await AutorizarAsync(videoId, viewer, cancellationToken);
+        var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
 
-        if (video?.ThumbnailKey is null || !decisao.Allowed)
+        if (video?.ThumbnailKey is null || !resultado.Allowed)
             return null;
 
         return storage.SignDownloadUrl(StorageBucket.Vod, video.ThumbnailKey, _options.PlaybackUrlLifetime);
     }
 
-    private async Task<(Video? Video, AccessDecision Decision)> AutorizarAsync(Guid videoId, Viewer viewer, CancellationToken cancellationToken)
+    private async Task<(Video? Video, AccessOutcome Outcome)> AutorizarAsync(Guid videoId, Viewer viewer, CancellationToken cancellationToken)
     {
         var video = await db.Videos.AsNoTracking().FirstOrDefaultAsync(v => v.Id == videoId, cancellationToken);
 
         return video is null
-            ? (null, AccessDecision.Deny(AccessReason.PrivateVideo))
-            : (video, AccessPolicy.Evaluate(viewer, video));
+            ? (null, new AccessOutcome(AccessDecision.Deny(AccessReason.PrivateVideo), null))
+            : (video, await acesso.EvaluateAsync(viewer, video, cancellationToken));
     }
 }

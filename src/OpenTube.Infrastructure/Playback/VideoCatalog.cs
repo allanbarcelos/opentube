@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using OpenTube.Domain.Access;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Access;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Shared.Catalog;
 
@@ -13,7 +14,7 @@ namespace OpenTube.Infrastructure.Playback;
 /// consulta, e não depois: trazer tudo e esconder na interface deixaria títulos privados
 /// passarem pela contagem, pela paginação e por qualquer descuido de apresentação.
 /// </summary>
-public class VideoCatalog(OpenTubeDbContext db)
+public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvider clock)
 {
     public const int DefaultPageSize = 24;
 
@@ -32,9 +33,11 @@ public class VideoCatalog(OpenTubeDbContext db)
         var termo = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
         var conexao = db.Database.GetDbConnection();
 
+        // O filtro de acesso é aplicado na consulta, e não depois: trazer tudo e esconder na
+        // interface deixaria títulos restritos passarem pela contagem e pela paginação.
         var filtro = viewer.IsAdmin
             ? "v.deleted_at IS NULL"
-            : "v.deleted_at IS NULL AND v.status = @Pronto AND v.visibility = @Publico";
+            : $"v.deleted_at IS NULL AND v.status = @Pronto AND {GrantSql.VideoVisivel}";
 
         var busca = termo is null
             ? string.Empty
@@ -56,10 +59,13 @@ public class VideoCatalog(OpenTubeDbContext db)
         var parametros = new
         {
             Pronto = (int)VideoStatus.Ready,
-            Publico = (int)VideoVisibility.Public,
             Termo = termo,
             Limite = pageSize,
-            Salto = (page - 1) * pageSize
+            Salto = (page - 1) * pageSize,
+            Agora = clock.GetUtcNow(),
+            Email = viewer.Email,
+            Dominio = viewer.EmailDomain,
+            ConcessaoDeLink = viewer.LinkGrantId
         };
 
         var total = await conexao.ExecuteScalarAsync<int>(new CommandDefinition(
@@ -102,7 +108,12 @@ public class VideoCatalog(OpenTubeDbContext db)
 
         var video = await db.Videos.AsNoTracking().FirstOrDefaultAsync(v => v.Slug == slug, cancellationToken);
 
-        return video is not null && AccessPolicy.CanWatch(viewer, video) ? video : null;
+        if (video is null)
+            return null;
+
+        var resultado = await acesso.EvaluateAsync(viewer, video, cancellationToken);
+
+        return resultado.Allowed ? video : null;
     }
 
     private static VideoSummary Converter(VideoRow linha) => new(

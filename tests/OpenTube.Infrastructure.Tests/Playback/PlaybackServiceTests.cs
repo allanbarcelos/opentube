@@ -2,6 +2,8 @@ using OpenTube.Domain.Access;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Domain.ValueObjects;
+using OpenTube.Infrastructure.Access;
+using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Playback;
 using OpenTube.Infrastructure.Storage;
 using OpenTube.Infrastructure.Tests.Support;
@@ -24,8 +26,12 @@ public class PlaybackServiceTests(PostgresFixture postgres, MinioFixture minio) 
 
     public Task DisposeAsync() => Task.CompletedTask;
 
+    private static readonly SecurityOptions Seguranca = new() { TokenPepper = "segredo", IpHashPepper = "segredo" };
+
     private PlaybackService Criar(OpenTube.Infrastructure.Persistence.OpenTubeDbContext db, IVideoStorage storage) =>
-        new(db, storage, Microsoft.Extensions.Options.Options.Create(minio.Options));
+        new(db, storage,
+            new AccessService(db, Microsoft.Extensions.Options.Options.Create(Seguranca), TimeProvider.System),
+            Microsoft.Extensions.Options.Options.Create(minio.Options));
 
     private async Task<Video> PublicarAsync(IVideoStorage storage, VideoVisibility visibilidade)
     {

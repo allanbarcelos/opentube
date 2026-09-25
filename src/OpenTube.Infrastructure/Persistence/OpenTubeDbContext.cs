@@ -13,6 +13,9 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<LoginCode> LoginCodes => Set<LoginCode>();
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
     public DbSet<AuthAttempt> AuthAttempts => Set<AuthAttempt>();
+    public DbSet<AccessGrant> AccessGrants => Set<AccessGrant>();
+    public DbSet<Collection> Collections => Set<Collection>();
+    public DbSet<CollectionVideo> CollectionVideos => Set<CollectionVideo>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

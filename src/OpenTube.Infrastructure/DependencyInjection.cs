@@ -5,6 +5,7 @@ using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Playback;
 using OpenTube.Infrastructure.Queue;
+using OpenTube.Infrastructure.Access;
 using OpenTube.Infrastructure.Email;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
@@ -50,6 +51,7 @@ public static class DependencyInjection
         services.AddScoped<PasswordlessAuthService>();
         services.AddSingleton<PrivacyHasher>();
         services.AddScoped<AdminSeeder>();
+        services.AddScoped<AccessService>();
         services.AddScoped<PlaybackService>();
         services.AddScoped<VideoCatalog>();
 
