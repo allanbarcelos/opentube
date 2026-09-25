@@ -51,9 +51,15 @@ public static class SessionAuthentication
                     }
 
                     // O papel pode ter mudado desde a entrada; o cookie não pode ficar com
-                    // uma permissão que a pessoa já perdeu.
-                    contexto.ReplacePrincipal(BuildPrincipal(atual.Value.User, sessionId.Value));
-                    contexto.ShouldRenew = true;
+                    // uma permissão que a pessoa já perdeu. Reemitir só quando algo mudou
+                    // evita um Set-Cookie em toda requisição, inclusive nas de mídia.
+                    var atualizado = BuildPrincipal(atual.Value.User, sessionId.Value);
+
+                    if (Difere(contexto.Principal, atualizado))
+                    {
+                        contexto.ReplacePrincipal(atualizado);
+                        contexto.ShouldRenew = true;
+                    }
                 };
             });
 
@@ -61,6 +67,22 @@ public static class SessionAuthentication
             .AddPolicy(Policies.Administrator, policy => policy.RequireClaim(OpenTubeClaims.IsAdmin, "1"));
 
         return services;
+    }
+
+    /// <summary>Compara as informações do cookie com as recém-carregadas do banco.</summary>
+    private static bool Difere(ClaimsPrincipal? atual, ClaimsPrincipal novo)
+    {
+        if (atual is null)
+            return true;
+
+        static string Chave(ClaimsPrincipal p) => string.Join('|',
+            p.Claims
+                .Where(c => c.Type is ClaimTypes.NameIdentifier or ClaimTypes.Email or ClaimTypes.Name or OpenTubeClaims.SessionId or OpenTubeClaims.IsAdmin)
+                .OrderBy(c => c.Type, StringComparer.Ordinal)
+                .ThenBy(c => c.Value, StringComparer.Ordinal)
+                .Select(c => c.Type + "=" + c.Value));
+
+        return !string.Equals(Chave(atual), Chave(novo), StringComparison.Ordinal);
     }
 
     public static ClaimsPrincipal BuildPrincipal(User user, Guid sessionId)
