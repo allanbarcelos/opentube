@@ -7,7 +7,7 @@ using OpenTube.Infrastructure.Tests.Support;
 
 namespace OpenTube.Infrastructure.Tests.Persistence;
 
-[Collection(PostgresCollection.Name)]
+[Collection(IntegrationCollection.Name)]
 public class VideoPersistenceTests(PostgresFixture fixture) : IAsyncLifetime
 {
     private static readonly DateTimeOffset Agora = new(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);

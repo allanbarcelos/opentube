@@ -11,8 +11,7 @@ namespace OpenTube.Infrastructure.Tests.Support;
 /// </summary>
 public class PostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("postgres:17-alpine")
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17-alpine")
         .WithDatabase("opentube_testes")
         .WithUsername("opentube")
         .WithPassword("opentube")
@@ -49,8 +48,3 @@ public class PostgresFixture : IAsyncLifetime
     }
 }
 
-[CollectionDefinition(Name)]
-public class PostgresCollection : ICollectionFixture<PostgresFixture>
-{
-    public const string Name = "postgres";
-}

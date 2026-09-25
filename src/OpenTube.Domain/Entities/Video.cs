@@ -49,7 +49,11 @@ public class Video
     public bool IsDeleted => DeletedAt is not null;
     public bool IsPlayable => Status == VideoStatus.Ready && !IsDeleted;
 
-    public static Video CreateDraft(string title, string slug, string originalKey, Guid createdBy, DateTimeOffset now, string? description = null)
+    /// <summary>
+    /// Cria o rascunho. O identificador pode ser informado porque o caminho do arquivo no
+    /// storage é montado a partir dele, antes de o registro existir.
+    /// </summary>
+    public static Video CreateDraft(string title, string slug, string originalKey, Guid createdBy, DateTimeOffset now, string? description = null, Guid? id = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentException.ThrowIfNullOrWhiteSpace(slug);
@@ -57,7 +61,7 @@ public class Video
 
         return new Video
         {
-            Id = Guid.CreateVersion7(),
+            Id = id ?? Guid.CreateVersion7(),
             Title = title.Trim(),
             Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
             Slug = slug,

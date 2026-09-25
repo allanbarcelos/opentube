@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Queue;
+using OpenTube.Infrastructure.Services;
+using OpenTube.Infrastructure.Storage;
 
 namespace OpenTube.Infrastructure;
 
@@ -30,6 +32,8 @@ public static class DependencyInjection
 
         services.TryAddTimeProvider();
         services.AddScoped<IJobQueue, PostgresJobQueue>();
+        services.AddSingleton<IVideoStorage, S3VideoStorage>();
+        services.AddScoped<VideoUploadService>();
 
         return services;
     }
