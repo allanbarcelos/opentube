@@ -1,6 +1,6 @@
 using OpenTube.Infrastructure.Email;
 
-namespace OpenTube.Infrastructure.Tests.Support;
+namespace OpenTube.TestSupport;
 
 /// <summary>Guarda as mensagens em memória para que os testes possam inspecioná-las.</summary>
 public class FakeEmailSender : IEmailSender

@@ -4,6 +4,7 @@ using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Tests.Support;
+using OpenTube.TestSupport;
 
 namespace OpenTube.Infrastructure.Tests.Queue;
 

@@ -4,6 +4,7 @@ using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Domain.ValueObjects;
 using OpenTube.Infrastructure.Tests.Support;
+using OpenTube.TestSupport;
 
 namespace OpenTube.Infrastructure.Tests.Persistence;
 

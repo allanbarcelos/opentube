@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using OpenTube.Infrastructure.Persistence;
 using Testcontainers.PostgreSql;
 
-namespace OpenTube.Infrastructure.Tests.Support;
+namespace OpenTube.TestSupport;
 
 /// <summary>
 /// Sobe um PostgreSQL efêmero para a suíte inteira. Testar persistência contra um banco real

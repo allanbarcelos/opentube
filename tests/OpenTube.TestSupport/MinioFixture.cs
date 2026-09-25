@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Storage;
 
-namespace OpenTube.Infrastructure.Tests.Support;
+namespace OpenTube.TestSupport;
 
 /// <summary>
 /// Sobe um storage compatível com S3 para os testes. Assinatura de URL e envio multipart só

@@ -8,6 +8,7 @@ using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Tests.Support;
+using OpenTube.TestSupport;
 
 namespace OpenTube.Infrastructure.Tests.Security;
 
