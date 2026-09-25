@@ -1,212 +1,209 @@
 # OpenTube
 
-Plataforma de vídeo privada — um "YouTube interno" onde todo conteúdo nasce privado e o acesso é
-concedido explicitamente: liberado para todos, direcionado a pessoas específicas ou a um domínio
-de email inteiro, com validade opcional e registro detalhado de quem assistiu o quê.
+**English** · [Português](README.pt.md)
+
+Private video platform — an "internal YouTube" where every piece of content starts out private and
+access is granted explicitly: open to everyone, targeted at specific people or at an entire email
+domain, with optional expiration and a detailed record of who watched what.
 
 ---
 
-## Índice
+## Contents
 
-- [Visão geral](#visão-geral)
-- [Modelo de acesso](#modelo-de-acesso)
-- [Arquitetura](#arquitetura)
-- [Pipeline de vídeo](#pipeline-de-vídeo)
+- [Overview](#overview)
+- [Access model](#access-model)
+- [Architecture](#architecture)
+- [Video pipeline](#video-pipeline)
 - [Analytics](#analytics)
-- [Suporte por vídeo](#suporte-por-vídeo)
+- [Per-video support](#per-video-support)
 - [Stack](#stack)
-- [Estrutura do repositório](#estrutura-do-repositório)
-- [Como rodar](#como-rodar)
-- [Testes](#testes)
-- [Segurança e privacidade](#segurança-e-privacidade)
+- [Repository layout](#repository-layout)
+- [Running](#running)
+- [Tests](#tests)
+- [Security and privacy](#security-and-privacy)
 - [Roadmap](#roadmap)
 
 ---
 
-## Visão geral
+## Overview
 
-| Recurso | Descrição |
+| Feature | Description |
 | --- | --- |
-| Home | Lista de vídeos visíveis para quem está acessando, com busca |
-| Upload | Envio direto do navegador para o storage, sem passar pelo servidor da aplicação |
-| Visibilidade | Todo vídeo nasce **privado**; o administrador promove para público ou restrito |
-| Convites | Email com link de acesso e código de 6 dígitos — sem senha |
-| Domínios | Porta de entrada própria por domínio verificado por DNS |
-| Validade | Acesso eterno, até uma data ou por um período após o primeiro uso |
-| Analytics | Quem assistiu, quando, de onde, em qual dispositivo e quanto de cada vídeo |
-| Suporte | Comentários privados por vídeo, visíveis apenas ao autor e ao administrador |
+| Home | List of videos visible to the current viewer, with search |
+| Upload | Direct upload from the browser to storage, bypassing the application server |
+| Visibility | Every video starts **private**; the administrator promotes it to public or restricted |
+| Invitations | Email with an access link and a 6-digit code — no password |
+| Domains | Dedicated entry page per DNS-verified domain |
+| Validity | Access forever, until a date, or for a period after first use |
+| Analytics | Who watched, when, from where, on which device, and how much of each video |
+| Support | Private comments per video, visible only to the author and the administrator |
 
 ---
 
-## Modelo de acesso
+## Access model
 
-### Visibilidade do vídeo
+### Video visibility
 
-| Estado | Quem vê |
+| State | Who can see it |
 | --- | --- |
-| `Private` | Somente administradores. É o padrão de todo upload. |
-| `Public` | Qualquer visitante do site, sem autenticação. |
-| `Restricted` | Somente quem possui uma concessão de acesso válida. |
+| `Private` | Administrators only. The default for every upload. |
+| `Public` | Any visitor, no authentication required. |
+| `Restricted` | Only those holding a valid access grant. |
 
-### Concessões (`AccessGrant`)
+### Grants (`AccessGrant`)
 
-Os quatro tipos de acesso são a mesma entidade com sujeitos diferentes:
+The four kinds of access are the same entity with different subjects:
 
-| Sujeito | Significado |
+| Subject | Meaning |
 | --- | --- |
-| `User` | Um email específico (`allan@barcelos.dev`) |
-| `Domain` | Qualquer email de um domínio verificado (`barcelos.dev`) |
-| `Link` | Quem possuir um token secreto de compartilhamento |
-| `Public` | Qualquer visitante |
+| `User` | A specific email address (`allan@barcelos.dev`) |
+| `Domain` | Any email address from a verified domain (`barcelos.dev`) |
+| `Link` | Whoever holds a secret share token |
+| `Public` | Any visitor |
 
-Cada concessão aponta para um **vídeo**, uma **coleção** ou **todo o acervo**, e carrega janela de
-validade (`starts_at` / `expires_at`, nulo = eterno), limite opcional de visualizações, permissão de
-download e registro de revogação.
+Each grant targets a **video**, a **collection**, or **the whole library**, and carries a validity
+window (`starts_at` / `expires_at`, null = forever), an optional view limit, a download permission,
+and a revocation record.
 
-O limite de visualizações é contado na playlist principal, com um incremento condicional no
-banco que não deixa reproduções simultâneas passarem do teto. Ao contar a visualização, a
-aplicação emite um bilhete assinado (cookie por vídeo, válido pela duração mais uma folga) que
-deixa o restante daquela reprodução — versões, segmentos, legendas — passar mesmo quando ela
-consumiu a última visualização. O bilhete não abre reprodução nova e não sobrevive à revogação.
+The view limit is counted on the master playlist, with a conditional increment in the database
+that keeps simultaneous playbacks from going over the cap. When the view is counted, the
+application issues a signed ticket (one cookie per video, valid for the video's duration plus a
+margin) that lets the rest of that playback — renditions, segments, captions — through even when
+it used up the last view. The ticket does not start a new playback and does not survive revocation.
 
-A decisão fica concentrada numa única função `CanWatch(viewer, video)` — toda a aplicação (home,
-busca, player, legenda, thumbnail, download) passa por ela. É o ponto do sistema com maior cobertura
-de testes, porque um erro ali vaza conteúdo confidencial.
+The decision lives in a single function, `CanWatch(viewer, video)` — the whole application (home,
+search, player, captions, thumbnail, download) goes through it. It is the most heavily tested part
+of the system, because a mistake there leaks confidential content.
 
-### Autenticação sem senha
+### Passwordless authentication
 
-Nenhuma senha é gerada, trafegada ou armazenada. O convite traz um **link de uso único** e um
-**código de 6 dígitos** (para quando o cliente de email quebra o link). Ambos ficam no banco apenas
-como hash, expiram em 15 minutos (código) e 7 dias (convite), e o primeiro uso cria uma sessão em
-cookie de 30 dias, renovável e revogável de imediato pelo administrador.
+No password is ever generated, transmitted, or stored. The invitation carries a **single-use link**
+and a **6-digit code** (for when the email client breaks the link). Both are stored only as hashes
+and expire in 15 minutes (code) and 7 days (invitation). The first use creates a 30-day cookie
+session, which is renewable and can be revoked immediately by the administrator.
 
-### Acesso por domínio
+### Domain access
 
-1. O administrador cadastra `barcelos.dev` e recebe um token de verificação.
-2. O responsável pelo domínio publica `TXT _opentube-verify.barcelos.dev = <token>`.
-3. Verificado o registro, o sistema libera a porta de entrada `/entry/barcelos.dev`.
-4. Quem chega nessa página informa um email do domínio e recebe o código por email.
+1. The administrator registers `barcelos.dev` and receives a verification token.
+2. Whoever manages the domain publishes `TXT _opentube-verify.barcelos.dev = <token>`.
+3. Once the record is verified, the system opens the entry page `/entry/barcelos.dev`.
+4. Visitors to that page enter an email address from the domain and receive the code by email.
 
-A verificação por DNS existe para impedir que alguém cadastre um domínio que não controla. O envio
-e a validação de códigos são limitados por taxa (IP, email e domínio), única barreira contra força
-bruta num código de 6 dígitos.
+DNS verification exists so that nobody can register a domain they do not control. Sending and
+checking codes are rate-limited (by IP, email, and domain), the only barrier against brute-forcing
+a 6-digit code.
 
 ---
 
-## Arquitetura
+## Architecture
 
-```
-                         ┌──────────────┐
-   navegador ───────────▶│    Caddy     │  TLS automático
-                         └──────┬───────┘
-                                │
-                ┌───────────────┼────────────────┐
-                ▼               ▼                ▼
-        ┌──────────────┐  ┌───────────┐   ┌────────────┐
-        │  OpenTube    │  │  MinIO    │   │  Mailpit   │
-        │  .Web        │  │  (S3)     │   │  (dev)     │
-        │  Blazor      │  └───────────┘   └────────────┘
-        └──────┬───────┘        ▲
-               │                │
-               ▼                │
-        ┌──────────────┐  ┌─────┴────────┐
-        │  PostgreSQL  │◀─│  OpenTube    │
-        │              │  │  .Worker     │  FFmpeg
-        └──────────────┘  └──────────────┘
+```mermaid
+flowchart TB
+    browser([Browser]) -->|HTTPS| caddy["Caddy<br/>automatic TLS"]
+    caddy --> web["OpenTube.Web<br/>Blazor"]
+    caddy --> minio[("MinIO<br/>S3")]
+    caddy --> mailpit["Mailpit<br/>dev"]
+    web --> postgres[(PostgreSQL)]
+    worker["OpenTube.Worker<br/>FFmpeg"] --> postgres
+    worker --> minio
 ```
 
-O envio do arquivo vai **direto do navegador para o MinIO** via URLs assinadas de multipart, sem
-passar pela aplicação. O worker é o único componente que escala por CPU e por isso vive em container
-separado desde o primeiro dia.
+Files are uploaded **directly from the browser to MinIO** through signed multipart URLs, without
+passing through the application. The worker is the only component that scales with CPU, which is
+why it has lived in its own container from day one.
 
 ---
 
-## Pipeline de vídeo
+## Video pipeline
 
-1. **Upload** — a aplicação cria o registro do vídeo em `Draft` e devolve URLs assinadas; o navegador
-   envia os pedaços direto ao bucket `originals`; ao concluir, enfileira o job de transcodificação.
-2. **Análise** — `ffprobe` extrai duração, resolução e codecs, e rejeita arquivo inválido cedo.
-3. **Transcodificação** — FFmpeg gera um ladder adaptativo (360p a 1080p, nunca acima da resolução
-   original) em CMAF/fMP4, segmentos de 4 s com keyframes alinhados entre as versões.
-4. **Derivados** — thumbnail, folha de sprites para prévia na barra de progresso e, se um
-   transcritor estiver configurado, legenda automática. Sem executável, essa etapa fica desligada.
-5. **Publicação** — estado `Ready`, vídeo disponível conforme sua visibilidade.
+1. **Upload** — the application creates the video record in `Draft` and returns signed URLs; the
+   browser sends the parts straight to the `originals` bucket; on completion, the transcoding job
+   is queued.
+2. **Probe** — `ffprobe` extracts duration, resolution, and codecs, and rejects invalid files early.
+3. **Transcode** — FFmpeg produces an adaptive ladder (360p to 1080p, never above the source
+   resolution) in CMAF/fMP4, with 4 s segments and keyframes aligned across renditions.
+4. **Derivatives** — thumbnail, sprite sheet for seek-bar previews and, if a transcriber is
+   configured, automatic captions. Without the executable, this step is off.
+5. **Publish** — state `Ready`, video available according to its visibility.
 
-O original é preservado no bucket `originals` para permitir reprocessamento. Cada processamento
-grava numa pasta nova (`<vídeo>/r-<geração>/`) e só troca a versão em uso quando tudo foi
-enviado: reprocessar não tira o vídeo do ar, uma falha no meio mantém a versão anterior, e as
-gerações antigas são apagadas depois da troca. As legendas ficam fora das gerações. Um trabalho
-interrompido (worker reiniciado no meio) é retomado na tentativa seguinte.
+The original is kept in the `originals` bucket so the video can be reprocessed. Each processing run
+writes to a new folder (`<video>/r-<generation>/`) and only switches the version in use once
+everything has been uploaded: reprocessing does not take the video offline, a failure midway keeps
+the previous version, and old generations are deleted after the switch. Captions live outside the
+generations. An interrupted job (worker restarted midway) is resumed on the next attempt.
 
-### Entrega autorizada
+### Authorized delivery
 
-A playlist HLS é servida por um endpoint da aplicação, que valida o acesso. No `make watch` o
-manifesto sai com URLs assinadas de curta duração, porque o navegador fala direto com o MinIO.
-Na pilha local (`make up`) e na produção, o Caddy autoriza cada segmento com `forward_auth`: a
-aplicação decide, ele transporta os bytes. Revogar um acesso vale no segmento seguinte, em vez
-de esperar a assinatura vencer. O original continua indo por URL assinada, no caminho `/originals`.
+The HLS playlist is served by an application endpoint that checks access. Under `make watch` the
+manifest carries short-lived signed URLs, because the browser talks to MinIO directly. In the local
+stack (`make up`) and in production, Caddy authorizes every segment with `forward_auth`: the
+application decides, Caddy moves the bytes. Revoking access takes effect on the next segment
+instead of waiting for a signature to expire. The original still goes through a signed URL, on the
+`/originals` path.
 
-Sobre proteção de conteúdo, sem rodeios: sem DRM, quem tem acesso legítimo consegue baixar. O que
-funciona na prática é token curto, limite de sessões simultâneas por usuário, marca d'água dinâmica
-com o email de quem assiste e registro completo de acesso. O empacotamento em CMAF mantém a porta
-aberta para adicionar DRM depois sem reescrever nada.
+On content protection, plainly: without DRM, anyone with legitimate access can download. What works
+in practice is short-lived tokens, a limit on simultaneous sessions per user, a dynamic watermark
+with the viewer's email, and a complete access log. CMAF packaging keeps the door open to add DRM
+later without rewriting anything.
 
 ---
 
 ## Analytics
 
-O player envia um heartbeat a cada 10 segundos com o intervalo assistido desde o anterior, usando
-`sendBeacon` para sobreviver ao fechamento da aba. Guardar **intervalos** em vez de porcentagem é o
-que permite responder "ele pulou esse trecho?" e desenhar a curva de retenção segundo a segundo.
+The player sends a heartbeat every 10 seconds with the interval watched since the previous one,
+using `sendBeacon` so it survives the tab being closed. Storing **intervals** instead of a percentage
+is what makes it possible to answer "did they skip this part?" and to draw the retention curve
+second by second.
 
-Um job periódico funde os intervalos por sessão (união de faixas, sem contar re-exibição duas vezes)
-e agrega em tabelas diárias, mantendo o painel instantâneo mesmo com milhões de eventos.
+A periodic job merges the intervals per session (a union of ranges, so rewatching is not counted
+twice) and aggregates them into daily tables, keeping the dashboard instant even with millions of
+events.
 
-**Painéis:** por vídeo (retenção, conclusão, dispositivos, erros), por usuário (linha do tempo
-completa), por domínio e por convite — este último respondendo "convidei 12, 7 abriram, 5
-assistiram, 2 terminaram", que costuma ser a métrica que interessa de verdade. Exportação em CSV.
+**Dashboards:** per video (retention, completion, devices, errors), per user (full timeline), per
+domain, and per invitation — the last one answering "I invited 12, 7 opened, 5 watched, 2
+finished", which is usually the metric that actually matters. CSV export.
 
 ---
 
-## Suporte por vídeo
+## Per-video support
 
-Os comentários funcionam como atendimento: cada conversa pertence a um par (vídeo, usuário), pode
-estar ancorada a um instante do vídeo e é visível apenas ao autor e aos administradores. Tem status
-(`aberto`, `respondido`, `fechado`) e notificação por email nos dois sentidos.
+Comments work as a help desk: each conversation belongs to a (video, user) pair, can be anchored to
+a moment in the video, and is visible only to the author and to administrators. It has a status
+(`open`, `answered`, `closed`) and email notifications in both directions.
 
 ---
 
 ## Stack
 
-| Camada | Tecnologia |
+| Layer | Technology |
 | --- | --- |
-| Aplicação | .NET 10, Blazor Web App (SSR + `InteractiveServer` na área administrativa) |
-| Interface | Bootstrap 5.3 com a paleta padrão |
-| Banco | PostgreSQL 17, EF Core para o domínio e Dapper para agregações |
-| Storage | MinIO (API S3), buckets `originals` e `vod` |
-| Mídia | FFmpeg em worker próprio, HLS/CMAF, player `hls.js` |
-| Fila | Tabela de jobs no PostgreSQL com `FOR UPDATE SKIP LOCKED` |
-| Email | Abstração `IEmailSender`; Mailpit em desenvolvimento |
-| Busca | `tsvector` com dicionário português e `pg_trgm` |
-| Proxy | Caddy com TLS automático |
+| Application | .NET 10, Blazor Web App (SSR + `InteractiveServer` in the admin area) |
+| UI | Bootstrap 5.3 with the default palette |
+| Database | PostgreSQL 17, EF Core for the domain and Dapper for aggregations |
+| Storage | MinIO (S3 API), `originals` and `vod` buckets |
+| Media | FFmpeg in a dedicated worker, HLS/CMAF, `hls.js` player |
+| Queue | Job table in PostgreSQL with `FOR UPDATE SKIP LOCKED` |
+| Email | `IEmailSender` abstraction; Mailpit in development |
+| Search | `tsvector` with the Portuguese dictionary and `pg_trgm` |
+| Proxy | Caddy with automatic TLS |
 
 ---
 
-## Estrutura do repositório
+## Repository layout
 
 ```
-Makefile                      alvos locais (não existe `make dev`)
-install.sh / uninstall.sh     produção em Docker Swarm
-docker-compose.yml            pilha inteira em container
-docker-compose.dev.yml        publica as portas das dependências no host
+Makefile                      local targets (there is no `make dev`)
+install.sh / uninstall.sh     production on Docker Swarm
+docker-compose.yml            full stack in containers
+docker-compose.dev.yml        publishes the dependencies' ports on the host
 Caddyfile
-scripts/                      geração do .env, ambiente do `dotnet watch`, entrypoint do Swarm
+scripts/                      .env generation, `dotnet watch` environment, Swarm entrypoint
 src/
-  OpenTube.Shared/            contratos e DTOs compartilhados
-  OpenTube.Domain/            entidades e regras de acesso (sem dependência de infraestrutura)
-  OpenTube.Infrastructure/    EF Core, storage S3, email, verificação DNS, fila
-  OpenTube.Web/               Blazor: home, busca, player e área administrativa
-  OpenTube.Worker/            transcodificação, derivados e agregação de analytics
+  OpenTube.Shared/            shared contracts and DTOs
+  OpenTube.Domain/            entities and access rules (no infrastructure dependencies)
+  OpenTube.Infrastructure/    EF Core, S3 storage, email, DNS verification, queue
+  OpenTube.Web/               Blazor: home, search, player, and admin area
+  OpenTube.Worker/            transcoding, derivatives, and analytics aggregation
 tests/
   OpenTube.Domain.Tests/
   OpenTube.Infrastructure.Tests/
@@ -217,140 +214,143 @@ tests/
 
 ---
 
-## Como rodar
+## Running
 
-**Requisitos:** Docker e .NET SDK 10.
+**Requirements:** Docker and the .NET 10 SDK.
 
-Não há usuário de banco, senha nem chave no repositório. Na primeira vez o `make` gera o
-`.env` (modo 600) e nas seguintes reutiliza o arquivo. Não existe o alvo `make dev`.
+There is no database user, password, or key in the repository. The first time, `make` generates
+`.env` (mode 600); after that it reuses the file. There is no `make dev` target.
 
-A interface é em inglês, português e francês. O inglês é a base: é o que aparece quando o
-navegador não pede outro idioma e quando falta uma tradução. O menu troca o idioma e guarda
-a escolha num cookie.
+The interface is available in English, Portuguese, and French. English is the base: it is what
+shows up when the browser asks for no other language and when a translation is missing. The menu
+switches the language and remembers the choice in a cookie.
 
-| Comando | O que sobe | Ambiente | Código |
+| Command | What starts | Environment | Code |
 | --- | --- | --- | --- |
-| `make watch` | Banco, MinIO e Mailpit em container; aplicação e worker no host | `Development` | `dotnet watch`, recarrega ao salvar |
-| `make up` / `make up-d` | Pilha inteira em container, com Caddy | `Development` | Imagem já compilada, sem hot-reload |
-| `sudo bash install.sh` | Swarm de um nó | `Production` | Imagens construídas no servidor |
+| `make watch` | Database, MinIO, and Mailpit in containers; app and worker on the host | `Development` | `dotnet watch`, reloads on save |
+| `make up` / `make up-d` | Full stack in containers, with Caddy | `Development` | Prebuilt image, no hot reload |
+| `sudo bash install.sh` | Single-node Swarm | `Production` | Images built on the server |
 
-`make` sozinho lista os alvos.
+`make` on its own lists the targets.
 
-### Desenvolvimento (`make watch`)
+### Development (`make watch`)
 
-Este é o modo de desenvolver. Só as dependências ficam em container; a aplicação e o worker
-rodam na máquina, com `ASPNETCORE_ENVIRONMENT=Development`.
+This is the development mode. Only the dependencies run in containers; the app and the worker run
+on your machine, with `ASPNETCORE_ENVIRONMENT=Development`.
 
 ```bash
 make watch
 ```
 
-| Serviço | Endereço |
+| Service | Address |
 | --- | --- |
-| Aplicação | http://localhost:5080 |
-| Worker | processo local |
+| Application | http://localhost:5080 |
+| Worker | local process |
 | MinIO (console) | http://localhost:9001 |
 | Mailpit | http://localhost:8025 |
 | PostgreSQL | `localhost:5432` |
 
-O navegador envia o arquivo direto ao MinIO em `localhost:9000`. Usuário e senha estão no
-`.env`. O administrador é o email de `src/OpenTube.Web/appsettings.Development.json`; o código
-de entrada cai no Mailpit. Ctrl+C encerra aplicação e worker. Os containers continuam até
-`make deps-down`.
+The browser uploads files straight to MinIO at `localhost:9000`. Username and password are in
+`.env`. The administrator is the email in `src/OpenTube.Web/appsettings.Development.json`; the
+sign-in code lands in Mailpit. Ctrl+C stops the app and the worker. The containers keep running
+until `make deps-down`.
 
-`make watch-web` e `make watch-worker` sobem cada processo sozinho, com as dependências já no ar.
+`make watch-web` and `make watch-worker` start each process on its own, with the dependencies
+already up.
 
-### Pilha local (`make up`)
+### Local stack (`make up`)
 
-Sobe tudo em container, também com `ASPNETCORE_ENVIRONMENT=Development`, mas sem recarregar
-quando o código muda. Serve para ver a aplicação atrás do Caddy, com autorização por segmento.
+Starts everything in containers, also with `ASPNETCORE_ENVIRONMENT=Development`, but without
+reloading when the code changes. Use it to see the application behind Caddy, with per-segment
+authorization.
 
 ```bash
 make up-d
 ```
 
-| Serviço | Endereço |
+| Service | Address |
 | --- | --- |
-| Aplicação | https://localhost |
+| Application | https://localhost |
 | Mailpit | http://localhost:8025 |
-| Credenciais | `.env` |
+| Credentials | `.env` |
 
-O certificado de `localhost` é interno. O navegador avisa uma vez — é esperado. Aqui o
-administrador é `OPENTUBE_ADMIN_EMAIL` do `.env` (o gerador sugere `admin@localhost`), não o
-email do `appsettings.Development.json`.
+The `localhost` certificate is internal. The browser warns once — that is expected. Here the
+administrator is `OPENTUBE_ADMIN_EMAIL` from `.env` (the generator suggests `admin@localhost`), not
+the email from `appsettings.Development.json`.
 
-Um volume criado com o usuário fixo antigo não aceita a senha nova: o PostgreSQL só aplica a
-senha na primeira inicialização. `make clean` apaga esse volume para o banco nascer de novo.
+A volume created with the old fixed user does not accept the new password: PostgreSQL only applies
+the password on first initialization. `make clean` deletes that volume so the database starts fresh.
 
-### Produção
+### Production
 
 ```bash
 sudo bash install.sh
 ```
 
-O instalador sobe um Docker Swarm de um nó, gera usuário, senha e chaves e grava isso só
-como segredo do Swarm. Nada disso vai para o disco nem para o repositório. Na primeira vez o
-resumo é impresso no terminal; copie e guarde. Rodar de novo não troca segredo que já existe.
+The installer brings up a single-node Docker Swarm, generates the user, password, and keys, and
+stores them only as Swarm secrets. None of it goes to disk or to the repository. The first time, a
+summary is printed to the terminal; copy it and keep it safe. Running it again does not replace
+secrets that already exist.
 
-O ambiente dentro dos containers é `Production`. Para publicar um código novo, atualize o
-checkout e rode `/opt/<nome>/scripts/update.sh`. Para remover o que o instalador criou:
-`sudo bash uninstall.sh`.
+The environment inside the containers is `Production`. To deploy new code, update the checkout and
+run `/opt/<name>/scripts/update.sh`. To remove what the installer created: `sudo bash uninstall.sh`.
 
-A transcrição automática lê `Transcription__Executable` e `Transcription__ModelPath` no
-worker. Os dois vazios desligam o recurso, que é o padrão: é a etapa mais cara do pipeline.
+Automatic transcription reads `Transcription__Executable` and `Transcription__ModelPath` in the
+worker. Leaving both empty turns the feature off, which is the default: it is the most expensive
+step in the pipeline.
 
-> **Sobre a imagem do MinIO:** as imagens públicas do MinIO deixaram de ser distribuídas pelo Docker
-> Hub e pelo quay.io. O `docker-compose.yml` usa a última versão comunitária publicada, suficiente
-> para desenvolvimento. Em produção, use o registro oficial com credenciais ou troque por qualquer
-> outro servidor compatível com S3 (SeaweedFS, Garage, Amazon S3): a aplicação conversa apenas pela
-> API S3, atrás da interface `IVideoStorage`.
+> **About the MinIO image:** public MinIO images are no longer distributed through Docker Hub or
+> quay.io. `docker-compose.yml` uses the last published community release, which is enough for
+> development. In production, use the official registry with credentials or switch to any other
+> S3-compatible server (SeaweedFS, Garage, Amazon S3): the application talks only through the S3
+> API, behind the `IVideoStorage` interface.
 
 ---
 
-## Testes
+## Tests
 
 ```bash
 dotnet test
 ```
 
-Cada fase do roadmap só é considerada concluída com sua suíte verde. A lógica sensível vive em
-classes puras (regras de acesso, fusão de intervalos, cálculo do ladder de transcodificação,
-limitador de taxa), testável sem banco nem rede; o restante usa containers efêmeros.
+Each roadmap phase is only considered done when its suite is green. The sensitive logic lives in
+pure classes (access rules, interval merging, transcoding ladder calculation, rate limiter),
+testable without a database or network; the rest uses ephemeral containers.
 
 ---
 
-## Segurança e privacidade
+## Security and privacy
 
-- Nenhuma senha é gerada ou enviada por email.
-- Códigos e tokens ficam apenas como hash, com uso único e expiração curta.
-- Limite de taxa no envio e na validação de códigos, com bloqueio progressivo. Cada tentativa de
-  código é reservada no banco antes da comparação, então pedidos em paralelo não passam do
-  limite, e um código ou link só abre uma sessão.
-- Atrás do Caddy, o endereço e o protocolo reais vêm de `X-Forwarded-For` e `X-Forwarded-Proto`,
-  aceitos só de redes privadas (ajustável em `ReverseProxy:TrustedNetworks`). Sem isso, os
-  limites por origem valeriam para o site inteiro e os cookies sairiam sem a marca de conexão segura.
-- Coleta de audiência limitada por origem e por tamanho de lote.
-- IP registrado como hash com segredo rotativo; guarda-se o país, não o endereço.
-- Eventos brutos de reprodução retidos por 24 meses; agregados permanecem.
-- Exclusão de usuário anonimiza os eventos em vez de apagá-los.
-- Registro de auditoria de toda ação administrativa: conceder, revogar, publicar, excluir.
-- Aviso explícito ao convidado, no primeiro acesso, de que a visualização é registrada.
+- No password is generated or sent by email.
+- Codes and tokens are stored only as hashes, single-use and short-lived.
+- Rate limiting on sending and checking codes, with progressive lockout. Each code attempt is
+  reserved in the database before the comparison, so parallel requests cannot exceed the limit,
+  and a code or link opens only one session.
+- Behind Caddy, the real address and protocol come from `X-Forwarded-For` and `X-Forwarded-Proto`,
+  accepted only from private networks (configurable in `ReverseProxy:TrustedNetworks`). Without
+  this, per-origin limits would apply to the whole site and cookies would lack the secure flag.
+- Audience collection limited per origin and per batch size.
+- IP recorded as a hash with a rotating secret; the country is kept, not the address.
+- Raw playback events retained for 24 months; aggregates are kept.
+- Deleting a user anonymizes their events instead of removing them.
+- Audit log of every administrative action: grant, revoke, publish, delete.
+- Explicit notice to the guest, on first access, that viewing is recorded.
 
 ---
 
 ## Roadmap
 
-| Fase | Escopo | Estado |
+| Phase | Scope | Status |
 | --- | --- | --- |
-| 1 | Núcleo: upload, transcodificação, player, home e busca | **concluída** |
-| 2 | Acesso: concessões, convites e coleções | **concluída** |
-| 3 | Domínios: verificação por DNS e porta de entrada dedicada | **concluída** |
-| 4 | Analytics: coleta, agregação, painéis e exportação | **concluída** |
-| 5 | Suporte: conversas privadas por vídeo | **concluída** |
-| 6 | Refino: legendas automáticas, marca d'água, auditoria, autorização por segmento | **concluída** |
+| 1 | Core: upload, transcoding, player, home, and search | **done** |
+| 2 | Access: grants, invitations, and collections | **done** |
+| 3 | Domains: DNS verification and dedicated entry page | **done** |
+| 4 | Analytics: collection, aggregation, dashboards, and export | **done** |
+| 5 | Support: private conversations per video | **done** |
+| 6 | Polish: automatic captions, watermark, audit, per-segment authorization | **done** |
 
 ---
 
-## Licença
+## License
 
-Uso privado.
+Private use.
