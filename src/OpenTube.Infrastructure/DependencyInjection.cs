@@ -60,6 +60,8 @@ public static class DependencyInjection
         services.AddScoped<DomainService>();
         services.AddScoped<PlaybackService>();
         services.AddScoped<AnalyticsCollector>();
+        services.AddScoped<AnalyticsAggregator>();
+        services.AddScoped<AnalyticsQueries>();
         services.AddScoped<VideoCatalog>();
 
         return services;
