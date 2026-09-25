@@ -6,12 +6,20 @@
 
 services:
   postgres:
-    ports: []
+    # !reset é necessário: o compose acrescenta listas ao mesclar arquivos, então um "ports"
+    # vazio deixaria a porta do arquivo base publicada e o banco exposto à rede.
+    ports: !reset []
+    # Volume próprio: reaproveitar o do desenvolvimento faria o PostgreSQL manter a senha
+    # antiga, já que ele só aplica POSTGRES_PASSWORD na primeira inicialização.
+    volumes: !override
+      - postgres-prod:/var/lib/postgresql/data
     environment:
       POSTGRES_PASSWORD: ${OPENTUBE_DB_PASSWORD:?defina OPENTUBE_DB_PASSWORD}
 
   minio:
-    ports: []
+    ports: !reset []
+    volumes: !override
+      - minio-prod:/bitnami/minio/data
     environment:
       MINIO_ROOT_PASSWORD: ${OPENTUBE_S3_SECRET:?defina OPENTUBE_S3_SECRET}
 
@@ -81,5 +89,7 @@ services:
       - caddy-config:/config
 
 volumes:
+  postgres-prod:
+  minio-prod:
   caddy-data:
   caddy-config:

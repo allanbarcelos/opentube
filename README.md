@@ -234,6 +234,16 @@ cp .env.example .env    # preencha as variáveis
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
+`OPENTUBE_HOST` precisa ser um domínio que aponte para esta máquina: o Caddy pede um
+certificado real para esse nome e só responde por ele. Deixar o valor de exemplo faz a
+emissão falhar em repetição e nada atender. Para experimentar na própria máquina, use
+`OPENTUBE_HOST=localhost`, que recebe um certificado interno — o navegador vai avisar que
+ele não é de uma autoridade conhecida, o que é esperado.
+
+A produção usa volumes próprios de banco e storage, separados dos de desenvolvimento. É de
+propósito: o PostgreSQL só aplica a senha na primeira inicialização, então reaproveitar o
+volume de desenvolvimento manteria a senha antiga e a aplicação não conseguiria entrar.
+
 O Caddy resolve o TLS e, com `Storage__SegmentAuthorization` ligado, entrega os segmentos de
 vídeo depois de consultar a aplicação a cada pedido: ela decide, ele transporta. A vantagem
 sobre o endereço assinado é que revogar um acesso vale já no segmento seguinte, em vez de
