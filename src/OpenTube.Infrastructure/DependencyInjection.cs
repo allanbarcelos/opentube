@@ -46,6 +46,7 @@ public static class DependencyInjection
         services.AddSingleton<IVideoStorage, S3VideoStorage>();
         services.AddScoped<VideoUploadService>();
         services.AddScoped<AdminVideoService>();
+        services.AddScoped<CollectionService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
         services.AddScoped<IAuthRateLimiter, AuthRateLimiter>();
         services.AddScoped<PasswordlessAuthService>();

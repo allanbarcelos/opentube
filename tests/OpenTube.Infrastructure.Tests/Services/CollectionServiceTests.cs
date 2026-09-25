@@ -1,0 +1,282 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
+using OpenTube.Domain.Entities;
+using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Persistence;
+using OpenTube.Infrastructure.Services;
+using OpenTube.Infrastructure.Storage;
+using OpenTube.Infrastructure.Tests.Support;
+using OpenTube.TestSupport;
+
+namespace OpenTube.Infrastructure.Tests.Services;
+
+[Collection(IntegrationCollection.Name)]
+public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
+{
+    private static readonly DateTimeOffset Agora = new(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);
+    private static readonly Guid Admin = Guid.CreateVersion7();
+
+    private readonly FakeTimeProvider _relogio = new(Agora);
+
+    public Task InitializeAsync() => postgres.ResetAsync();
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    private (CollectionService Servico, OpenTubeDbContext Db) Criar()
+    {
+        var db = postgres.CreateContext();
+
+        return (new CollectionService(db, _relogio, NullLogger<CollectionService>.Instance), db);
+    }
+
+    private async Task<Video> CriarVideoAsync(string titulo)
+    {
+        await using var db = postgres.CreateContext();
+        var videoId = Guid.CreateVersion7();
+
+        var video = Video.CreateDraft(titulo, $"v-{videoId:n}"[..20], "originals/a.mp4", Admin, Agora, id: videoId);
+        video.MarkUploaded(1024);
+        video.StartProcessing();
+        video.MarkReady(StorageKeys.VodPrefix(videoId), 60, 640, 360, null, null, Agora);
+
+        db.Videos.Add(video);
+        await db.SaveChangesAsync();
+
+        return video;
+    }
+
+    [Fact]
+    public async Task Cria_colecao_com_endereco_derivado_do_nome()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        var colecao = await servico.CreateAsync("Treinamentos Obrigatórios", "Para toda a equipe", Admin);
+
+        Assert.Equal("treinamentos-obrigatorios", colecao.Slug);
+        Assert.Equal("Para toda a equipe", colecao.Description);
+        Assert.Empty(colecao.Videos);
+    }
+
+    [Fact]
+    public async Task Nomes_repetidos_geram_enderecos_diferentes()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        await servico.CreateAsync("Treinamentos", null, Admin);
+        var segunda = await servico.CreateAsync("Treinamentos", null, Admin);
+
+        Assert.Equal("treinamentos-2", segunda.Slug);
+    }
+
+    [Fact]
+    public async Task Exige_nome()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        await Assert.ThrowsAnyAsync<ArgumentException>(() => servico.CreateAsync("   ", null, Admin));
+    }
+
+    [Fact]
+    public async Task Renomear_nao_altera_o_endereco()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+
+        await servico.RenameAsync(colecao.Id, "Capacitação 2026", "Nova descrição");
+
+        await using var leitura = postgres.CreateContext();
+        var lida = await leitura.Collections.SingleAsync();
+
+        Assert.Equal("Capacitação 2026", lida.Name);
+        Assert.Equal("treinamentos", lida.Slug);
+    }
+
+    [Fact]
+    public async Task Acrescenta_e_remove_videos()
+    {
+        var a = await CriarVideoAsync("Primeiro");
+        var b = await CriarVideoAsync("Segundo");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+
+        await servico.AddVideoAsync(colecao.Id, a.Id);
+        await servico.AddVideoAsync(colecao.Id, b.Id);
+        await servico.RemoveVideoAsync(colecao.Id, a.Id);
+
+        var videos = await servico.VideosOfAsync(colecao.Id);
+
+        Assert.Equal(["Segundo"], videos.Select(v => v.Title));
+    }
+
+    [Fact]
+    public async Task Acrescentar_o_mesmo_video_duas_vezes_nao_duplica()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+
+        await servico.AddVideoAsync(colecao.Id, video.Id);
+        await servico.AddVideoAsync(colecao.Id, video.Id);
+
+        Assert.Single(await servico.VideosOfAsync(colecao.Id));
+    }
+
+    [Fact]
+    public async Task Nao_acrescenta_video_inexistente()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servico.AddVideoAsync(colecao.Id, Guid.CreateVersion7()));
+    }
+
+    [Fact]
+    public async Task Redefinir_o_conteudo_respeita_a_ordem_pedida()
+    {
+        var a = await CriarVideoAsync("Primeiro");
+        var b = await CriarVideoAsync("Segundo");
+        var c = await CriarVideoAsync("Terceiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+
+        await servico.SetVideosAsync(colecao.Id, [c.Id, a.Id, b.Id]);
+
+        var videos = await servico.VideosOfAsync(colecao.Id);
+
+        Assert.Equal(["Terceiro", "Primeiro", "Segundo"], videos.Select(v => v.Title));
+    }
+
+    [Fact]
+    public async Task Redefinir_descarta_identificadores_que_nao_existem()
+    {
+        var a = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+
+        await servico.SetVideosAsync(colecao.Id, [Guid.CreateVersion7(), a.Id]);
+
+        Assert.Single(await servico.VideosOfAsync(colecao.Id));
+    }
+
+    [Fact]
+    public async Task Video_excluido_some_da_colecao()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+        await servico.AddVideoAsync(colecao.Id, video.Id);
+
+        await using (var outro = postgres.CreateContext())
+        {
+            var alvo = await outro.Videos.SingleAsync(v => v.Id == video.Id);
+            alvo.SoftDelete(Agora);
+            await outro.SaveChangesAsync();
+        }
+
+        Assert.Empty(await servico.VideosOfAsync(colecao.Id));
+    }
+
+    [Fact]
+    public async Task A_listagem_traz_as_contagens_de_video_e_de_concessao()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+        await servico.AddVideoAsync(colecao.Id, video.Id);
+
+        await using (var outro = postgres.CreateContext())
+        {
+            outro.AccessGrants.Add(AccessGrant.ForUser(
+                OpenTube.Domain.ValueObjects.EmailAddress.Parse("allan@barcelos.dev"),
+                GrantTargetType.Collection, colecao.Id, Admin, Agora));
+            await outro.SaveChangesAsync();
+        }
+
+        var listagem = await servico.ListAsync();
+        var resumo = Assert.Single(listagem);
+
+        Assert.Equal(1, resumo.VideoCount);
+        Assert.Equal(1, resumo.GrantCount);
+        Assert.False(resumo.IsDeleted);
+    }
+
+    [Fact]
+    public async Task Concessao_revogada_nao_entra_na_contagem()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+
+        await using (var outro = postgres.CreateContext())
+        {
+            var concessao = AccessGrant.ForUser(
+                OpenTube.Domain.ValueObjects.EmailAddress.Parse("allan@barcelos.dev"),
+                GrantTargetType.Collection, colecao.Id, Admin, Agora);
+            concessao.Revoke(Agora);
+            outro.AccessGrants.Add(concessao);
+            await outro.SaveChangesAsync();
+        }
+
+        Assert.Equal(0, (await servico.ListAsync()).Single().GrantCount);
+    }
+
+    [Fact]
+    public async Task Excluir_tira_a_colecao_da_listagem_padrao()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+
+        await servico.DeleteAsync(colecao.Id);
+
+        Assert.Empty(await servico.ListAsync());
+        Assert.Single(await servico.ListAsync(includeDeleted: true));
+
+        await servico.RestoreAsync(colecao.Id);
+        Assert.Single(await servico.ListAsync());
+    }
+
+    [Fact]
+    public async Task Recusa_operar_sobre_colecao_inexistente()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var inexistente = Guid.CreateVersion7();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servico.RenameAsync(inexistente, "x", null));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servico.DeleteAsync(inexistente));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servico.SetVideosAsync(inexistente, []));
+    }
+
+    [Fact]
+    public async Task Encontra_a_colecao_com_os_videos()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
+        await servico.AddVideoAsync(colecao.Id, video.Id);
+
+        await using var leitura = postgres.CreateContext();
+        var servicoDeLeitura = new CollectionService(leitura, _relogio, NullLogger<CollectionService>.Instance);
+
+        var encontrada = await servicoDeLeitura.FindAsync(colecao.Id);
+
+        Assert.NotNull(encontrada);
+        Assert.Single(encontrada.Videos);
+        Assert.Null(await servicoDeLeitura.FindAsync(Guid.CreateVersion7()));
+    }
+}

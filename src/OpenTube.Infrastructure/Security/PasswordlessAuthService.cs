@@ -92,7 +92,10 @@ public class PasswordlessAuthService(
         if (usuario is not null && !usuario.IsActive)
             return new CodeRequestResult(false, AuthFailure.UserDisabled, TimeSpan.Zero);
 
-        if (usuario is null && requireExistingUser)
+        // Quem foi convidado ainda não existe como usuário: a conta só nasce na primeira
+        // entrada. Sem consultar as concessões, quem perdesse o email do convite ficaria sem
+        // como pedir um código novo.
+        if (usuario is null && requireExistingUser && !await TemConcessaoAsync(endereco, cancellationToken))
         {
             logger.LogInformation("Pedido de código para endereço sem acesso; nenhum email enviado");
             return CodeRequestResult.Ok();
@@ -276,6 +279,22 @@ public class PasswordlessAuthService(
         }
 
         return encerradas;
+    }
+
+    /// <summary>
+    /// Verifica se o endereço tem alguma concessão em vigor, diretamente ou pelo domínio.
+    /// </summary>
+    private async Task<bool> TemConcessaoAsync(EmailAddress email, CancellationToken cancellationToken)
+    {
+        var agora = clock.GetUtcNow();
+
+        return await db.AccessGrants.AnyAsync(g =>
+            g.RevokedAt == null
+            && (g.StartsAt == null || g.StartsAt <= agora)
+            && (g.ExpiresAt == null || g.ExpiresAt > agora)
+            && ((g.SubjectType == GrantSubjectType.User && g.SubjectValue == email.Value)
+                || (g.SubjectType == GrantSubjectType.Domain && g.SubjectValue == email.Domain)),
+            cancellationToken);
     }
 
     private async Task<SignInOutcome> ConcluirAsync(

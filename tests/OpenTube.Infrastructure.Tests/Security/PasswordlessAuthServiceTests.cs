@@ -104,6 +104,65 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
     }
 
     [Fact]
+    public async Task Quem_foi_convidado_consegue_pedir_um_codigo_novo()
+    {
+        // O convidado só vira usuário na primeira entrada; até lá, é a concessão que prova
+        // que ele tem acesso e pode pedir outro código se perder o email do convite.
+        await using (var db = postgres.CreateContext())
+        {
+            db.AccessGrants.Add(AccessGrant.ForUser(
+                EmailAddress.Parse(Convidado), GrantTargetType.All, null, Guid.CreateVersion7(), Agora));
+            await db.SaveChangesAsync();
+        }
+
+        var (servico, db2) = Criar();
+        await using var _ = db2;
+
+        var resultado = await servico.RequestCodeAsync(Convidado);
+
+        Assert.True(resultado.Sent);
+        Assert.Single(_email.Sent);
+    }
+
+    [Fact]
+    public async Task Concessao_por_dominio_tambem_permite_pedir_codigo()
+    {
+        await using (var db = postgres.CreateContext())
+        {
+            db.AccessGrants.Add(AccessGrant.ForDomain(
+                "barcelos.dev", GrantTargetType.All, null, Guid.CreateVersion7(), Agora));
+            await db.SaveChangesAsync();
+        }
+
+        var (servico, db2) = Criar();
+        await using var _ = db2;
+
+        Assert.True((await servico.RequestCodeAsync("qualquer@barcelos.dev")).Sent);
+        Assert.Single(_email.Sent);
+    }
+
+    [Fact]
+    public async Task Concessao_revogada_nao_permite_pedir_codigo()
+    {
+        await using (var db = postgres.CreateContext())
+        {
+            var concessao = AccessGrant.ForUser(
+                EmailAddress.Parse(Convidado), GrantTargetType.All, null, Guid.CreateVersion7(), Agora);
+            concessao.Revoke(Agora);
+            db.AccessGrants.Add(concessao);
+            await db.SaveChangesAsync();
+        }
+
+        var (servico, db2) = Criar();
+        await using var _ = db2;
+
+        var resultado = await servico.RequestCodeAsync(Convidado);
+
+        Assert.True(resultado.Sent);
+        Assert.Empty(_email.Sent);
+    }
+
+    [Fact]
     public async Task Recusa_endereco_malformado()
     {
         var (servico, db) = Criar();
