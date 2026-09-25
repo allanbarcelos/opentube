@@ -174,6 +174,7 @@ public class PasswordlessAuthService(
         var digitado = (code ?? string.Empty).Trim();
 
         var candidato = await db.LoginCodes
+            .AsNoTracking()
             .Where(c => c.Email == endereco.Value && c.ConsumedAt == null)
             .OrderByDescending(c => c.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
@@ -187,12 +188,21 @@ public class PasswordlessAuthService(
         if (candidato.IsExpiredAt(agora))
             return SignInOutcome.Fail(AuthFailure.CodeExpired);
 
+        // A tentativa é reservada no banco antes da comparação, numa única instrução
+        // condicional. Ler, comparar e só depois somar deixaria pedidos em paralelo testarem
+        // quantos palpites quisessem antes de qualquer um deles ser contado.
+        var reservada = await db.LoginCodes
+            .Where(c => c.Id == candidato.Id && c.ConsumedAt == null && c.Attempts < LoginCode.MaxAttempts)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.Attempts, c => c.Attempts + 1), cancellationToken);
+
+        if (reservada == 0)
+            return SignInOutcome.Fail(AuthFailure.TooManyAttempts);
+
         if (!TokenHasher.Verify(digitado, candidato.CodeHash, _options.TokenPepper))
         {
-            candidato.RegisterFailedAttempt();
-            await db.SaveChangesAsync(cancellationToken);
-
-            return SignInOutcome.Fail(candidato.IsExhausted ? AuthFailure.TooManyAttempts : AuthFailure.InvalidCode);
+            return SignInOutcome.Fail(candidato.Attempts + 1 >= LoginCode.MaxAttempts
+                ? AuthFailure.TooManyAttempts
+                : AuthFailure.InvalidCode);
         }
 
         return await ConcluirAsync(candidato, endereco, ip, userAgent, cancellationToken);
@@ -210,7 +220,7 @@ public class PasswordlessAuthService(
 
         var hash = TokenHasher.Hash(token.Trim(), _options.TokenPepper);
 
-        var candidato = await db.LoginCodes.FirstOrDefaultAsync(c => c.TokenHash == hash, cancellationToken);
+        var candidato = await db.LoginCodes.AsNoTracking().FirstOrDefaultAsync(c => c.TokenHash == hash, cancellationToken);
 
         if (candidato is null)
             return SignInOutcome.Fail(AuthFailure.InvalidCode);
@@ -308,6 +318,25 @@ public class PasswordlessAuthService(
 
         var usuario = await db.Users.FirstOrDefaultAsync(u => u.Email == endereco.Value, cancellationToken);
 
+        if (usuario is not null && !usuario.IsActive)
+            return SignInOutcome.Fail(AuthFailure.UserDisabled);
+
+        // O consumo e a abertura da sessão acontecem juntos: se a sessão não for gravada, o
+        // código não fica queimado à toa.
+        await using var transacao = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        // Marcar como usado é uma instrução condicional: dois pedidos simultâneos com o
+        // mesmo link não podem abrir duas sessões. O segundo espera o primeiro e não acha
+        // mais o código livre.
+        var consumido = await db.LoginCodes
+            .Where(c => c.Id == codigo.Id && c.ConsumedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.ConsumedAt, agora), cancellationToken);
+
+        if (consumido == 0)
+            return SignInOutcome.Fail(AuthFailure.CodeAlreadyUsed);
+
         if (usuario is null)
         {
             // O convidado vira usuário na primeira entrada: até aqui ele só existia
@@ -315,18 +344,16 @@ public class PasswordlessAuthService(
             usuario = User.Create(endereco, agora);
             db.Users.Add(usuario);
         }
-        else if (!usuario.IsActive)
-        {
-            return SignInOutcome.Fail(AuthFailure.UserDisabled);
-        }
 
-        codigo.Consume(agora);
         usuario.Touch(agora);
 
         var sessao = AuthSession.Open(usuario.Id, agora, _options.SessionLifetime, privacy.HashIp(ip), userAgent);
         db.AuthSessions.Add(sessao);
 
         await db.SaveChangesAsync(cancellationToken);
+
+        if (transacao is not null)
+            await transacao.CommitAsync(cancellationToken);
 
         logger.LogInformation("Sessão aberta para {UsuarioId}", usuario.Id);
 

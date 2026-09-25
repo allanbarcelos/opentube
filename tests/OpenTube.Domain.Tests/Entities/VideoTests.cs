@@ -128,6 +128,44 @@ public class VideoTests
     }
 
     [Fact]
+    public void Retoma_processamento_interrompido()
+    {
+        var video = Rascunho();
+        video.MarkUploaded(1024);
+        video.StartProcessing();
+
+        // O worker morreu no meio: o trabalho volta para a fila e encontra o vídeo assim.
+        video.StartProcessing();
+
+        Assert.Equal(VideoStatus.Processing, video.Status);
+    }
+
+    [Fact]
+    public void Reprocessar_mantem_o_video_pronto_no_ar()
+    {
+        var video = Pronto();
+
+        video.StartProcessing();
+
+        Assert.Equal(VideoStatus.Ready, video.Status);
+        Assert.True(video.IsPlayable);
+        Assert.Equal("vod/abc/", video.HlsPrefix);
+    }
+
+    [Fact]
+    public void Reprocessar_troca_a_versao_em_uso()
+    {
+        var video = Pronto();
+
+        video.StartProcessing();
+        video.MarkReady("vod/abc-v2/", 620, 1920, 1080, "vod/abc-v2/thumb.jpg", null, Agora.AddDays(1));
+
+        Assert.Equal(VideoStatus.Ready, video.Status);
+        Assert.Equal("vod/abc-v2/", video.HlsPrefix);
+        Assert.Equal("vod/abc-v2/thumb.jpg", video.ThumbnailKey);
+    }
+
+    [Fact]
     public void Nao_fica_pronto_sem_passar_por_processamento()
     {
         var video = Rascunho();

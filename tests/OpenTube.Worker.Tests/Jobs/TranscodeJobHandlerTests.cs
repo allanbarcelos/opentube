@@ -85,20 +85,22 @@ public class TranscodeJobHandlerTests(PostgresFixture postgres, MinioFixture min
         var pronto = await leitura.Videos.SingleAsync(v => v.Id == video.Id);
 
         Assert.Equal(VideoStatus.Ready, pronto.Status);
-        Assert.Equal(StorageKeys.VodPrefix(video.Id), pronto.HlsPrefix);
+        Assert.StartsWith($"{video.Id}/r-", pronto.HlsPrefix);
         Assert.Equal(640, pronto.Width);
         Assert.Equal(360, pronto.Height);
         Assert.InRange(pronto.DurationSeconds, 4.5, 5.5);
         Assert.Equal(Agora, pronto.PublishedAt);
 
-        var chaves = await storage.ListAsync(StorageBucket.Vod, StorageKeys.VodPrefix(video.Id));
+        var prefixo = pronto.HlsPrefix!;
+        var chaves = await storage.ListAsync(StorageBucket.Vod, prefixo);
 
-        Assert.Contains(StorageKeys.Master(video.Id), chaves);
-        Assert.Contains(StorageKeys.RenditionPlaylist(video.Id, "360p"), chaves);
-        Assert.Contains(StorageKeys.Thumbnail(video.Id), chaves);
-        Assert.Contains(StorageKeys.Sprite(video.Id), chaves);
-        Assert.Contains(StorageKeys.SpriteMetadata(video.Id), chaves);
+        Assert.Contains(StorageKeys.MasterUnder(prefixo), chaves);
+        Assert.Contains(StorageKeys.RenditionPlaylistUnder(prefixo, "360p"), chaves);
+        Assert.Contains(StorageKeys.ThumbnailUnder(prefixo), chaves);
+        Assert.Contains(StorageKeys.SpriteUnder(prefixo), chaves);
+        Assert.Contains(StorageKeys.SpriteMetadataUnder(prefixo), chaves);
         Assert.Contains(chaves, k => k.EndsWith(".m4s"));
+        Assert.Equal(StorageKeys.ThumbnailUnder(prefixo), pronto.ThumbnailKey);
     }
 
     [FfmpegFact]
@@ -126,7 +128,9 @@ public class TranscodeJobHandlerTests(PostgresFixture postgres, MinioFixture min
         await using (var db = postgres.CreateContext())
             await Criar(db, storage).HandleAsync(Job(video));
 
-        var master = await storage.GetTextAsync(StorageBucket.Vod, StorageKeys.Master(video.Id));
+        await using var leitura = postgres.CreateContext();
+        var prefixo = (await leitura.Videos.SingleAsync(v => v.Id == video.Id)).HlsPrefix!;
+        var master = await storage.GetTextAsync(StorageBucket.Vod, StorageKeys.MasterUnder(prefixo));
 
         Assert.Contains("360p/stream.m3u8", master);
         Assert.Contains("480p/stream.m3u8", master);
@@ -134,8 +138,15 @@ public class TranscodeJobHandlerTests(PostgresFixture postgres, MinioFixture min
         Assert.Contains("#EXT-X-STREAM-INF", master);
     }
 
+    private async Task<string> PrefixoEmUsoAsync(Guid videoId)
+    {
+        await using var leitura = postgres.CreateContext();
+
+        return (await leitura.Videos.SingleAsync(v => v.Id == videoId)).HlsPrefix!;
+    }
+
     [FfmpegFact]
-    public async Task Reprocessar_substitui_as_saidas_anteriores()
+    public async Task Reprocessar_troca_a_geracao_e_apaga_as_anteriores_sem_tocar_nas_legendas()
     {
         using var storage = minio.CreateStorage();
         var video = await PrepararVideoAsync(storage, segundos: 5, largura: 1280, altura: 720);
@@ -143,16 +154,69 @@ public class TranscodeJobHandlerTests(PostgresFixture postgres, MinioFixture min
         await using (var db = postgres.CreateContext())
             await Criar(db, storage).HandleAsync(Job(video));
 
-        // Deixa um resto de um processamento antigo, com uma versão que não existe mais.
+        var anterior = await PrefixoEmUsoAsync(video.Id);
+
+        // Restos do layout antigo, gravado direto na raiz do vídeo, e uma legenda enviada
+        // pelo administrador, que não é gerada pela transcodificação.
         await storage.PutTextAsync(StorageBucket.Vod, $"{video.Id}/2160p/stream.m3u8", "#EXTM3U", MediaTypes.HlsPlaylist);
+        await storage.PutTextAsync(StorageBucket.Vod, StorageKeys.Caption(video.Id, "pt"), "WEBVTT", MediaTypes.WebVtt);
 
         await using (var db = postgres.CreateContext())
             await Criar(db, storage).HandleAsync(Job(video));
 
+        var atual = await PrefixoEmUsoAsync(video.Id);
         var chaves = await storage.ListAsync(StorageBucket.Vod, StorageKeys.VodPrefix(video.Id));
 
+        Assert.NotEqual(anterior, atual);
+        Assert.DoesNotContain(chaves, k => k.StartsWith(anterior, StringComparison.Ordinal));
         Assert.DoesNotContain(chaves, k => k.Contains("2160p"));
-        Assert.Contains(StorageKeys.Master(video.Id), chaves);
+        Assert.Contains(StorageKeys.MasterUnder(atual), chaves);
+        Assert.Contains(StorageKeys.Caption(video.Id, "pt"), chaves);
+    }
+
+    [FfmpegFact]
+    public async Task Reprocessamento_que_falha_mantem_a_versao_anterior_no_ar()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PrepararVideoAsync(storage);
+
+        await using (var db = postgres.CreateContext())
+            await Criar(db, storage).HandleAsync(Job(video));
+
+        var anterior = await PrefixoEmUsoAsync(video.Id);
+
+        // Sem o original, o reprocessamento falha logo no download.
+        await storage.DeletePrefixAsync(StorageBucket.Originals, video.OriginalKey);
+
+        await using (var db = postgres.CreateContext())
+            await Assert.ThrowsAnyAsync<Exception>(() => Criar(db, storage).HandleAsync(Job(video)));
+
+        await using var leitura = postgres.CreateContext();
+        var depois = await leitura.Videos.SingleAsync(v => v.Id == video.Id);
+
+        Assert.Equal(VideoStatus.Ready, depois.Status);
+        Assert.Equal(anterior, depois.HlsPrefix);
+        Assert.True(await storage.ExistsAsync(StorageBucket.Vod, StorageKeys.MasterUnder(anterior)));
+    }
+
+    [FfmpegFact]
+    public async Task Retoma_video_que_ficou_em_processamento_quando_o_worker_morreu()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PrepararVideoAsync(storage);
+
+        await using (var db = postgres.CreateContext())
+        {
+            var interrompido = await db.Videos.SingleAsync(v => v.Id == video.Id);
+            interrompido.StartProcessing();
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = postgres.CreateContext())
+            await Criar(db, storage).HandleAsync(Job(video));
+
+        await using var leitura = postgres.CreateContext();
+        Assert.Equal(VideoStatus.Ready, (await leitura.Videos.SingleAsync(v => v.Id == video.Id)).Status);
     }
 
     [FfmpegFact]

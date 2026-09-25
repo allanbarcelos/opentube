@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Access;
@@ -165,5 +166,28 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         // A primeira playlist principal conta como uma visualização.
         Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/master.m3u8")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{videoId}/master.m3u8")).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_reproducao_que_usa_a_ultima_visualizacao_toca_ate_o_fim()
+    {
+        var (url, _, slug) = await CriarLinkAsync(maxViews: 1);
+
+        using var cliente = _app.CreateBrowser();
+        await cliente.GetAsync(Caminho(url));
+
+        var html = await cliente.GetStringAsync($"/v/{slug}");
+        var videoId = html.Split("/api/videos/")[1].Split('/')[0];
+
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/master.m3u8")).StatusCode);
+
+        // A versão, a coleta de audiência e a página seguinte fazem parte da mesma reprodução
+        // ou de uma nova: só as primeiras podem passar.
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/versoes/360p.m3u8")).StatusCode);
+
+        var sessao = await cliente.PostAsJsonAsync("/api/reproducao/iniciar", new { videoId });
+        Assert.Equal(HttpStatusCode.OK, sessao.StatusCode);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/v/{slug}")).StatusCode);
     }
 }

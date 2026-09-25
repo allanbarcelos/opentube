@@ -34,8 +34,18 @@ builder.Services.AddScoped<CurrentViewer>();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ShareLinkFlash>();
 builder.Services.AddHealthChecks();
+builder.Services.AddReverseProxySupport(builder.Configuration);
+builder.Services.AddRateLimiter(opcoes =>
+{
+    opcoes.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    AnalyticsEndpoints.AddRateLimit(opcoes);
+});
 
 var app = builder.Build();
+
+// Primeiro de tudo: o resto do pipeline — limites por origem, cookies seguros, HSTS — precisa
+// enxergar o endereço e o protocolo de quem acessa, e não os do servidor da frente.
+app.UseForwardedHeaders();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -51,6 +61,7 @@ app.UseAuthorization();
 // identidade de quem carregou a página, e validá-lo antes faria todo formulário de pessoa
 // autenticada ser recusado.
 app.UseAntiforgery();
+app.UseRateLimiter();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

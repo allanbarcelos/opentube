@@ -216,6 +216,56 @@ public class AccessPolicyComConcessoesTests
     }
 
     [Fact]
+    public void Reproducao_que_consumiu_a_ultima_visualizacao_continua()
+    {
+        var video = Restrito();
+        var concessao = AccessGrant.ForLink("resumo", GrantTargetType.Video, video.Id, Admin, Agora, maxViews: 1);
+        concessao.RegisterUse(Agora);
+
+        var espectador = Viewer.WithLink(concessao.Id).ContinuingView(video.Id, concessao.Id);
+
+        Assert.True(Avaliar(espectador, video, [concessao]).Allowed);
+    }
+
+    [Fact]
+    public void Reproducao_nova_nao_se_apoia_na_anterior()
+    {
+        var video = Restrito();
+        var concessao = AccessGrant.ForLink("resumo", GrantTargetType.Video, video.Id, Admin, Agora, maxViews: 1);
+        concessao.RegisterUse(Agora);
+
+        var espectador = Viewer.WithLink(concessao.Id).ContinuingView(video.Id, concessao.Id).StartingNewView();
+
+        Assert.Equal(AccessReason.GrantExhausted, Avaliar(espectador, video, [concessao]).Reason);
+    }
+
+    [Fact]
+    public void Reproducao_em_andamento_vale_so_para_o_proprio_video()
+    {
+        var video = Restrito();
+        var outro = Restrito();
+        var concessao = AccessGrant.ForLink("resumo", GrantTargetType.All, null, Admin, Agora, maxViews: 1);
+        concessao.RegisterUse(Agora);
+
+        var espectador = Viewer.WithLink(concessao.Id).ContinuingView(video.Id, concessao.Id);
+
+        Assert.False(Avaliar(espectador, outro, [concessao]).Allowed);
+    }
+
+    [Fact]
+    public void Reproducao_em_andamento_nao_sobrevive_a_revogacao()
+    {
+        var video = Restrito();
+        var concessao = AccessGrant.ForLink("resumo", GrantTargetType.Video, video.Id, Admin, Agora, maxViews: 1);
+        concessao.RegisterUse(Agora);
+        concessao.Revoke(Agora);
+
+        var espectador = Viewer.WithLink(concessao.Id).ContinuingView(video.Id, concessao.Id);
+
+        Assert.Equal(AccessReason.GrantRevoked, Avaliar(espectador, video, [concessao]).Reason);
+    }
+
+    [Fact]
     public void Uma_concessao_valida_prevalece_sobre_outra_vencida()
     {
         var video = Restrito();

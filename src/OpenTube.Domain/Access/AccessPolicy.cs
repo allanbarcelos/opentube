@@ -88,7 +88,7 @@ public static class AccessPolicy
             if (!concessao.Covers(video.Id, collectionIds))
                 continue;
 
-            if (concessao.IsActiveAt(now))
+            if (concessao.IsActiveAt(now, ignoreViewLimit: viewer.IsContinuing(video.Id, concessao.Id)))
                 return AccessDecision.Allow(MotivoDaLiberacao(concessao.SubjectType));
 
             motivoDaRecusa = PiorMotivo(motivoDaRecusa, MotivoDaRecusa(concessao, now));

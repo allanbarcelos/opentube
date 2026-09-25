@@ -143,9 +143,17 @@ public class AccessGrant
             expiresAt: expiresAt, maxViews: maxViews, note: note);
 
     /// <summary>Verifica se a concessão está valendo neste instante.</summary>
-    public bool IsActiveAt(DateTimeOffset now)
+    public bool IsActiveAt(DateTimeOffset now) => IsActiveAt(now, ignoreViewLimit: false);
+
+    /// <summary>
+    /// Verifica se a concessão está valendo, podendo desconsiderar o teto de visualizações.
+    /// A reprodução que consumiu a última visualização ainda precisa buscar as versões, os
+    /// segmentos e as legendas; o teto barra uma reprodução nova, não a que já começou.
+    /// Revogação e prazo continuam valendo sempre.
+    /// </summary>
+    public bool IsActiveAt(DateTimeOffset now, bool ignoreViewLimit)
     {
-        if (IsRevoked || IsExhausted)
+        if (IsRevoked || (IsExhausted && !ignoreViewLimit))
             return false;
 
         if (StartsAt is { } inicio && now < inicio)

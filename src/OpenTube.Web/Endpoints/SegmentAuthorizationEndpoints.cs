@@ -36,12 +36,11 @@ public static class SegmentAuthorizationEndpoints
 
             var espectador = await espectadores.GetAsync(cancellationToken);
 
-            // A miniatura segue exatamente a mesma regra do vídeo, então serve de verificação
-            // barata: não lê a playlist nem registra visualização.
-            var autorizado = await playback.GetThumbnailUrlAsync(videoId, espectador, cancellationToken) is not null
-                || (await playback.GetMasterAsync(videoId, espectador, v => v, cancellationToken: cancellationToken)).Allowed;
-
-            return autorizado ? Results.Ok() : Results.Forbid();
+            // Só confere o acesso: um segmento não é uma visualização nova e não pode ler a
+            // playlist nem registrar uso da concessão.
+            return await playback.CanWatchAsync(videoId, espectador, cancellationToken)
+                ? Results.Ok()
+                : Results.Forbid();
         });
 
         return rotas;
@@ -76,7 +75,16 @@ public static class SegmentAuthorizationEndpoints
         if (!limpo.StartsWith(raiz, StringComparison.Ordinal))
             return null;
 
-        var partes = limpo[raiz.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries);
+        // O servidor da frente pode repassar o caminho sem normalizar. Qualquer coisa capaz de
+        // mudar de pasta depois da conferência — "..", codificação, barra dupla ou invertida —
+        // é recusada, em vez de depender de o storage rejeitar o caminho.
+        if (limpo.Contains('%') || limpo.Contains('\\') || limpo.Contains("//", StringComparison.Ordinal))
+            return null;
+
+        var partes = limpo[raiz.Length..].Split('/');
+
+        if (partes.Any(p => p is "" or "." or ".."))
+            return null;
 
         return partes.Length >= 2 && Guid.TryParse(partes[0], out var videoId) ? videoId : null;
     }

@@ -67,6 +67,7 @@ public static class DependencyInjection
         services.AddScoped<DomainService>();
         services.AddScoped<PlaybackGuard>();
         services.AddScoped<PlaybackService>();
+        services.AddSingleton<PlaybackTickets>();
         services.AddScoped<AnalyticsCollector>();
         services.AddScoped<AnalyticsAggregator>();
         services.AddScoped<AnalyticsQueries>();

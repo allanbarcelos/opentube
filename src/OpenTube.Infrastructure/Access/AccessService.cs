@@ -67,10 +67,7 @@ public class AccessService(OpenTubeDbContext db, IOptions<SecurityOptions> optio
 
         // Descobre qual concessão sustentou a liberação, para poder registrar o uso e
         // contar visualizações no limite configurado.
-        var usada = concessoes.FirstOrDefault(g =>
-            g.IsActiveAt(agora) &&
-            g.Covers(video.Id, colecoes) &&
-            AccessPolicy.CanWatch(viewer, video, [g], colecoes, agora));
+        var usada = concessoes.FirstOrDefault(g => AccessPolicy.CanWatch(viewer, video, [g], colecoes, agora));
 
         return new AccessOutcome(decisao, usada?.Id);
     }
@@ -116,14 +113,31 @@ public class AccessService(OpenTubeDbContext db, IOptions<SecurityOptions> optio
     /// Registra o uso da concessão. O primeiro uso dispara a contagem do prazo relativo, e é
     /// o que permite conceder "trinta dias a partir do primeiro acesso".
     /// </summary>
-    public async Task RegisterUseAsync(Guid grantId, CancellationToken cancellationToken = default)
+    /// <returns>
+    /// <c>false</c> quando o teto de visualizações já tinha sido alcançado. O incremento é uma
+    /// única instrução condicional no banco: ler, somar e gravar deixaria reproduções abertas
+    /// ao mesmo tempo passarem juntas do limite.
+    /// </returns>
+    public async Task<bool> RegisterUseAsync(Guid grantId, CancellationToken cancellationToken = default)
     {
-        var concessao = await db.AccessGrants.FirstOrDefaultAsync(g => g.Id == grantId, cancellationToken);
+        var agora = clock.GetUtcNow();
 
-        if (concessao is null)
-            return;
+        var alteradas = await db.AccessGrants
+            .Where(g => g.Id == grantId && (g.MaxViews == null || g.ViewsUsed < g.MaxViews))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(g => g.ViewsUsed, g => g.ViewsUsed + 1)
+                .SetProperty(g => g.FirstUsedAt, g => g.FirstUsedAt ?? agora),
+                cancellationToken);
 
-        concessao.RegisterUse(clock.GetUtcNow());
-        await db.SaveChangesAsync(cancellationToken);
+        // A atualização em lote não passa pelo rastreador: uma cópia já carregada neste
+        // contexto ficaria com a contagem antiga.
+        foreach (var rastreada in db.ChangeTracker.Entries<AccessGrant>()
+                     .Where(e => e.Entity.Id == grantId)
+                     .ToList())
+        {
+            rastreada.State = EntityState.Detached;
+        }
+
+        return alteradas == 1;
     }
 }

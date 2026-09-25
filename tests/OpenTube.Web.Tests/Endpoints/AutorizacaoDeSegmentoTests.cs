@@ -25,6 +25,11 @@ public class CaminhoDoSegmentoTests
     [InlineData("/vod/nao-e-identificador/seg.m4s")]
     [InlineData("/vod/0199a0b0-0000-7000-8000-000000000001")]
     [InlineData("/vod/")]
+    [InlineData("/vod/0199a0b0-0000-7000-8000-000000000001/../0199a0b0-0000-7000-8000-000000000002/720p/seg.m4s")]
+    [InlineData("/vod/0199a0b0-0000-7000-8000-000000000001/%2e%2e/0199a0b0-0000-7000-8000-000000000002/seg.m4s")]
+    [InlineData("/vod/0199a0b0-0000-7000-8000-000000000001//seg.m4s")]
+    [InlineData("/vod/0199a0b0-0000-7000-8000-000000000001/./seg.m4s")]
+    [InlineData("/vod/0199a0b0-0000-7000-8000-000000000001/..\\0199a0b0-0000-7000-8000-000000000002/seg.m4s")]
     [InlineData("")]
     [InlineData(null)]
     public void Caminho_fora_do_formato_nao_autoriza(string? caminho)

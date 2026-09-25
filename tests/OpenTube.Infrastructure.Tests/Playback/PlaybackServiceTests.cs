@@ -32,7 +32,27 @@ public class PlaybackServiceTests(PostgresFixture postgres, MinioFixture minio) 
         new(db, storage,
             new AccessService(db, Microsoft.Extensions.Options.Options.Create(Seguranca), TimeProvider.System),
             new PlaybackGuard(db, Microsoft.Extensions.Options.Options.Create(Seguranca), TimeProvider.System),
+            Bilhetes,
             Microsoft.Extensions.Options.Options.Create(minio.Options));
+
+    private static readonly PlaybackTickets Bilhetes =
+        new(Microsoft.Extensions.Options.Options.Create(Seguranca), TimeProvider.System);
+
+    /// <summary>Link de compartilhamento com teto de visualizações, e o espectador que o apresenta.</summary>
+    private async Task<(AccessGrant Concessao, Viewer Espectador)> LinkAsync(Video video, int maxViews)
+    {
+        await using var db = postgres.CreateContext();
+        var concessao = AccessGrant.ForLink(
+            OpenTube.Infrastructure.Security.TokenHasher.Hash("token", Seguranca.TokenPepper),
+            GrantTargetType.Video, video.Id, Guid.CreateVersion7(), Agora, maxViews: maxViews);
+        db.AccessGrants.Add(concessao);
+        await db.SaveChangesAsync();
+
+        return (concessao, Viewer.WithLink(concessao.Id));
+    }
+
+    private static Viewer ComBilhete(Viewer espectador, IssuedTicket? bilhete) =>
+        Bilhetes.Apply(espectador, [new(bilhete!.Value.CookieName, bilhete.Value.Value)]);
 
     private async Task<Video> PublicarAsync(IVideoStorage storage, VideoVisibility visibilidade)
     {
@@ -200,5 +220,120 @@ public class PlaybackServiceTests(PostgresFixture postgres, MinioFixture minio) 
         Assert.NotNull(await servico.GetThumbnailUrlAsync(publico.Id, Viewer.Anonymous));
         Assert.Null(await servico.GetThumbnailUrlAsync(privado.Id, Viewer.Anonymous));
         Assert.NotNull(await servico.GetThumbnailUrlAsync(privado.Id, Administrador));
+    }
+
+    [Fact]
+    public async Task A_reproducao_que_consome_a_ultima_visualizacao_chega_ate_o_fim()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PublicarAsync(storage, VideoVisibility.Restricted);
+        var (_, espectador) = await LinkAsync(video, maxViews: 1);
+        await using var db = postgres.CreateContext();
+        var servico = Criar(db, storage);
+
+        var master = await servico.GetMasterAsync(video.Id, espectador, v => v);
+
+        Assert.True(master.Allowed);
+        Assert.NotNull(master.Ticket);
+
+        // Sem o bilhete, a versão já esbarra no teto que a própria reprodução consumiu.
+        Assert.False((await servico.GetRenditionAsync(video.Id, "360p", espectador)).Allowed);
+
+        var continuando = ComBilhete(espectador, master.Ticket);
+
+        Assert.True((await servico.GetRenditionAsync(video.Id, "360p", continuando)).Allowed);
+        Assert.True(await servico.CanWatchAsync(video.Id, continuando));
+    }
+
+    [Fact]
+    public async Task O_bilhete_nao_abre_uma_reproducao_nova()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PublicarAsync(storage, VideoVisibility.Restricted);
+        var (_, espectador) = await LinkAsync(video, maxViews: 1);
+        await using var db = postgres.CreateContext();
+        var servico = Criar(db, storage);
+
+        var primeira = await servico.GetMasterAsync(video.Id, espectador, v => v);
+        var segunda = await servico.GetMasterAsync(video.Id, ComBilhete(espectador, primeira.Ticket), v => v);
+
+        Assert.False(segunda.Allowed);
+        Assert.Equal(AccessReason.GrantExhausted, segunda.Reason);
+    }
+
+    [Fact]
+    public async Task Conferir_o_acesso_nao_consome_visualizacao()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PublicarAsync(storage, VideoVisibility.Restricted);
+        var (concessao, espectador) = await LinkAsync(video, maxViews: 1);
+        await using var db = postgres.CreateContext();
+        var servico = Criar(db, storage);
+
+        for (var i = 0; i < 5; i++)
+            Assert.True(await servico.CanWatchAsync(video.Id, espectador));
+
+        await using var leitura = postgres.CreateContext();
+        Assert.Equal(0, (await leitura.AccessGrants.FindAsync(concessao.Id))!.ViewsUsed);
+    }
+
+    [Fact]
+    public async Task Reproducoes_simultaneas_nao_passam_do_teto()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PublicarAsync(storage, VideoVisibility.Restricted);
+        var (concessao, espectador) = await LinkAsync(video, maxViews: 3);
+
+        var resultados = await Task.WhenAll(Enumerable.Range(0, 12).Select(async _ =>
+        {
+            await using var db = postgres.CreateContext();
+            return await Criar(db, storage).GetMasterAsync(video.Id, espectador, v => v);
+        }));
+
+        Assert.Equal(3, resultados.Count(r => r.Allowed));
+
+        await using var leitura = postgres.CreateContext();
+        Assert.Equal(3, (await leitura.AccessGrants.FindAsync(concessao.Id))!.ViewsUsed);
+    }
+
+    [Fact]
+    public async Task Le_as_saidas_da_geracao_publicada()
+    {
+        using var storage = minio.CreateStorage();
+        var videoId = Guid.CreateVersion7();
+        var prefixo = StorageKeys.OutputPrefix(videoId, Guid.CreateVersion7());
+
+        await storage.PutTextAsync(StorageBucket.Vod, StorageKeys.MasterUnder(prefixo), """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=985000,RESOLUTION=640x360
+            360p/stream.m3u8
+            """, MediaTypes.HlsPlaylist);
+        await storage.PutTextAsync(StorageBucket.Vod, StorageKeys.RenditionPlaylistUnder(prefixo, "360p"), """
+            #EXTM3U
+            #EXTINF:4.0,
+            seg-00000.m4s
+            #EXT-X-ENDLIST
+            """, MediaTypes.HlsPlaylist);
+
+        await using (var gravacao = postgres.CreateContext())
+        {
+            var video = Video.CreateDraft("Geração", $"geracao-{videoId:n}"[..30], "originals/a.mp4", Guid.CreateVersion7(), Agora, id: videoId);
+            video.MarkUploaded(1024);
+            video.StartProcessing();
+            video.MarkReady(prefixo, 120, 640, 360, null, null, Agora);
+            video.ChangeVisibility(VideoVisibility.Public);
+            gravacao.Videos.Add(video);
+            await gravacao.SaveChangesAsync();
+        }
+
+        await using var db = postgres.CreateContext();
+        var servico = Criar(db, storage);
+
+        Assert.True((await servico.GetMasterAsync(videoId, Viewer.Anonymous, v => v)).Allowed);
+
+        var versao = await servico.GetRenditionAsync(videoId, "360p", Viewer.Anonymous);
+
+        Assert.True(versao.Allowed);
+        Assert.Contains(prefixo + "360p/seg-00000.m4s", versao.Content);
     }
 }

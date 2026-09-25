@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Queue;
@@ -18,9 +19,10 @@ public interface IJobHandler
 }
 
 /// <summary>
-/// Baixa o original, transcodifica, envia as saídas e marca o vídeo como pronto. Cada etapa é
-/// idempotente o bastante para que uma nova tentativa não deixe lixo: a pasta de trabalho é
-/// recriada e as saídas anteriores do vídeo são apagadas antes do envio.
+/// Baixa o original, transcodifica, envia as saídas e marca o vídeo como pronto. Cada
+/// processamento grava numa pasta nova e só troca a versão em uso depois de tudo enviado: um
+/// reprocessamento não tira o vídeo do ar, e uma falha no meio não destrói a versão que já
+/// funcionava. As gerações anteriores são apagadas só depois da troca.
 /// </summary>
 public class TranscodeJobHandler(
     OpenTubeDbContext db,
@@ -51,6 +53,8 @@ public class TranscodeJobHandler(
         await db.SaveChangesAsync(cancellationToken);
 
         var trabalho = Directory.CreateTempSubdirectory($"opentube-{video.Id:n}-");
+        var prefixo = StorageKeys.OutputPrefix(video.Id, Guid.CreateVersion7());
+        var publicado = false;
 
         try
         {
@@ -59,41 +63,78 @@ public class TranscodeJobHandler(
 
             var saida = await pipeline.RunAsync(original, trabalho.FullName, cancellationToken);
 
-            // Limpa saídas de um processamento anterior: se o ladder encolheu, uma versão
-            // antiga sobreviveria e continuaria sendo anunciada na playlist.
-            await storage.DeletePrefixAsync(StorageBucket.Vod, StorageKeys.VodPrefix(video.Id), cancellationToken);
-
-            await EnviarSaidasAsync(video.Id, saida, cancellationToken);
+            await EnviarSaidasAsync(prefixo, saida, cancellationToken);
 
             video.MarkReady(
-                StorageKeys.VodPrefix(video.Id),
+                prefixo,
                 saida.Info.DurationSeconds,
                 saida.Info.Width,
                 saida.Info.Height,
-                StorageKeys.Thumbnail(video.Id),
-                StorageKeys.Sprite(video.Id),
+                StorageKeys.ThumbnailUnder(prefixo),
+                StorageKeys.SpriteUnder(prefixo),
                 clock.GetUtcNow());
 
             await db.SaveChangesAsync(cancellationToken);
+            publicado = true;
 
             logger.LogInformation("Vídeo {VideoId} pronto em {Versoes} versões", video.Id, saida.Ladder.Count);
         }
-        catch
+        catch (Exception e)
         {
-            video.MarkFailed();
-            await db.SaveChangesAsync(cancellationToken);
+            // O desligamento do worker também cai aqui; a marcação precisa chegar ao banco
+            // mesmo com o cancelamento já pedido.
+            await RegistrarFalhaAsync(video, e);
+            await TentarApagarAsync(storage.DeletePrefixAsync(StorageBucket.Vod, prefixo, CancellationToken.None), prefixo);
             throw;
         }
         finally
         {
             TentarApagar(trabalho.FullName);
         }
+
+        if (publicado)
+            await TentarApagarAsync(ApagarGeracoesAntigasAsync(video.Id, prefixo), StorageKeys.VodPrefix(video.Id));
     }
 
-    private async Task EnviarSaidasAsync(Guid videoId, TranscodeOutput saida, CancellationToken cancellationToken)
+    /// <summary>
+    /// Num vídeo que nunca ficou pronto, a falha vira estado <c>Failed</c>. Num vídeo já
+    /// pronto, a versão anterior continua no ar e o estado não muda: a falha fica registrada
+    /// no trabalho da fila.
+    /// </summary>
+    private async Task RegistrarFalhaAsync(Video video, Exception erro)
     {
-        var prefixo = StorageKeys.VodPrefix(videoId);
+        if (db.Entry(video).State is EntityState.Modified)
+            await db.Entry(video).ReloadAsync(CancellationToken.None);
 
+        if (video.Status is VideoStatus.Ready)
+        {
+            logger.LogWarning(erro, "Reprocessamento do vídeo {VideoId} falhou; a versão anterior segue no ar", video.Id);
+            return;
+        }
+
+        video.MarkFailed();
+        await db.SaveChangesAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Apaga as saídas que não pertencem à geração em uso: gerações anteriores e o layout
+    /// antigo, gravado direto na raiz do vídeo. As legendas ficam, porque não são geradas aqui.
+    /// </summary>
+    private async Task ApagarGeracoesAntigasAsync(Guid videoId, string emUso)
+    {
+        var legendas = StorageKeys.CaptionsPrefix(videoId);
+        var chaves = await storage.ListAsync(StorageBucket.Vod, StorageKeys.VodPrefix(videoId), CancellationToken.None);
+
+        var antigas = chaves
+            .Where(k => !k.StartsWith(emUso, StringComparison.Ordinal) && !k.StartsWith(legendas, StringComparison.Ordinal))
+            .ToList();
+
+        if (antigas.Count > 0)
+            await storage.DeleteKeysAsync(StorageBucket.Vod, antigas, CancellationToken.None);
+    }
+
+    private async Task EnviarSaidasAsync(string prefixo, TranscodeOutput saida, CancellationToken cancellationToken)
+    {
         foreach (var arquivo in Directory.EnumerateFiles(saida.OutputDirectory, "*", SearchOption.AllDirectories))
         {
             var relativo = Path.GetRelativePath(saida.OutputDirectory, arquivo).Replace(Path.DirectorySeparatorChar, '/');
@@ -106,9 +147,22 @@ public class TranscodeJobHandler(
                 cancellationToken);
         }
 
-        await storage.PutFileAsync(StorageBucket.Vod, StorageKeys.Thumbnail(videoId), saida.ThumbnailPath, MediaTypes.Jpeg, cancellationToken);
-        await storage.PutFileAsync(StorageBucket.Vod, StorageKeys.Sprite(videoId), saida.SpritePath, MediaTypes.Jpeg, cancellationToken);
-        await storage.PutFileAsync(StorageBucket.Vod, StorageKeys.SpriteMetadata(videoId), saida.SpriteVttPath, MediaTypes.WebVtt, cancellationToken);
+        await storage.PutFileAsync(StorageBucket.Vod, StorageKeys.ThumbnailUnder(prefixo), saida.ThumbnailPath, MediaTypes.Jpeg, cancellationToken);
+        await storage.PutFileAsync(StorageBucket.Vod, StorageKeys.SpriteUnder(prefixo), saida.SpritePath, MediaTypes.Jpeg, cancellationToken);
+        await storage.PutFileAsync(StorageBucket.Vod, StorageKeys.SpriteMetadataUnder(prefixo), saida.SpriteVttPath, MediaTypes.WebVtt, cancellationToken);
+    }
+
+    /// <summary>Limpeza no storage é melhor esforço: falhar nela não desfaz o processamento.</summary>
+    private async Task TentarApagarAsync(Task limpeza, string prefixo)
+    {
+        try
+        {
+            await limpeza;
+        }
+        catch (Exception e)
+        {
+            logger.LogWarning(e, "Não foi possível limpar saídas antigas em {Prefixo}", prefixo);
+        }
     }
 
     private void TentarApagar(string pasta)

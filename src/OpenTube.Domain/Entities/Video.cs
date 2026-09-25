@@ -104,21 +104,27 @@ public class Video
     }
 
     /// <summary>
-    /// Coloca o vídeo em processamento. Um vídeo já pronto pode ser reprocessado a partir do
-    /// original — é o que permite gerar novas versões sem pedir outro upload.
+    /// Coloca o vídeo em processamento. Um vídeo já em processamento pode ser retomado: é o
+    /// que acontece quando o worker morre no meio e o trabalho volta para a fila. Um vídeo já
+    /// pronto continua pronto enquanto é reprocessado — a versão atual segue no ar até a nova
+    /// ficar completa.
     /// </summary>
     public void StartProcessing()
     {
-        if (Status is not (VideoStatus.Uploaded or VideoStatus.Failed or VideoStatus.Ready))
+        if (Status is not (VideoStatus.Uploaded or VideoStatus.Failed or VideoStatus.Processing or VideoStatus.Ready))
             throw new InvalidOperationException($"Não é possível processar um vídeo em '{Status}'.");
 
-        Status = VideoStatus.Processing;
+        if (Status is not VideoStatus.Ready)
+            Status = VideoStatus.Processing;
     }
 
+    /// <summary>
+    /// Publica as saídas geradas. Num vídeo já pronto, troca a versão em uso pela nova.
+    /// </summary>
     public void MarkReady(string hlsPrefix, double durationSeconds, int width, int height, string? thumbnailKey, string? spriteKey, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(hlsPrefix);
-        if (Status is not VideoStatus.Processing)
+        if (Status is not (VideoStatus.Processing or VideoStatus.Ready))
             throw new InvalidOperationException($"Só um vídeo em processamento pode ficar pronto; o estado é '{Status}'.");
         if (durationSeconds <= 0)
             throw new ArgumentOutOfRangeException(nameof(durationSeconds), "A duração precisa ser positiva.");

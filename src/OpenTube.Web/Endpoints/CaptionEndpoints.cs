@@ -94,7 +94,7 @@ public static class CaptionEndpoints
         {
             var espectador = await espectadores.GetAsync(cancellationToken);
 
-            if (await playback.GetThumbnailUrlAsync(videoId, espectador, cancellationToken) is null)
+            if (!await playback.CanWatchAsync(videoId, espectador, cancellationToken))
                 return Results.NotFound();
 
             var legenda = await legendas.ReadAsync(assetId, cancellationToken);

@@ -34,6 +34,11 @@ public static class PlaybackEndpoints
                 privacidade.HashIp(contexto.Connection.RemoteIpAddress?.ToString()),
                 cancellationToken);
 
+            // O bilhete deixa o restante desta reprodução passar, mesmo que ela tenha
+            // consumido a última visualização da concessão.
+            if (resultado.Ticket is { } bilhete)
+                CurrentViewer.AppendTicket(contexto, bilhete);
+
             return Responder(resultado, MediaTypes.HlsPlaylist);
         });
 

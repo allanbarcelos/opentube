@@ -127,7 +127,10 @@
     protected override async Task OnInitializedAsync()
     {
         Espectador = await Espectadores.GetAsync(Http.RequestAborted);
-        Video = await Catalogo.FindBySlugAsync(Espectador, Slug, Http.RequestAborted);
+
+        // Abrir a página é pedir uma reprodução nova: o bilhete de uma reprodução anterior não
+        // pode mostrar o player a quem já esgotou as visualizações.
+        Video = await Catalogo.FindBySlugAsync(Espectador.StartingNewView(), Slug, Http.RequestAborted);
 
         if (Video is not null)
             ListaDeLegendas = await Legendas.ListAsync(Video.Id, Http.RequestAborted);

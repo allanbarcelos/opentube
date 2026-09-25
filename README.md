@@ -63,6 +63,12 @@ Cada concessão aponta para um **vídeo**, uma **coleção** ou **todo o acervo*
 validade (`starts_at` / `expires_at`, nulo = eterno), limite opcional de visualizações, permissão de
 download e registro de revogação.
 
+O limite de visualizações é contado na playlist principal, com um incremento condicional no
+banco que não deixa reproduções simultâneas passarem do teto. Ao contar a visualização, a
+aplicação emite um bilhete assinado (cookie por vídeo, válido pela duração mais uma folga) que
+deixa o restante daquela reprodução — versões, segmentos, legendas — passar mesmo quando ela
+consumiu a última visualização. O bilhete não abre reprodução nova e não sobrevive à revogação.
+
 A decisão fica concentrada numa única função `CanWatch(viewer, video)` — toda a aplicação (home,
 busca, player, legenda, thumbnail, download) passa por ela. É o ponto do sistema com maior cobertura
 de testes, porque um erro ali vaza conteúdo confidencial.
@@ -126,7 +132,11 @@ separado desde o primeiro dia.
    transcritor estiver configurado, legenda automática. Sem executável, essa etapa fica desligada.
 5. **Publicação** — estado `Ready`, vídeo disponível conforme sua visibilidade.
 
-O original é preservado no bucket `originals` para permitir reprocessamento.
+O original é preservado no bucket `originals` para permitir reprocessamento. Cada processamento
+grava numa pasta nova (`<vídeo>/r-<geração>/`) e só troca a versão em uso quando tudo foi
+enviado: reprocessar não tira o vídeo do ar, uma falha no meio mantém a versão anterior, e as
+gerações antigas são apagadas depois da troca. As legendas ficam fora das gerações. Um trabalho
+interrompido (worker reiniciado no meio) é retomado na tentativa seguinte.
 
 ### Entrega autorizada
 
@@ -309,7 +319,13 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 
 - Nenhuma senha é gerada ou enviada por email.
 - Códigos e tokens ficam apenas como hash, com uso único e expiração curta.
-- Limite de taxa no envio e na validação de códigos, com bloqueio progressivo.
+- Limite de taxa no envio e na validação de códigos, com bloqueio progressivo. Cada tentativa de
+  código é reservada no banco antes da comparação, então pedidos em paralelo não passam do
+  limite, e um código ou link só abre uma sessão.
+- Atrás do Caddy, o endereço e o protocolo reais vêm de `X-Forwarded-For` e `X-Forwarded-Proto`,
+  aceitos só de redes privadas (ajustável em `ReverseProxy:TrustedNetworks`). Sem isso, os
+  limites por origem valeriam para o site inteiro e os cookies sairiam sem a marca de conexão segura.
+- Coleta de audiência limitada por origem e por tamanho de lote.
 - IP registrado como hash com segredo rotativo; guarda-se o país, não o endereço.
 - Eventos brutos de reprodução retidos por 24 meses; agregados permanecem.
 - Exclusão de usuário anonimiza os eventos em vez de apagá-los.

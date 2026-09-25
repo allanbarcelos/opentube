@@ -13,11 +13,16 @@ namespace OpenTube.Infrastructure.Playback;
 /// <param name="Allowed">Se o espectador pode assistir.</param>
 /// <param name="Reason">Motivo da decisão, preservado para auditoria.</param>
 /// <param name="Content">Conteúdo da playlist, quando permitido.</param>
-public readonly record struct PlaybackResult(bool Allowed, AccessReason Reason, string? Content)
+/// <param name="Ticket">
+/// Bilhete da reprodução que acabou de ter a visualização contada, para que os pedidos
+/// seguintes dela não esbarrem no teto de visualizações.
+/// </param>
+public readonly record struct PlaybackResult(bool Allowed, AccessReason Reason, string? Content, IssuedTicket? Ticket = null)
 {
     public static PlaybackResult Deny(AccessReason reason) => new(false, reason, null);
 
-    public static PlaybackResult Allow(AccessReason reason, string content) => new(true, reason, content);
+    public static PlaybackResult Allow(AccessReason reason, string content, IssuedTicket? ticket = null) =>
+        new(true, reason, content, ticket);
 }
 
 /// <summary>
@@ -30,6 +35,7 @@ public class PlaybackService(
     IVideoStorage storage,
     AccessService acesso,
     PlaybackGuard limite,
+    PlaybackTickets bilhetes,
     IOptions<StorageOptions> options)
 {
     private readonly StorageOptions _options = options.Value;
@@ -42,7 +48,11 @@ public class PlaybackService(
         string? ipHash = null,
         CancellationToken cancellationToken = default)
     {
-        var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
+        ArgumentNullException.ThrowIfNull(viewer);
+
+        // A playlist principal abre uma reprodução nova: ela precisa caber no teto de
+        // visualizações por conta própria, sem se apoiar no bilhete de uma reprodução anterior.
+        var (video, resultado) = await AutorizarAsync(videoId, viewer.StartingNewView(), cancellationToken);
 
         if (video is null || !resultado.Allowed)
             return PlaybackResult.Deny(resultado.Reason);
@@ -54,10 +64,17 @@ public class PlaybackService(
 
         // O uso é registrado aqui, e não a cada segmento: a playlist principal é pedida uma
         // vez por reprodução, então é o ponto que corresponde a "assistiu".
-        if (resultado.GrantId is { } concessao)
-            await acesso.RegisterUseAsync(concessao, cancellationToken);
+        IssuedTicket? bilhete = null;
 
-        var master = await storage.GetTextAsync(StorageBucket.Vod, StorageKeys.Master(videoId), cancellationToken);
+        if (resultado.GrantId is { } concessao)
+        {
+            if (!await acesso.RegisterUseAsync(concessao, cancellationToken))
+                return PlaybackResult.Deny(AccessReason.GrantExhausted);
+
+            bilhete = bilhetes.Issue(videoId, concessao, video.DurationSeconds);
+        }
+
+        var master = await storage.GetTextAsync(StorageBucket.Vod, StorageKeys.MasterUnder(Prefixo(video)), cancellationToken);
 
         var reescrito = HlsManifestRewriter.Rewrite(master, uri =>
         {
@@ -66,7 +83,7 @@ public class PlaybackService(
             return versao is null ? uri : renditionUrl(versao);
         });
 
-        return PlaybackResult.Allow(resultado.Reason, reescrito);
+        return PlaybackResult.Allow(resultado.Reason, reescrito, bilhete);
     }
 
     /// <summary>
@@ -85,8 +102,8 @@ public class PlaybackService(
         if (video is null || !resultado.Allowed)
             return PlaybackResult.Deny(resultado.Reason);
 
-        var chave = StorageKeys.RenditionPlaylist(videoId, rendition);
-        var prefixo = StorageKeys.RenditionPrefix(videoId, rendition);
+        var chave = StorageKeys.RenditionPlaylistUnder(Prefixo(video), rendition);
+        var prefixo = StorageKeys.RenditionPrefixUnder(Prefixo(video), rendition);
 
         var playlist = await storage.GetTextAsync(StorageBucket.Vod, chave, cancellationToken);
 
@@ -116,6 +133,26 @@ public class PlaybackService(
 
         return storage.SignDownloadUrl(StorageBucket.Vod, video.ThumbnailKey, _options.PlaybackUrlLifetime);
     }
+
+    /// <summary>
+    /// Só responde se o espectador pode assistir, sem registrar visualização, sem aplicar o
+    /// limite de reproduções simultâneas e sem ler nada do storage. É a conferência usada
+    /// pelos pedidos que fazem parte de uma reprodução já aberta: segmentos, legendas e
+    /// coleta de audiência.
+    /// </summary>
+    public async Task<bool> CanWatchAsync(Guid videoId, Viewer viewer, CancellationToken cancellationToken = default)
+    {
+        var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
+
+        return video is not null && resultado.Allowed;
+    }
+
+    /// <summary>
+    /// Prefixo da versão publicada. Vídeos processados antes do versionamento guardam o
+    /// prefixo raiz do vídeo, que continua funcionando.
+    /// </summary>
+    private static string Prefixo(Video video) =>
+        string.IsNullOrWhiteSpace(video.HlsPrefix) ? StorageKeys.VodPrefix(video.Id) : video.HlsPrefix;
 
     private async Task<(Video? Video, AccessOutcome Outcome)> AutorizarAsync(Guid videoId, Viewer viewer, CancellationToken cancellationToken)
     {

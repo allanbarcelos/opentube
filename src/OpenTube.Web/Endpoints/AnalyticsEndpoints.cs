@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using OpenTube.Infrastructure.Analytics;
 using OpenTube.Infrastructure.Playback;
@@ -23,9 +25,33 @@ public static class AnalyticsEndpoints
     /// <summary>Cookie que identifica o visitante anônimo entre sessões.</summary>
     public const string VisitorCookieName = "opentube.visitante";
 
+    /// <summary>
+    /// Teto de eventos por lote. O player envia a cada dez segundos e acumula poucos eventos
+    /// nesse intervalo; um lote maior só pode ser alguém tentando inflar a tabela de eventos.
+    /// </summary>
+    public const int MaxEventsPerBatch = 100;
+
+    private const string PoliticaDeLimite = "reproducao";
+
+    /// <summary>
+    /// Limite de pedidos por origem. Os endereços aceitam visitantes anônimos em vídeo
+    /// público, então sem limite qualquer um encheria o banco de sessões e eventos. O teto é
+    /// folgado para caber uma sala inteira assistindo atrás do mesmo endereço.
+    /// </summary>
+    public static void AddRateLimit(RateLimiterOptions opcoes) =>
+        opcoes.AddPolicy(PoliticaDeLimite, contexto =>
+            contexto.Connection.RemoteIpAddress is { } origem
+                ? RateLimitPartition.GetFixedWindowLimiter(origem.ToString(), _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 600,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0
+                })
+                : RateLimitPartition.GetNoLimiter("sem-origem"));
+
     public static IEndpointRouteBuilder MapAnalyticsEndpoints(this IEndpointRouteBuilder rotas)
     {
-        var grupo = rotas.MapGroup("/api/reproducao");
+        var grupo = rotas.MapGroup("/api/reproducao").RequireRateLimiting(PoliticaDeLimite);
 
         grupo.MapPost("/iniciar", async (
             [FromBody] AbrirSessao pedido,
@@ -40,12 +66,7 @@ public static class AnalyticsEndpoints
 
             // Só registra quem de fato pode assistir: sem esta conferência, qualquer um
             // conseguiria criar sessões para vídeos que não tem permissão de ver.
-            var permissao = await playback.GetThumbnailUrlAsync(pedido.VideoId, espectador, cancellationToken);
-            var autorizado = permissao is not null
-                || (await playback.GetMasterAsync(
-                        pedido.VideoId, espectador, v => v, cancellationToken: cancellationToken)).Allowed;
-
-            if (!autorizado)
+            if (!await playback.CanWatchAsync(pedido.VideoId, espectador, cancellationToken))
                 return Results.NotFound();
 
             var visitante = GarantirVisitante(contexto);
@@ -71,6 +92,9 @@ public static class AnalyticsEndpoints
             HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
+            if (lote.Eventos?.Length > MaxEventsPerBatch)
+                return Results.BadRequest();
+
             var espectador = await espectadores.GetAsync(cancellationToken);
             var visitante = contexto.Request.Cookies[VisitorCookieName];
 

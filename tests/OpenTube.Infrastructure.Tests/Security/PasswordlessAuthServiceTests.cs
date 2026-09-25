@@ -258,6 +258,57 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
     }
 
     [Fact]
+    public async Task Palpites_em_paralelo_nao_passam_do_limite_de_tentativas()
+    {
+        await CriarUsuarioAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+        await servico.RequestCodeAsync(Convidado);
+        var correto = _email.LastCode();
+        var errado = correto == "000000" ? "111111" : "000000";
+
+        // Cada palpite num contexto próprio, como requisições distintas chegando juntas.
+        var palpites = Enumerable.Range(0, 30).Select(async _ =>
+        {
+            var (paralelo, contexto) = Criar();
+            await using var __ = contexto;
+
+            return await paralelo.VerifyCodeAsync(Convidado, errado);
+        });
+
+        await Task.WhenAll(palpites);
+
+        await using var leitura = postgres.CreateContext();
+        var codigo = await leitura.LoginCodes.SingleAsync();
+
+        Assert.Equal(LoginCode.MaxAttempts, codigo.Attempts);
+        Assert.Equal(AuthFailure.TooManyAttempts, (await servico.VerifyCodeAsync(Convidado, correto)).Failure);
+    }
+
+    [Fact]
+    public async Task Link_usado_ao_mesmo_tempo_abre_uma_unica_sessao()
+    {
+        await CriarUsuarioAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+        await servico.RequestCodeAsync(Convidado);
+        var token = _email.LastToken();
+
+        var entradas = await Task.WhenAll(Enumerable.Range(0, 10).Select(async _ =>
+        {
+            var (paralelo, contexto) = Criar();
+            await using var __ = contexto;
+
+            return await paralelo.VerifyTokenAsync(token);
+        }));
+
+        Assert.Single(entradas, e => e.Succeeded);
+
+        await using var leitura = postgres.CreateContext();
+        Assert.Equal(1, await leitura.AuthSessions.CountAsync());
+    }
+
+    [Fact]
     public async Task O_codigo_expira()
     {
         await CriarUsuarioAsync();
