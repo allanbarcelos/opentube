@@ -2,6 +2,7 @@
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Playback
 @inject VideoCatalog Catalogo
+@inject CurrentViewer Espectadores
 @inject NavigationManager Navegacao
 
 <PageTitle>@(Video?.Title ?? "Vídeo não encontrado") — OpenTube</PageTitle>
@@ -99,7 +100,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Espectador = ViewerContext.From(Http.User);
+        Espectador = await Espectadores.GetAsync(Http.RequestAborted);
         Video = await Catalogo.FindBySlugAsync(Espectador, Slug, Http.RequestAborted);
 
         // Vídeo inexistente e vídeo sem acesso respondem exatamente igual. A diferença entre

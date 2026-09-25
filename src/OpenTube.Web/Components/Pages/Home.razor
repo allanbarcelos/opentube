@@ -1,6 +1,7 @@
 @page "/"
 @using OpenTube.Infrastructure.Playback
 @inject VideoCatalog Catalogo
+@inject CurrentViewer Espectadores
 
 <PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "OpenTube" : $"Busca: {Q} — OpenTube")</PageTitle>
 
@@ -63,7 +64,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Espectador = ViewerContext.From(Http.User);
+        Espectador = await Espectadores.GetAsync(Http.RequestAborted);
         Resultado = await Catalogo.BrowseAsync(Espectador, Q, Pagina ?? 1, cancellationToken: Http.RequestAborted);
     }
 }

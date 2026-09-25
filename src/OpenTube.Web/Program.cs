@@ -26,6 +26,8 @@ builder.Services.AddOpenTubeInfrastructure(builder.Configuration);
 builder.Services.AddSessionAuthentication();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAntiforgery();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<CurrentViewer>();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -51,6 +53,7 @@ app.MapRazorComponents<App>()
 app.MapAuthEndpoints();
 app.MapPlaybackEndpoints();
 app.MapAdminEndpoints();
+app.MapShareEndpoints();
 app.MapHealthChecks("/saude");
 
 await PrepararAsync(app);

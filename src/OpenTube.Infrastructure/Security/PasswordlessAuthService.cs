@@ -121,6 +121,41 @@ public class PasswordlessAuthService(
         return CodeRequestResult.Ok();
     }
 
+    /// <summary>Código e link recém-emitidos, entregues a quem vai montar o email.</summary>
+    /// <param name="Code">Código de seis dígitos.</param>
+    /// <param name="Link">Endereço de entrada direta.</param>
+    /// <param name="Validity">Por quanto tempo valem.</param>
+    public readonly record struct IssuedAccess(string Code, string Link, TimeSpan Validity);
+
+    /// <summary>
+    /// Emite um acesso vinculado a uma concessão, sem enviar email: quem convida monta a
+    /// própria mensagem, dizendo o que foi liberado. Não passa pelo limitador de taxa porque
+    /// o pedido vem de um administrador já autenticado, e não de um desconhecido tentando
+    /// adivinhar códigos.
+    /// </summary>
+    public async Task<IssuedAccess> IssueInviteAsync(
+        EmailAddress email,
+        Guid grantId,
+        CancellationToken cancellationToken = default)
+    {
+        var agora = clock.GetUtcNow();
+        var codigo = OneTimeCode.GenerateCode();
+        var token = OneTimeCode.GenerateToken();
+
+        db.LoginCodes.Add(LoginCode.Issue(
+            email,
+            AuthPurpose.Invite,
+            TokenHasher.Hash(codigo, _options.TokenPepper),
+            TokenHasher.Hash(token, _options.TokenPepper),
+            agora,
+            _options.InviteLifetime,
+            grantId: grantId));
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new IssuedAccess(codigo, $"{_options.PublicUrl.TrimEnd('/')}/entrar/{token}", _options.InviteLifetime);
+    }
+
     /// <summary>Confere o código de seis dígitos e abre a sessão.</summary>
     public async Task<SignInOutcome> VerifyCodeAsync(
         string emailInput,

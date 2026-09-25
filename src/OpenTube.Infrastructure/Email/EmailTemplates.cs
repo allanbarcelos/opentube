@@ -10,6 +10,55 @@ namespace OpenTube.Infrastructure.Email;
 /// </summary>
 public static class EmailTemplates
 {
+    /// <summary>
+    /// Convite enviado pelo administrador junto com uma concessão. Diz o que foi liberado e
+    /// até quando, porque quem recebe precisa saber o que ganhou sem ter de entrar para
+    /// descobrir.
+    /// </summary>
+    public static EmailMessage Invite(
+        string to,
+        string code,
+        string link,
+        string whatWasShared,
+        string validityDescription,
+        TimeSpan linkValidity)
+    {
+        var dias = Math.Max(1, (int)Math.Round(linkValidity.TotalDays));
+
+        var texto = $"""
+            Você recebeu acesso a {whatWasShared} no OpenTube.
+
+            Validade do acesso: {validityDescription}
+
+            Entre por este link:
+            {link}
+
+            Ou use o código: {code}
+
+            O link e o código valem por {dias} dias e só podem ser usados uma vez. Depois disso,
+            peça um novo código na tela de entrada com este mesmo email.
+            """;
+
+        var html = $"""
+            <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#212529">
+              <h1 style="font-size:20px;margin:0 0 16px">OpenTube</h1>
+              <p style="margin:0 0 8px">Você recebeu acesso a <strong>{WebUtility.HtmlEncode(whatWasShared)}</strong>.</p>
+              <p style="margin:0 0 24px;color:#6c757d">Validade do acesso: {WebUtility.HtmlEncode(validityDescription)}</p>
+              <p style="margin:0 0 24px">
+                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">Ver os vídeos</a>
+              </p>
+              <p style="margin:0 0 8px">Ou use o código:</p>
+              <p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:0 0 24px">{WebUtility.HtmlEncode(code)}</p>
+              <p style="font-size:14px;color:#6c757d;margin:0">
+                O link e o código valem por {dias} dias e só podem ser usados uma vez. Depois disso,
+                peça um novo código na tela de entrada com este mesmo email.
+              </p>
+            </div>
+            """;
+
+        return new EmailMessage(to, $"Você recebeu acesso a {whatWasShared}", html, texto);
+    }
+
     public static EmailMessage AccessCode(string to, string code, string link, AuthPurpose purpose, TimeSpan validity)
     {
         var assunto = purpose switch

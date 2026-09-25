@@ -4,6 +4,7 @@
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject VideoCatalog Catalogo
 @inject AdminVideoService Admin
+@inject CurrentViewer Espectadores
 
 <PageTitle>Administração — OpenTube</PageTitle>
 
@@ -105,7 +106,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var espectador = ViewerContext.From(Http.User);
+        var espectador = await Espectadores.GetAsync(Http.RequestAborted);
 
         Resultado = await Catalogo.BrowseAsync(espectador, Q, Pagina ?? 1, cancellationToken: Http.RequestAborted);
 

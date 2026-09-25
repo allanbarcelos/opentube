@@ -19,10 +19,10 @@ public static class PlaybackEndpoints
         grupo.MapGet("/master.m3u8", async (
             Guid videoId,
             PlaybackService playback,
-            HttpContext contexto,
+            CurrentViewer espectadores,
             CancellationToken cancellationToken) =>
         {
-            var espectador = ViewerContext.From(contexto.User);
+            var espectador = await espectadores.GetAsync(cancellationToken);
 
             var resultado = await playback.GetMasterAsync(
                 videoId,
@@ -37,10 +37,10 @@ public static class PlaybackEndpoints
             Guid videoId,
             string rendition,
             PlaybackService playback,
-            HttpContext contexto,
+            CurrentViewer espectadores,
             CancellationToken cancellationToken) =>
         {
-            var espectador = ViewerContext.From(contexto.User);
+            var espectador = await espectadores.GetAsync(cancellationToken);
             var resultado = await playback.GetRenditionAsync(videoId, rendition, espectador, cancellationToken);
 
             return Responder(resultado, MediaTypes.HlsPlaylist);
@@ -49,10 +49,11 @@ public static class PlaybackEndpoints
         grupo.MapGet("/miniatura", async (
             Guid videoId,
             PlaybackService playback,
-            HttpContext contexto,
+            CurrentViewer espectadores,
             CancellationToken cancellationToken) =>
         {
-            var endereco = await playback.GetThumbnailUrlAsync(videoId, ViewerContext.From(contexto.User), cancellationToken);
+            var endereco = await playback.GetThumbnailUrlAsync(
+                videoId, await espectadores.GetAsync(cancellationToken), cancellationToken);
 
             return endereco is null ? Results.NotFound() : Results.Redirect(endereco);
         });

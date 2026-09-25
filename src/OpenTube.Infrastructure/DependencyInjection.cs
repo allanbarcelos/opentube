@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddSingleton<PrivacyHasher>();
         services.AddScoped<AdminSeeder>();
         services.AddScoped<AccessService>();
+        services.AddScoped<GrantService>();
         services.AddScoped<PlaybackService>();
         services.AddScoped<VideoCatalog>();
 
