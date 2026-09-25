@@ -22,8 +22,8 @@ artifacts/
 appsettings.Development.local.json
 
 # Dados locais
-data/
-storage/
+/data/
+/storage/
 TestResults/
 coverage/
 *.trx
