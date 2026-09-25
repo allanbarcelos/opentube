@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
 # ==============================================================================
-#  install.sh — instalador de produção do OpenTube (Docker Swarm, um nó)
+#  install.sh — OpenTube production installer (single-node Docker Swarm)
 #
-#  Uso: sudo bash install.sh
+#  Usage: sudo bash install.sh
 #
-#  O script segue o mesmo desenho do instalador do Archeo, no que esta
-#  aplicação precisa:
-#    1. Configuração interativa (nome, email do administrador, acesso, SMTP, disco)
-#    2. Pacotes (docker, openssl, ufw)
-#    3. Swarm de um nó
-#    4. Usuário, senha e chaves gerados aqui — nada disso existe no repositório
-#    5. Diretório /opt/<nome>
-#    6. Segredos do Swarm (não vão para variável de ambiente nem para o disco)
-#    7. Build das imagens a partir deste repositório
+#  Same shape as the Archeo installer, limited to what this application needs:
+#    1. Interactive configuration (name, admin email, access, SMTP, disk)
+#    2. Packages (docker, openssl, ufw)
+#    3. Single-node Swarm
+#    4. User, password, and keys generated here — none of that lives in the repo
+#    5. Directory /opt/<name>
+#    6. Swarm secrets (not environment variables, and not written to disk)
+#    7. Images built from this repository
 #    8. Stack file + Caddyfile
 #    9. docker stack deploy
-#   10. UFW (22, e 80/443 conforme o modo)
-#   11. scripts/update.sh para reconstruir e republicar
-#   12. Espera dos serviços
-#   13. Resumo. A senha só aparece nesta primeira vez: o Swarm não a devolve.
+#   10. UFW (22, and 80/443 according to the mode)
+#   11. scripts/update.sh to rebuild and republish
+#   12. Wait for the services
+#   13. Summary. The password is shown only this first time: Swarm does not return it.
 #
-#  Rodar de novo não troca segredo que já existe e não troca o usuário do banco.
+#  Running again does not replace a secret that already exists, and does not
+#  change the database user.
 # ==============================================================================
 set -euo pipefail
 IFS=$'\n\t'
@@ -29,7 +29,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "${ROOT}/src/OpenTube.Web/Dockerfile" ]] \
-  || { echo "Rode a partir do repositório do OpenTube (Dockerfile não encontrado)." >&2; exit 1; }
+  || { echo "Run this from the OpenTube repository (Dockerfile not found)." >&2; exit 1; }
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
@@ -50,7 +50,7 @@ ask() {
     while true; do
       read -rp "$(echo -e "  ${BOLD}${prompt}${NC}: ")" value </dev/tty
       [[ -n "$value" ]] && break
-      echo -e "  ${RED}Obrigatório.${NC}"
+      echo -e "  ${RED}Required.${NC}"
     done
   fi
   printf -v "$var_name" '%s' "$value"
@@ -61,7 +61,7 @@ ask_secret() {
   while true; do
     read -rsp "$(echo -e "  ${BOLD}${prompt}${NC}: ")" value </dev/tty; echo
     [[ -n "$value" ]] && break
-    echo -e "  ${RED}Obrigatório.${NC}"
+    echo -e "  ${RED}Required.${NC}"
   done
   printf -v "$var_name" '%s' "$value"
 }
@@ -99,82 +99,82 @@ read_conf() {
   grep -m1 "^${key}=" "$file" | cut -d= -f2- | sed "s/^'//;s/'\$//" || true
 }
 
-require_root() { [[ $EUID -eq 0 ]] || die "Rode como root: sudo bash install.sh"; }
+require_root() { [[ $EUID -eq 0 ]] || die "Run as root: sudo bash install.sh"; }
 
 swarm_secret_exists() { docker secret inspect "$1" &>/dev/null; }
 
 create_swarm_secret() {
   local name="$1" value="$2"
   if swarm_secret_exists "$name"; then
-    warn "Segredo ${name} já existe — mantido"
+    warn "Secret ${name} already exists — kept"
   else
     printf '%s' "$value" | docker secret create "$name" - >/dev/null
-    ok "Segredo criado: ${name}"
+    ok "Secret created: ${name}"
   fi
 }
 
 require_root
-command -v openssl >/dev/null 2>&1 || die "Instale o openssl antes de continuar."
+command -v openssl >/dev/null 2>&1 || die "Install openssl before continuing."
 
 clear
-echo -e "${BOLD}${CYAN}OpenTube${NC}  ·  instalador de produção  ·  Docker Swarm"
+echo -e "${BOLD}${CYAN}OpenTube${NC}  ·  production installer  ·  Docker Swarm"
 sep
 
 # ==============================================================================
-phase "FASE 1 — Configuração"
+phase "PHASE 1 — Configuration"
 # ==============================================================================
 
 echo ""
-ask "Nome da aplicação" "opentube" APP_NAME_RAW
+ask "Application name" "opentube" APP_NAME_RAW
 APP_NAME="$(slugify "$APP_NAME_RAW")"
-[[ -n "$APP_NAME" ]] || die "Nome inválido."
+[[ -n "$APP_NAME" ]] || die "Invalid name."
 APP_DIR="/opt/${APP_NAME}"
 STACK_NAME="${APP_NAME//-/_}"
 INSTALL_CONF="${APP_DIR}/etc/install.conf"
-echo -e "  ${DIM}Diretório: ${APP_DIR}  |  Stack: ${STACK_NAME}${NC}"
+echo -e "  ${DIM}Directory: ${APP_DIR}  |  Stack: ${STACK_NAME}${NC}"
 echo ""
 
 _admin_default="$(read_conf "$INSTALL_CONF" ADMIN_EMAIL)"
-ask "Email do administrador (entra com código, sem senha)" "$_admin_default" ADMIN_EMAIL
-[[ "$ADMIN_EMAIL" == *@*.* ]] || die "Email inválido: ${ADMIN_EMAIL}"
+ask "Administrator email (signs in with a code, no password)" "$_admin_default" ADMIN_EMAIL
+[[ "$ADMIN_EMAIL" == *@*.* ]] || die "Invalid email: ${ADMIN_EMAIL}"
 echo ""
 
 _mode_default="$(read_conf "$INSTALL_CONF" INSTALL_MODE)"
 _access_default="1"
 [[ "$_mode_default" == "local" ]] && _access_default="2"
-echo -e "  ${BOLD}Acesso${NC}"
-echo -e "  ${BOLD}1)${NC} Hostname público — o Caddy pede certificado (portas 80 e 443)"
-echo -e "  ${BOLD}2)${NC} Rede local — certificado interno, UFW só para redes privadas"
+echo -e "  ${BOLD}Access${NC}"
+echo -e "  ${BOLD}1)${NC} Public hostname — Caddy requests a certificate (ports 80 and 443)"
+echo -e "  ${BOLD}2)${NC} Local network — internal certificate, UFW limited to private networks"
 echo ""
 while true; do
-  read -rp "$(echo -e "  ${BOLD}Modo${NC} ${DIM}[${_access_default}]${NC}: ")" ACCESS_CHOICE </dev/tty
+  read -rp "$(echo -e "  ${BOLD}Mode${NC} ${DIM}[${_access_default}]${NC}: ")" ACCESS_CHOICE </dev/tty
   ACCESS_CHOICE="${ACCESS_CHOICE:-$_access_default}"
   [[ "$ACCESS_CHOICE" == "1" || "$ACCESS_CHOICE" == "2" ]] && break
-  echo -e "  ${RED}Escolha 1 ou 2.${NC}"
+  echo -e "  ${RED}Choose 1 or 2.${NC}"
 done
 
 CERTBOT_EMAIL=""
 if [[ "$ACCESS_CHOICE" == "1" ]]; then
   INSTALL_MODE="letsencrypt"
   _host_default="$(read_conf "$INSTALL_CONF" PUBLIC_HOST)"
-  ask "Domínio (tem de apontar para esta máquina)" "$_host_default" PUBLIC_HOST
+  ask "Domain (it must point at this machine)" "$_host_default" PUBLIC_HOST
   PUBLIC_HOST="${PUBLIC_HOST#http://}"; PUBLIC_HOST="${PUBLIC_HOST#https://}"
   PUBLIC_HOST="${PUBLIC_HOST%%/*}"; PUBLIC_HOST="${PUBLIC_HOST%%:*}"
   [[ "$PUBLIC_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}$ ]] \
-    || die "Domínio inválido: ${PUBLIC_HOST}"
+    || die "Invalid domain: ${PUBLIC_HOST}"
   _mail_default="$(read_conf "$INSTALL_CONF" CERTBOT_EMAIL)"
   [[ -z "$_mail_default" ]] && _mail_default="$ADMIN_EMAIL"
-  ask "Email para o Let's Encrypt" "$_mail_default" CERTBOT_EMAIL
+  ask "Email for Let's Encrypt" "$_mail_default" CERTBOT_EMAIL
   PUBLIC_URL="https://${PUBLIC_HOST}"
 else
   INSTALL_MODE="local"
   _host_default="$(read_conf "$INSTALL_CONF" PUBLIC_HOST)"
   [[ -z "$_host_default" ]] && _host_default="opentube.local"
-  ask "Nome nesta rede" "$_host_default" PUBLIC_HOST
+  ask "Name on this network" "$_host_default" PUBLIC_HOST
   PUBLIC_HOST="${PUBLIC_HOST#http://}"; PUBLIC_HOST="${PUBLIC_HOST#https://}"
   PUBLIC_HOST="${PUBLIC_HOST%%/*}"; PUBLIC_HOST="${PUBLIC_HOST%%:*}"
   [[ "$PUBLIC_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
-    || die "Nome inválido: ${PUBLIC_HOST}"
+    || die "Invalid name: ${PUBLIC_HOST}"
   PUBLIC_URL="https://${PUBLIC_HOST}"
 fi
 ALLOWED_HOSTS="${PUBLIC_HOST};localhost"
@@ -183,99 +183,99 @@ echo ""
 _smtp_default="$(read_conf "$INSTALL_CONF" SMTP_HOST)"
 _smtp_yn="n"
 [[ -n "$_smtp_default" ]] && _smtp_yn="y"
-ask_yn "Configurar SMTP agora? Sem isso o código de acesso não sai." CONFIGURAR_SMTP "$_smtp_yn"
+ask_yn "Configure SMTP now? Without it the access code is not sent." CONFIGURE_SMTP "$_smtp_yn"
 SMTP_HOST=""; SMTP_PORT="587"; SMTP_USER=""; SMTP_FROM=""; SMTP_PASSWORD=""
-if [[ "$CONFIGURAR_SMTP" == "y" ]]; then
-  ask "Servidor SMTP" "${_smtp_default}" SMTP_HOST
+if [[ "$CONFIGURE_SMTP" == "y" ]]; then
+  ask "SMTP server" "${_smtp_default}" SMTP_HOST
   _smtp_port="$(read_conf "$INSTALL_CONF" SMTP_PORT)"
   [[ -z "$_smtp_port" ]] && _smtp_port="587"
-  ask "Porta" "$_smtp_port" SMTP_PORT
-  [[ "$SMTP_PORT" =~ ^[0-9]+$ ]] || die "Porta SMTP inválida."
-  ask_optional "Usuário SMTP (vazio se o servidor não exige)" "$(read_conf "$INSTALL_CONF" SMTP_USER)" SMTP_USER
+  ask "Port" "$_smtp_port" SMTP_PORT
+  [[ "$SMTP_PORT" =~ ^[0-9]+$ ]] || die "Invalid SMTP port."
+  ask_optional "SMTP user (empty if the server does not require one)" "$(read_conf "$INSTALL_CONF" SMTP_USER)" SMTP_USER
   _from_default="$(read_conf "$INSTALL_CONF" SMTP_FROM)"
-  [[ -z "$_from_default" ]] && _from_default="nao-responda@${PUBLIC_HOST}"
-  ask "Remetente" "$_from_default" SMTP_FROM
+  [[ -z "$_from_default" ]] && _from_default="no-reply@${PUBLIC_HOST}"
+  ask "From address" "$_from_default" SMTP_FROM
 fi
 echo ""
 
 _EXISTING_MINIO="$(read_conf "$INSTALL_CONF" MINIO_DATA_DIR)"
-echo -e "  ${BOLD}Disco do MinIO${NC}"
+echo -e "  ${BOLD}MinIO disk${NC}"
 df -h -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null || true
 echo ""
-ask "Caminho absoluto dos objetos" "${_EXISTING_MINIO:-${APP_DIR}/data/minio}" MINIO_DATA_DIR
-[[ "$MINIO_DATA_DIR" == /* ]] || die "O caminho do MinIO tem de ser absoluto."
+ask "Absolute path for objects" "${_EXISTING_MINIO:-${APP_DIR}/data/minio}" MINIO_DATA_DIR
+[[ "$MINIO_DATA_DIR" == /* ]] || die "The MinIO path must be absolute."
 MINIO_DATA_DIR="${MINIO_DATA_DIR%/}"
 case "$MINIO_DATA_DIR" in
   /|/boot|/etc|/usr|/bin|/sbin|/lib|/root|/dev|/proc|/sys|/run)
-    die "Caminho do MinIO recusado: ${MINIO_DATA_DIR}" ;;
+    die "MinIO path refused: ${MINIO_DATA_DIR}" ;;
 esac
 if [[ -n "$_EXISTING_MINIO" && "$_EXISTING_MINIO" != "$MINIO_DATA_DIR" ]]; then
-  die "O MinIO já está em ${_EXISTING_MINIO}. Mantenha esse caminho ou mova os dados à mão antes."
+  die "MinIO is already at ${_EXISTING_MINIO}. Keep that path, or move the data by hand first."
 fi
 
 echo ""
 sep
-echo -e "  Aplicação : ${CYAN}${APP_NAME}${NC}  →  ${CYAN}${APP_DIR}${NC}"
-echo -e "  Admin     : ${CYAN}${ADMIN_EMAIL}${NC}"
-echo -e "  Acesso    : ${CYAN}${INSTALL_MODE}${NC}  ${PUBLIC_URL}"
+echo -e "  Application : ${CYAN}${APP_NAME}${NC}  →  ${CYAN}${APP_DIR}${NC}"
+echo -e "  Admin       : ${CYAN}${ADMIN_EMAIL}${NC}"
+echo -e "  Access      : ${CYAN}${INSTALL_MODE}${NC}  ${PUBLIC_URL}"
 echo -e "  MinIO     : ${CYAN}${MINIO_DATA_DIR}${NC}"
 if [[ -n "$SMTP_HOST" ]]; then
   echo -e "  SMTP      : ${CYAN}${SMTP_HOST}:${SMTP_PORT}${NC}"
 else
-  echo -e "  SMTP      : ${YELLOW}não configurado${NC}"
+  echo -e "  SMTP        : ${YELLOW}not configured${NC}"
 fi
 sep
 echo ""
-read -rp "$(echo -e "  ${BOLD}Instalar?${NC} ${DIM}[Y/n]${NC}: ")" _CONFIRM </dev/tty
-[[ "${_CONFIRM:-y}" =~ ^[Yy]$ ]] || { echo "Cancelado."; exit 0; }
+read -rp "$(echo -e "  ${BOLD}Install?${NC} ${DIM}[Y/n]${NC}: ")" _CONFIRM </dev/tty
+[[ "${_CONFIRM:-y}" =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
 
 # ==============================================================================
-phase "FASE 2 — Pacotes"
+phase "PHASE 2 — Packages"
 # ==============================================================================
 
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq curl ca-certificates openssl ufw >/dev/null
-  ok "Pacotes de base"
+  ok "Base packages"
 else
-  warn "Sem apt-get — docker, curl e ufw precisam já estar instalados."
+  warn "No apt-get — docker, curl, and ufw must already be installed."
 fi
 
 if ! command -v docker >/dev/null 2>&1; then
-  info "Instalando Docker..."
+  info "Installing Docker..."
   curl -fsSL https://get.docker.com | sh
 fi
-docker info >/dev/null 2>&1 || die "O Docker não está acessível."
+docker info >/dev/null 2>&1 || die "Docker is not reachable."
 ok "Docker"
 
 # ==============================================================================
-phase "FASE 3 — Docker Swarm"
+phase "PHASE 3 — Docker Swarm"
 # ==============================================================================
 
 HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
-[[ -n "$HOST_IP" ]] || die "Não achei um IP desta máquina para anunciar o Swarm."
+[[ -n "$HOST_IP" ]] || die "Could not find an IP on this machine to advertise Swarm."
 
 state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
 if [[ "$state" == "active" ]]; then
-  ok "Swarm já está ativo"
+  ok "Swarm is already active"
 else
   docker swarm init --advertise-addr "$HOST_IP" >/dev/null
-  ok "Swarm iniciado em ${HOST_IP}"
+  ok "Swarm started at ${HOST_IP}"
 fi
 
 # ==============================================================================
-phase "FASE 4 — Credenciais"
+phase "PHASE 4 — Credentials"
 # ==============================================================================
 
-# O nome do banco e o usuário não são segredo (entram no stack file), mas não
-# podem mudar numa reinstalação: o volume já foi inicializado com eles.
+# The database name and user are not secrets (they go in the stack file), but
+# they cannot change on a reinstall: the volume was already initialized with them.
 EXISTING_DB="$(read_conf "$INSTALL_CONF" POSTGRES_DB)"
 EXISTING_USER="$(read_conf "$INSTALL_CONF" POSTGRES_USER)"
 if [[ -n "$EXISTING_DB" && -n "$EXISTING_USER" ]]; then
   POSTGRES_DB="$EXISTING_DB"
   POSTGRES_USER="$EXISTING_USER"
-  info "Reusando banco ${POSTGRES_DB} e usuário ${POSTGRES_USER}"
+  info "Reusing database ${POSTGRES_DB} and user ${POSTGRES_USER}"
 else
   POSTGRES_DB="db_$(openssl rand -hex 5)"
   POSTGRES_USER="user_$(openssl rand -hex 4)"
@@ -287,34 +287,34 @@ CORE_SECRETS=(
   token_pepper ip_hash_pepper
 )
 found=0
-for nome in "${CORE_SECRETS[@]}"; do
-  swarm_secret_exists "${STACK_NAME}_${nome}" && found=$((found + 1))
+for name in "${CORE_SECRETS[@]}"; do
+  swarm_secret_exists "${STACK_NAME}_${name}" && found=$((found + 1))
 done
 if [[ "$found" -ne 0 && "$found" -ne ${#CORE_SECRETS[@]} ]]; then
-  die "Segredos do Swarm incompletos (${found}/${#CORE_SECRETS[@]}). Apague os ${STACK_NAME}_* só se for descartar os dados, e rode de novo."
+  die "Swarm secrets are incomplete (${found}/${#CORE_SECRETS[@]}). Delete the ${STACK_NAME}_* secrets only if you are discarding the data, then run again."
 fi
 if [[ "$found" -eq ${#CORE_SECRETS[@]} ]]; then
   SECRETS_EXIST="y"
-  info "Segredos já existem — senha e chaves não serão trocadas nem reimpressas."
+  info "Secrets already exist — the password and keys will not be changed or printed again."
 else
   SECRETS_EXIST="n"
   if [[ -d "${APP_DIR}/data/postgres" ]] && find "${APP_DIR}/data/postgres" -mindepth 1 -print -quit 2>/dev/null | grep -q .; then
-    die "Há dados em ${APP_DIR}/data/postgres sem os segredos do Swarm. A senha não pode ser recriada."
+    die "There is data in ${APP_DIR}/data/postgres without the Swarm secrets. The password cannot be recreated."
   fi
   POSTGRES_PASSWORD="$(gen_pass 32)"
   MINIO_ROOT_USER="minio_$(openssl rand -hex 4)"
   MINIO_ROOT_PASSWORD="$(gen_pass 32)"
   TOKEN_PEPPER="$(gen_pass 48)"
   IP_HASH_PEPPER="$(gen_pass 48)"
-  ok "Usuário, senha e chaves gerados"
+  ok "User, password, and keys generated"
 fi
 
 if [[ -n "$SMTP_HOST" ]] && ! swarm_secret_exists "${STACK_NAME}_smtp_password"; then
-  ask_secret "Senha SMTP" SMTP_PASSWORD
+  ask_secret "SMTP password" SMTP_PASSWORD
 fi
 
 # ==============================================================================
-phase "FASE 5 — Diretórios"
+phase "PHASE 5 — Directories"
 # ==============================================================================
 
 umask 077
@@ -327,7 +327,7 @@ mkdir -p \
   "${MINIO_DATA_DIR}"
 chmod 700 "${APP_DIR}" "${APP_DIR}/data" "${APP_DIR}/etc" "${MINIO_DATA_DIR}" || true
 
-info "Baixando imagens de base para acertar o dono dos volumes..."
+info "Pulling base images so the volume owners can be set..."
 docker pull postgres:17-alpine >/dev/null
 docker pull bitnamilegacy/minio:latest >/dev/null
 docker pull caddy:2-alpine >/dev/null
@@ -336,10 +336,10 @@ MINIO_UID="$(docker run --rm --entrypoint id bitnamilegacy/minio:latest -u 2>/de
 CADDY_UID="$(docker run --rm --entrypoint id caddy:2-alpine -u 2>/dev/null || echo 1000)"
 chown -R "${MINIO_UID}:${MINIO_UID}" "${MINIO_DATA_DIR}" || true
 chown -R "${CADDY_UID}:${CADDY_UID}" "${APP_DIR}/data/caddy" || true
-ok "Diretórios prontos"
+ok "Directories ready"
 
 # ==============================================================================
-phase "FASE 6 — Segredos do Swarm"
+phase "PHASE 6 — Swarm secrets"
 # ==============================================================================
 
 if [[ "$SECRETS_EXIST" == "n" ]]; then
@@ -360,19 +360,19 @@ if [[ -n "${SMTP_PASSWORD}" ]]; then
 fi
 
 # ==============================================================================
-phase "FASE 7 — Imagens"
+phase "PHASE 7 — Images"
 # ==============================================================================
 
 IMAGE_TAG="initial"
-info "Construindo a aplicação e o worker (a primeira vez demora)..."
+info "Building the application and the worker (the first time takes a while)..."
 docker build -t "${STACK_NAME}_app:${IMAGE_TAG}" -f "${ROOT}/src/OpenTube.Web/Dockerfile" "$ROOT"
 docker build -t "${STACK_NAME}_worker:${IMAGE_TAG}" -f "${ROOT}/src/OpenTube.Worker/Dockerfile" "$ROOT"
-ok "Imagens ${STACK_NAME}_{app,worker}:${IMAGE_TAG}"
+ok "Images ${STACK_NAME}_{app,worker}:${IMAGE_TAG}"
 
 install -m 0755 "${ROOT}/scripts/swarm-entrypoint.sh" "${APP_DIR}/scripts/entrypoint.sh"
 
 # ==============================================================================
-phase "FASE 8 — Stack e Caddy"
+phase "PHASE 8 — Stack and Caddy"
 # ==============================================================================
 
 TLS_LINE=""
@@ -440,8 +440,8 @@ ${ACME_BLOCK}${PUBLIC_HOST} {${TLS_LINE}
 }
 EOF
 
-# Segredos montados com o nome que o KeyPerFile transforma em chave de configuração
-# (o __ vira ':'). O arquivo fica legível só pelo uid 1001, o usuário do processo.
+# Secrets mounted under the name KeyPerFile turns into a configuration key
+# (__ becomes ':'). The file is readable only by uid 1001, the process user.
 APP_MOUNTS="      - source: ${STACK_NAME}_connection_string
         target: ConnectionStrings__Default
         uid: \"1001\"
@@ -471,7 +471,7 @@ ${SMTP_MOUNT}"
 
 STACK_FILE="${APP_DIR}/docker-compose.prod.yml"
 cat > "$STACK_FILE" <<STACK
-# Stack gerada por install.sh. Sem senha neste arquivo: só referência a segredo.
+# Stack generated by install.sh. No password in this file: only a secret reference.
 services:
   postgres:
     image: postgres:17-alpine
@@ -694,16 +694,16 @@ chmod 600 "$INSTALL_CONF"
 
 cat > "${APP_DIR}/scripts/update.sh" <<'UPD'
 #!/usr/bin/env bash
-# Reconstrói as imagens a partir do SOURCE_DIR do install.conf e republica a stack.
-# Não regenera senha. Puxe o código novo no SOURCE_DIR antes de rodar.
+# Rebuild the images from SOURCE_DIR in install.conf and republish the stack.
+# Does not regenerate the password. Pull the new code into SOURCE_DIR first.
 set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CONF="${APP_DIR}/etc/install.conf"
-ler() { grep -m1 "^${1}=" "$CONF" | cut -d= -f2- | sed "s/^'//;s/'\$//" || true; }
-SOURCE="$(ler SOURCE_DIR)"
-STACK="$(ler STACK_NAME)"
-[[ -n "$SOURCE" && -d "$SOURCE" ]] || { echo "SOURCE_DIR inválido em ${CONF}" >&2; exit 1; }
-[[ -n "$STACK" ]] || { echo "STACK_NAME ausente em ${CONF}" >&2; exit 1; }
+read_conf() { grep -m1 "^${1}=" "$CONF" | cut -d= -f2- | sed "s/^'//;s/'\$//" || true; }
+SOURCE="$(read_conf SOURCE_DIR)"
+STACK="$(read_conf STACK_NAME)"
+[[ -n "$SOURCE" && -d "$SOURCE" ]] || { echo "Invalid SOURCE_DIR in ${CONF}" >&2; exit 1; }
+[[ -n "$STACK" ]] || { echo "Missing STACK_NAME in ${CONF}" >&2; exit 1; }
 TAG="$(date -u +%Y%m%d%H%M%S)"
 docker build -t "${STACK}_app:${TAG}" -f "${SOURCE}/src/OpenTube.Web/Dockerfile" "$SOURCE"
 docker build -t "${STACK}_worker:${TAG}" -f "${SOURCE}/src/OpenTube.Worker/Dockerfile" "$SOURCE"
@@ -714,17 +714,17 @@ sed -i "s|${STACK}_worker:[^[:space:]]*|${STACK}_worker:${TAG}|" "$STACK_FILE"
 docker stack deploy --compose-file "$STACK_FILE" --resolve-image never --prune "$STACK"
 UPD
 chmod 755 "${APP_DIR}/scripts/update.sh"
-ok "Stack, Caddy e update.sh"
+ok "Stack, Caddy, and update.sh"
 
 # ==============================================================================
-phase "FASE 9 — Deploy"
+phase "PHASE 9 — Deploy"
 # ==============================================================================
 
 docker stack deploy --compose-file "$STACK_FILE" --resolve-image never --prune "$STACK_NAME"
-ok "Stack ${STACK_NAME} publicada"
+ok "Stack ${STACK_NAME} published"
 
 # ==============================================================================
-phase "FASE 10 — Firewall"
+phase "PHASE 10 — Firewall"
 # ==============================================================================
 
 if command -v ufw >/dev/null 2>&1; then
@@ -741,56 +741,56 @@ if command -v ufw >/dev/null 2>&1; then
     ufw allow 443/tcp comment "Web-${APP_NAME}" >/dev/null || true
   fi
   ufw --force enable >/dev/null || true
-  ok "UFW atualizado (22 e o acesso web)"
-  warn "O Docker publica a porta na chain própria. O UFW cobre o host; não substitui uma regra DOCKER-USER se esta máquina ficar exposta."
+  ok "UFW updated (22 and web access)"
+  warn "Docker publishes the port on its own chain. UFW covers the host; it does not replace a DOCKER-USER rule if this machine is exposed."
 else
-  warn "ufw não encontrado — firewall não foi alterado."
+  warn "ufw not found — the firewall was not changed."
 fi
 
 # ==============================================================================
-phase "FASE 11 — Subida"
+phase "PHASE 11 — Startup"
 # ==============================================================================
 
-info "À espera das réplicas (até 3 minutos)..."
-pronto="n"
+info "Waiting for replicas (up to 3 minutes)..."
+ready="n"
 for _ in $(seq 1 30); do
   total="$(docker stack services "$STACK_NAME" --format '{{.Name}}' 2>/dev/null | wc -l | tr -d ' ')"
-  pendente="$(docker stack services "$STACK_NAME" --format '{{.Replicas}}' 2>/dev/null | grep -vc '1/1' || true)"
-  if [[ "${total:-0}" -ge 5 && "${pendente:-1}" -eq 0 ]]; then
-    pronto="y"
+  pending="$(docker stack services "$STACK_NAME" --format '{{.Replicas}}' 2>/dev/null | grep -vc '1/1' || true)"
+  if [[ "${total:-0}" -ge 5 && "${pending:-1}" -eq 0 ]]; then
+    ready="y"
     break
   fi
   sleep 6
 done
 docker stack services "$STACK_NAME" || true
-if [[ "$pronto" == "y" ]]; then
-  ok "Serviços no ar"
+if [[ "$ready" == "y" ]]; then
+  ok "Services are up"
 else
-  warn "Ainda há serviço fora de 1/1. Veja: docker stack ps ${STACK_NAME} --no-trunc"
+  warn "A service is still not 1/1. See: docker stack ps ${STACK_NAME} --no-trunc"
 fi
 
 # ==============================================================================
-phase "FASE 12 — Resumo"
+phase "PHASE 12 — Summary"
 # ==============================================================================
 
 echo ""
 sep
 echo -e "  URL       : ${BOLD}${PUBLIC_URL}${NC}"
 echo -e "  Admin     : ${BOLD}${ADMIN_EMAIL}${NC}"
-echo -e "  ${DIM}Não há senha de administrador. O código chega por email (ou pelo Mailpit, em dev).${NC}"
-echo -e "  Diretório : ${APP_DIR}"
-echo -e "  Atualizar : ${APP_DIR}/scripts/update.sh"
-echo -e "  Banco     : ${POSTGRES_DB} / ${POSTGRES_USER}"
+echo -e "  ${DIM}There is no administrator password. The code arrives by email (or Mailpit, in dev).${NC}"
+echo -e "  Directory : ${APP_DIR}"
+echo -e "  Update    : ${APP_DIR}/scripts/update.sh"
+echo -e "  Database  : ${POSTGRES_DB} / ${POSTGRES_USER}"
 if [[ "$SECRETS_EXIST" == "n" ]]; then
   echo ""
-  echo -e "  ${YELLOW}Copie agora. Isto não fica em disco e o Swarm não devolve o valor.${NC}"
-  echo -e "  Senha do banco     : ${BOLD}${POSTGRES_PASSWORD}${NC}"
-  echo -e "  Usuário MinIO      : ${BOLD}${MINIO_ROOT_USER}${NC}"
-  echo -e "  Senha MinIO        : ${BOLD}${MINIO_ROOT_PASSWORD}${NC}"
+  echo -e "  ${YELLOW}Copy this now. It is not kept on disk, and Swarm does not return the value.${NC}"
+  echo -e "  Database password  : ${BOLD}${POSTGRES_PASSWORD}${NC}"
+  echo -e "  MinIO user         : ${BOLD}${MINIO_ROOT_USER}${NC}"
+  echo -e "  MinIO password     : ${BOLD}${MINIO_ROOT_PASSWORD}${NC}"
   echo -e "  Token pepper       : ${DIM}${TOKEN_PEPPER}${NC}"
   echo -e "  IP pepper          : ${DIM}${IP_HASH_PEPPER}${NC}"
 else
-  echo -e "  Segredos  : ${DIM}mantidos da instalação anterior${NC}"
+  echo -e "  Secrets   : ${DIM}kept from the previous installation${NC}"
 fi
 sep
 echo ""

@@ -1,7 +1,7 @@
-# Carrega o .env e exporta as variáveis que a aplicação lê no host.
-# Uso: source scripts/dev-env.sh   (a partir da raiz do repositório)
+# Load .env and export the variables the application reads on the host.
+# Usage: source scripts/dev-env.sh   (from the repository root)
 if [[ ! -f .env ]]; then
-  echo "Falta o .env. Rode make." >&2
+  echo "Missing .env. Run make." >&2
   return 1 2>/dev/null || exit 1
 fi
 

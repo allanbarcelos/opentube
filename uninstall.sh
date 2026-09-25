@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # ==============================================================================
-#  uninstall.sh — remove o que o install.sh criou para uma instalação
+#  uninstall.sh — remove what install.sh created for one installation
 #
-#  Uso: sudo bash uninstall.sh
+#  Usage: sudo bash uninstall.sh
 #
-#  Remove a stack, os segredos do Swarm com o prefixo dela, as imagens locais,
-#  o diretório /opt/<nome> (incluindo o banco) e o disco do MinIO se estiver
-#  fora desse diretório. Não remove o Docker, o Swarm nem outros stacks.
+#  Removes the stack, its Swarm secrets, the local images, the /opt/<name>
+#  directory (including the database), and the MinIO disk if it lives outside
+#  that directory. Does not remove Docker, Swarm, or other stacks.
 # ==============================================================================
 set -euo pipefail
 IFS=$'\n\t'
@@ -27,18 +27,18 @@ slugify() {
   echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-\|-$//g'
 }
 
-[[ $EUID -eq 0 ]] || die "Rode como root: sudo bash uninstall.sh"
+[[ $EUID -eq 0 ]] || die "Run as root: sudo bash uninstall.sh"
 
 clear
-echo -e "${BOLD}${RED}OpenTube${NC}  ·  isto apaga a aplicação e os dados"
+echo -e "${BOLD}${RED}OpenTube${NC}  ·  this deletes the application and its data"
 sep
 echo ""
 
-phase "FASE 1 — Qual instalação"
+phase "PHASE 1 — Which installation"
 
-read -rp "$(echo -e "  ${BOLD}Nome usado na instalação${NC}: ")" APP_NAME_RAW </dev/tty
+read -rp "$(echo -e "  ${BOLD}Name used at install${NC}: ")" APP_NAME_RAW </dev/tty
 APP_NAME="$(slugify "$APP_NAME_RAW")"
-[[ -n "$APP_NAME" ]] || die "Nome inválido."
+[[ -n "$APP_NAME" ]] || die "Invalid name."
 APP_DIR="/opt/${APP_NAME}"
 STACK_NAME="${APP_NAME//-/_}"
 INSTALL_CONF="${APP_DIR}/etc/install.conf"
@@ -49,70 +49,70 @@ if [[ -f "$INSTALL_CONF" ]]; then
 fi
 
 echo ""
-echo -e "  Diretório : ${CYAN}${APP_DIR}${NC}"
+echo -e "  Directory : ${CYAN}${APP_DIR}${NC}"
 echo -e "  Stack     : ${CYAN}${STACK_NAME}${NC}"
 if [[ -n "$MINIO_DATA_DIR" && "$MINIO_DATA_DIR" != "$APP_DIR" && "$MINIO_DATA_DIR" != "$APP_DIR"/* ]]; then
   echo -e "  MinIO     : ${RED}${MINIO_DATA_DIR}${NC}"
 fi
 echo ""
-echo -e "  ${RED}O banco, os objetos e os segredos desta instalação somem.${NC}"
+echo -e "  ${RED}The database, objects, and secrets of this installation are removed.${NC}"
 echo ""
-read -rp "$(echo -e "  ${BOLD}Digite o nome para confirmar${NC} [${CYAN}${APP_NAME}${NC}]: ")" _CONFIRM </dev/tty
-[[ "$_CONFIRM" == "$APP_NAME" ]] || die "O nome não confere."
-read -rp "$(echo -e "  ${BOLD}Tem certeza?${NC} ${DIM}[yes/N]${NC}: ")" _SURE </dev/tty
-[[ "$_SURE" == "yes" ]] || { echo "Cancelado."; exit 0; }
+read -rp "$(echo -e "  ${BOLD}Type the name to confirm${NC} [${CYAN}${APP_NAME}${NC}]: ")" _CONFIRM </dev/tty
+[[ "$_CONFIRM" == "$APP_NAME" ]] || die "The name does not match."
+read -rp "$(echo -e "  ${BOLD}Are you sure?${NC} ${DIM}[yes/N]${NC}: ")" _SURE </dev/tty
+[[ "$_SURE" == "yes" ]] || { echo "Cancelled."; exit 0; }
 
-phase "FASE 2 — Stack"
+phase "PHASE 2 — Stack"
 
 if docker stack ls --format '{{.Name}}' 2>/dev/null | grep -qx "$STACK_NAME"; then
-  info "Removendo a stack ${STACK_NAME}..."
+  info "Removing stack ${STACK_NAME}..."
   docker stack rm "$STACK_NAME" >/dev/null || true
   elapsed=0
   until ! docker stack ps "$STACK_NAME" --format '{{.ID}}' 2>/dev/null | grep -q .; do
     sleep 3
     elapsed=$((elapsed + 3))
-    [[ "$elapsed" -ge 90 ]] && { warn "Ainda há tarefa encerrando"; break; }
+    [[ "$elapsed" -ge 90 ]] && { warn "A task is still shutting down"; break; }
   done
   sleep 3
-  ok "Stack removida"
+  ok "Stack removed"
 else
-  warn "Stack ${STACK_NAME} não está no ar"
+  warn "Stack ${STACK_NAME} is not running"
 fi
 
-phase "FASE 3 — Segredos e imagens"
+phase "PHASE 3 — Secrets and images"
 
 if docker secret ls --format '{{.Name}}' >/dev/null 2>&1; then
-  while read -r nome; do
-    [[ -z "$nome" ]] && continue
-    docker secret rm "$nome" >/dev/null 2>&1 && ok "Segredo ${nome}" || warn "Não removi ${nome} (ainda em uso?)"
+  while read -r name; do
+    [[ -z "$name" ]] && continue
+    docker secret rm "$name" >/dev/null 2>&1 && ok "Secret ${name}" || warn "Did not remove ${name} (still in use?)"
   done < <(docker secret ls --format '{{.Name}}' | grep "^${STACK_NAME}_" || true)
 fi
 
 if docker image ls --format '{{.Repository}}:{{.Tag}}' >/dev/null 2>&1; then
-  while read -r imagem; do
-    [[ -z "$imagem" ]] && continue
-    docker rmi "$imagem" >/dev/null 2>&1 && ok "Imagem ${imagem}" || warn "Não removi ${imagem}"
+  while read -r image; do
+    [[ -z "$image" ]] && continue
+    docker rmi "$image" >/dev/null 2>&1 && ok "Image ${image}" || warn "Did not remove ${image}"
   done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E "^${STACK_NAME}_(app|worker):" || true)
 fi
 
-phase "FASE 4 — Arquivos"
+phase "PHASE 4 — Files"
 
 if [[ -d "$APP_DIR" ]]; then
   rm -rf "$APP_DIR"
-  ok "Removido ${APP_DIR}"
+  ok "Removed ${APP_DIR}"
 else
-  warn "Diretório ${APP_DIR} não existe"
+  warn "Directory ${APP_DIR} does not exist"
 fi
 
 if [[ -n "$MINIO_DATA_DIR" && "$MINIO_DATA_DIR" != "$APP_DIR" && "$MINIO_DATA_DIR" != "$APP_DIR"/* && -d "$MINIO_DATA_DIR" ]]; then
   rm -rf "$MINIO_DATA_DIR"
-  ok "Removido ${MINIO_DATA_DIR}"
+  ok "Removed ${MINIO_DATA_DIR}"
 fi
 
-phase "FASE 5 — Firewall"
+phase "PHASE 5 — Firewall"
 
 if command -v ufw >/dev/null 2>&1; then
-  # Apaga pelo comentário, de trás para frente, para o número não andar.
+  # Delete by comment, from the top each time, so the rule numbers stay valid.
   for tag in "SSH-${APP_NAME}" "Web-${APP_NAME}" "LAN-${APP_NAME}" "Block-direct-${APP_NAME}"; do
     while true; do
       num="$(ufw status numbered | grep -F "$tag" | head -1 | sed -n 's/.*\[\s*\([0-9][0-9]*\)\].*/\1/p' || true)"
@@ -120,9 +120,9 @@ if command -v ufw >/dev/null 2>&1; then
       echo y | ufw delete "$num" >/dev/null 2>&1 || break
     done
   done
-  ok "Regras UFW com a marca ${APP_NAME} removidas, se existiam"
+  ok "UFW rules tagged ${APP_NAME} removed, if any existed"
 fi
 
 echo ""
-ok "Desinstalação de ${APP_NAME} concluída. O Swarm em si permanece."
+ok "Uninstall of ${APP_NAME} finished. Swarm itself is left in place."
 echo ""
