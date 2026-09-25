@@ -10,6 +10,9 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<Video> Videos => Set<Video>();
     public DbSet<VideoAsset> VideoAssets => Set<VideoAsset>();
     public DbSet<ProcessingJob> ProcessingJobs => Set<ProcessingJob>();
+    public DbSet<LoginCode> LoginCodes => Set<LoginCode>();
+    public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
+    public DbSet<AuthAttempt> AuthAttempts => Set<AuthAttempt>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

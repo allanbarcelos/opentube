@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Queue;
+using OpenTube.Infrastructure.Email;
+using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
 using OpenTube.Infrastructure.Storage;
 
@@ -30,10 +32,22 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        services.AddOptions<SecurityOptions>()
+            .Bind(configuration.GetSection(SecurityOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.Configure<SmtpOptions>(configuration.GetSection(SmtpOptions.SectionName));
+
         services.TryAddTimeProvider();
         services.AddScoped<IJobQueue, PostgresJobQueue>();
         services.AddSingleton<IVideoStorage, S3VideoStorage>();
         services.AddScoped<VideoUploadService>();
+        services.AddScoped<IEmailSender, SmtpEmailSender>();
+        services.AddScoped<IAuthRateLimiter, AuthRateLimiter>();
+        services.AddScoped<PasswordlessAuthService>();
+        services.AddSingleton<PrivacyHasher>();
+        services.AddScoped<AdminSeeder>();
 
         return services;
     }
