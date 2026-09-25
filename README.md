@@ -256,8 +256,8 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | Fase | Escopo | Estado |
 | --- | --- | --- |
 | 1 | Núcleo: upload, transcodificação, player, home e busca | **concluída** |
-| 2 | Acesso: concessões, convites e coleções | em andamento |
-| 3 | Domínios: verificação por DNS e porta de entrada dedicada | pendente |
+| 2 | Acesso: concessões, convites e coleções | **concluída** |
+| 3 | Domínios: verificação por DNS e porta de entrada dedicada | em andamento |
 | 4 | Analytics: coleta, agregação, painéis e exportação | pendente |
 | 5 | Suporte: conversas privadas por vídeo | pendente |
 | 6 | Refino: legendas automáticas, marca d'água, auditoria, autorização por segmento | pendente |

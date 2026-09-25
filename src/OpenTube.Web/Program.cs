@@ -28,6 +28,8 @@ builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAntiforgery();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentViewer>();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ShareLinkFlash>();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -55,6 +57,7 @@ app.MapPlaybackEndpoints();
 app.MapAdminEndpoints();
 app.MapShareEndpoints();
 app.MapCollectionEndpoints();
+app.MapAccessEndpoints();
 app.MapHealthChecks("/saude");
 
 await PrepararAsync(app);

@@ -1,0 +1,42 @@
+@* Escolha da validade, compartilhada pelos três formulários de concessão. *@
+
+<fieldset class="mb-3">
+    <legend class="form-label">Validade</legend>
+
+    <div class="form-check">
+        <input class="form-check-input" type="radio" name="validade" value="sempre"
+               id="validade-sempre-@Prefixo" checked />
+        <label class="form-check-label" for="validade-sempre-@Prefixo">Sem prazo</label>
+    </div>
+
+    <div class="form-check">
+        <input class="form-check-input" type="radio" name="validade" value="dias"
+               id="validade-dias-@Prefixo" />
+        <label class="form-check-label" for="validade-dias-@Prefixo">
+            Por um período a partir do primeiro acesso
+        </label>
+    </div>
+
+    <div class="form-check">
+        <input class="form-check-input" type="radio" name="validade" value="ate"
+               id="validade-ate-@Prefixo" />
+        <label class="form-check-label" for="validade-ate-@Prefixo">Até uma data</label>
+    </div>
+
+    <div class="mt-2">
+        <label class="form-label visually-hidden" for="valor-@Prefixo">
+            Quantidade de dias ou data de término
+        </label>
+        <input class="form-control" id="valor-@Prefixo" name="valorDaValidade"
+               placeholder="30 (dias) ou 2026-12-31 (data)" />
+        <div class="form-text">
+            Preencha conforme a opção escolhida. Sem prazo dispensa este campo.
+        </div>
+    </div>
+</fieldset>
+
+@code {
+    /// <summary>Distingue os campos quando o formulário aparece mais de uma vez na página.</summary>
+    [Parameter, EditorRequired]
+    public string Prefixo { get; set; } = string.Empty;
+}

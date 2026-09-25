@@ -3,6 +3,7 @@
 @using OpenTube.Infrastructure.Services
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject AdminVideoService Admin
+@inject ShareLinkFlash Links
 @inject NavigationManager Navegacao
 
 <PageTitle>@(Video?.Title ?? "Vídeo") — Administração</PageTitle>
@@ -32,6 +33,28 @@
         @if (Restaurado)
         {
             <div class="alert alert-success" role="status">Vídeo restaurado. Ele continua privado.</div>
+        }
+        @if (Convidados > 0)
+        {
+            <div class="alert alert-success" role="status">
+                @Convidados @(Convidados == 1 ? "convite enviado" : "convites enviados").
+            </div>
+        }
+        @if (DominioLiberado)
+        {
+            <div class="alert alert-success" role="status">Domínio liberado.</div>
+        }
+        @if (Revogado)
+        {
+            <div class="alert alert-success" role="status">Acesso revogado.</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(LinkCriado))
+        {
+            <div class="alert alert-warning">
+                <p class="mb-2"><strong>Link criado.</strong> Copie agora: ele não será exibido de novo.</p>
+                <input class="form-control font-monospace" value="@LinkCriado" readonly
+                       onclick="this.select()" aria-label="Endereço do link de compartilhamento" />
+            </div>
         }
         @if (!string.IsNullOrWhiteSpace(Erro))
         {
@@ -108,6 +131,8 @@
                         </form>
                     </div>
                 </div>
+
+                <PainelDeAcessos TargetType="GrantTargetType.Video" TargetId="Video.Id" />
             </div>
 
             <div class="col-lg-5">
@@ -188,6 +213,23 @@
     [SupplyParameterFromQuery(Name = "erro")]
     private string? Erro { get; set; }
 
+    [SupplyParameterFromQuery(Name = "convidados")]
+    private int? ConvidadosBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "dominio")]
+    private string? DominioBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "revogado")]
+    private string? RevogadoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "link")]
+    private string? LinkBruto { get; set; }
+
+    private int Convidados => ConvidadosBruto ?? 0;
+    private bool DominioLiberado => DominioBruto == "1";
+    private bool Revogado => RevogadoBruto == "1";
+    private string? LinkCriado;
+
     private bool Salvo => SalvoBruto == "1";
     private bool Enfileirado => EnfileiradoBruto == "1";
     private bool Restaurado => RestauradoBruto == "1";
@@ -247,6 +289,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // O endereço do link é recuperado do servidor e descartado: só aparece uma vez.
+        LinkCriado = Links.Take(LinkBruto);
+
         Video = await Admin.FindAsync(VideoId, Http.RequestAborted);
 
         if (Video is null)
