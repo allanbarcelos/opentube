@@ -1,0 +1,91 @@
+@page "/admin/auditoria"
+@using OpenTube.Domain.Entities
+@using OpenTube.Infrastructure.Security
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject AuditTrail Trilha
+
+<PageTitle>Auditoria — Administração</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="Trilha de navegação">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Auditoria</li>
+        </ol>
+    </nav>
+
+    <div class="card">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span>Ações administrativas</span>
+
+            <form action="/admin/auditoria" method="get" class="d-flex gap-2" role="search">
+                <select class="form-select form-select-sm" name="tipo" aria-label="Filtrar por tipo">
+                    <option value="">Tudo</option>
+                    <option value="video" selected="@(Tipo == "video")">Vídeos</option>
+                    <option value="colecao" selected="@(Tipo == "colecao")">Coleções</option>
+                    <option value="concessao" selected="@(Tipo == "concessao")">Acessos</option>
+                    <option value="dominio" selected="@(Tipo == "dominio")">Domínios</option>
+                </select>
+                <input class="form-control form-control-sm" type="search" name="quem" value="@Quem"
+                       placeholder="Quem fez" aria-label="Filtrar por quem fez" />
+                <button class="btn btn-sm btn-outline-secondary" type="submit">Filtrar</button>
+            </form>
+        </div>
+
+        @if (Registros.Count == 0)
+        {
+            <div class="card-body text-center text-body-secondary py-5">
+                Nenhuma ação registrada com esses filtros.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col">Quando</th>
+                            <th scope="col">Quem</th>
+                            <th scope="col">O que</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var registro in Registros)
+                        {
+                            <tr>
+                                <td class="small text-nowrap">
+                                    @registro.At.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                </td>
+                                <td class="small">@registro.ActorEmail</td>
+                                <td>
+                                    @registro.Summary
+                                    <span class="d-block small text-body-secondary font-monospace">@registro.Action</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <p class="small text-body-secondary mt-3 mb-0">
+        O registro guarda o endereço de origem como resumo, nunca em texto claro.
+    </p>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "tipo")]
+    private string? Tipo { get; set; }
+
+    [SupplyParameterFromQuery(Name = "quem")]
+    private string? Quem { get; set; }
+
+    private IReadOnlyList<AuditEntry> Registros = [];
+
+    protected override async Task OnInitializedAsync() =>
+        Registros = await Trilha.ListAsync(Tipo, actorEmail: Quem, cancellationToken: Http.RequestAborted);
+}

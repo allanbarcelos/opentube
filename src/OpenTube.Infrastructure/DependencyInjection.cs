@@ -55,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<PasswordlessAuthService>();
         services.AddSingleton<PrivacyHasher>();
         services.AddScoped<AdminSeeder>();
+        services.AddScoped<AuditTrail>();
         services.AddScoped<AccessService>();
         services.AddScoped<GrantService>();
         services.AddSingleton<IDnsTxtLookup, DnsTxtLookup>();

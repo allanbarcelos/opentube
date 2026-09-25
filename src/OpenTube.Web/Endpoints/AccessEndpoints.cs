@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Access;
+using OpenTube.Infrastructure.Security;
 using OpenTube.Web.Auth;
 
 namespace OpenTube.Web.Endpoints;
@@ -40,6 +41,11 @@ public static class AccessEndpoints
                     nota,
                     cancellationToken: cancellationToken);
 
+                await contexto.RegistrarAsync(
+                    AuditActions.AcessoConcedido, TipoDeEntidade((GrantTargetType)alvoTipo), alvoId,
+                    $"Convite enviado a {string.Join(", ", resultados.Select(r => r.Email))} ({MontarValidade(validade, valorDaValidade).Describe()})",
+                    cancellationToken);
+
                 return Results.Redirect($"{destino}?convidados={resultados.Count}");
             }
             catch (Exception e) when (e is ArgumentException or InvalidOperationException)
@@ -71,6 +77,11 @@ public static class AccessEndpoints
                     MontarValidade(validade, valorDaValidade),
                     admin.UserId!.Value,
                     nota,
+                    cancellationToken);
+
+                await contexto.RegistrarAsync(
+                    AuditActions.AcessoConcedido, TipoDeEntidade((GrantTargetType)alvoTipo), alvoId,
+                    $"Domínio {dominio} liberado ({MontarValidade(validade, valorDaValidade).Describe()})",
                     cancellationToken);
 
                 return Results.Redirect($"{destino}?dominio=1");
@@ -109,6 +120,11 @@ public static class AccessEndpoints
 
                 // O endereço é guardado no servidor e recuperado uma única vez pela página:
                 // mandá-lo na URL o deixaria no histórico e nos registros de acesso.
+                await contexto.RegistrarAsync(
+                    AuditActions.LinkCriado, TipoDeEntidade((GrantTargetType)alvoTipo), alvoId,
+                    $"Link de compartilhamento criado ({MontarValidade(validade, valorDaValidade).Describe()})",
+                    cancellationToken);
+
                 return Results.Redirect($"{destino}?link={flash.Store(link.Url)}");
             }
             catch (Exception e) when (e is ArgumentException or InvalidOperationException)
@@ -122,9 +138,13 @@ public static class AccessEndpoints
             [FromForm] int alvoTipo,
             [FromForm] Guid? alvoId,
             GrantService concessoes,
+            HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
             await concessoes.RevokeAsync(grantId, cancellationToken);
+
+            await contexto.RegistrarAsync(
+                AuditActions.AcessoRevogado, AuditEntities.Concessao, grantId, "Acesso revogado", cancellationToken);
 
             return Results.Redirect($"{Destino((GrantTargetType)alvoTipo, alvoId)}?revogado=1");
         });
@@ -134,15 +154,27 @@ public static class AccessEndpoints
             [FromForm] int alvoTipo,
             [FromForm] Guid? alvoId,
             GrantService concessoes,
+            HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
             await concessoes.RestoreAsync(grantId, cancellationToken);
+
+            await contexto.RegistrarAsync(
+                AuditActions.AcessoRestaurado, AuditEntities.Concessao, grantId, "Acesso restaurado", cancellationToken);
 
             return Results.Redirect($"{Destino((GrantTargetType)alvoTipo, alvoId)}?restaurado=1");
         });
 
         return rotas;
     }
+
+    /// <summary>Tipo de entidade da auditoria, conforme o alvo da concessão.</summary>
+    private static string TipoDeEntidade(GrantTargetType tipo) => tipo switch
+    {
+        GrantTargetType.Collection => AuditEntities.Colecao,
+        GrantTargetType.Video => AuditEntities.Video,
+        _ => AuditEntities.Concessao
+    };
 
     /// <summary>Página para onde o formulário volta, conforme o alvo da concessão.</summary>
     private static string Destino(GrantTargetType tipo, Guid? alvoId) => tipo switch

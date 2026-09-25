@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
 using OpenTube.Web.Auth;
 
@@ -23,6 +24,10 @@ public static class CollectionEndpoints
             try
             {
                 var colecao = await colecoes.CreateAsync(nome, descricao, admin.UserId!.Value, cancellationToken);
+
+                await contexto.RegistrarAsync(
+                    AuditActions.ColecaoCriada, AuditEntities.Colecao, colecao.Id,
+                    $"Coleção '{colecao.Name}' criada", cancellationToken);
 
                 return Results.Redirect($"/admin/colecoes/{colecao.Id}?criada=1");
             }
@@ -83,9 +88,13 @@ public static class CollectionEndpoints
         grupo.MapPost("/{collectionId:guid}/excluir", async (
             Guid collectionId,
             CollectionService colecoes,
+            HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
             await colecoes.DeleteAsync(collectionId, cancellationToken);
+
+            await contexto.RegistrarAsync(
+                AuditActions.ColecaoExcluida, AuditEntities.Colecao, collectionId, "Coleção excluída", cancellationToken);
 
             return Results.Redirect("/admin/colecoes?excluida=1");
         });

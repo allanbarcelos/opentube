@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using OpenTube.Infrastructure.Domains;
+using OpenTube.Infrastructure.Security;
 using OpenTube.Web.Auth;
 
 namespace OpenTube.Web.Endpoints;
@@ -33,6 +34,10 @@ public static class DomainEndpoints
             {
                 var cadastrado = await dominios.RegisterAsync(dominio, admin.UserId!.Value, responsavel, nota, cancellationToken);
 
+                await contexto.RegistrarAsync(
+                    AuditActions.DominioCadastrado, AuditEntities.Dominio, cadastrado.Id,
+                    $"Domínio {cadastrado.Name} cadastrado", cancellationToken);
+
                 return Results.Redirect($"/admin/dominios/{cadastrado.Id}?cadastrado=1");
             }
             catch (Exception e) when (e is ArgumentException or InvalidOperationException)
@@ -44,9 +49,17 @@ public static class DomainEndpoints
         grupo.MapPost("/{domainId:guid}/verificar", async (
             Guid domainId,
             DomainService dominios,
+            HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
             var resultado = await dominios.VerifyAsync(domainId, cancellationToken);
+
+            if (resultado.Verified)
+            {
+                await contexto.RegistrarAsync(
+                    AuditActions.DominioVerificado, AuditEntities.Dominio, domainId,
+                    "Posse do domínio comprovada por DNS", cancellationToken);
+            }
 
             return resultado.Verified
                 ? Results.Redirect($"/admin/dominios/{domainId}?verificado=1")

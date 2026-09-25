@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
 using OpenTube.Infrastructure.Storage;
 using OpenTube.Web.Auth;
@@ -91,6 +92,7 @@ public static class AdminEndpoints
             Guid videoId,
             [FromBody] ConcluirEnvio pedido,
             VideoUploadService envios,
+            HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
             var video = await envios.CompleteAsync(
@@ -98,6 +100,10 @@ public static class AdminEndpoints
                 pedido.UploadId,
                 pedido.Partes.Select(p => new CompletedPart(p.Numero, p.ETag)),
                 cancellationToken);
+
+            await contexto.RegistrarAsync(
+                AuditActions.VideoEnviado, AuditEntities.Video, video.Id,
+                $"Vídeo '{video.Title}' enviado", cancellationToken);
 
             return Results.Ok(new { destino = $"/admin/videos/{video.Id}" });
         });
@@ -126,6 +132,7 @@ public static class AdminEndpoints
             [FromForm] string? etiquetas,
             [FromForm] int visibilidade,
             AdminVideoService admin,
+            HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
             try
@@ -136,6 +143,10 @@ public static class AdminEndpoints
                     (VideoVisibility)visibilidade,
                     cancellationToken);
 
+                await contexto.RegistrarAsync(
+                    AuditActions.VideoAlterado, AuditEntities.Video, videoId,
+                    $"Vídeo '{titulo}' salvo com visibilidade {(VideoVisibility)visibilidade}", cancellationToken);
+
                 return Results.Redirect($"/admin/videos/{videoId}?salvo=1");
             }
             catch (Exception e) when (e is InvalidOperationException or ArgumentException)
@@ -144,25 +155,38 @@ public static class AdminEndpoints
             }
         });
 
-        grupo.MapPost("/excluir", async (Guid videoId, AdminVideoService admin, CancellationToken cancellationToken) =>
+        grupo.MapPost("/excluir", async (
+            Guid videoId, AdminVideoService admin, HttpContext contexto, CancellationToken cancellationToken) =>
         {
             await admin.DeleteAsync(videoId, cancellationToken);
+
+            await contexto.RegistrarAsync(
+                AuditActions.VideoExcluido, AuditEntities.Video, videoId, "Vídeo excluído", cancellationToken);
 
             return Results.Redirect("/admin?excluido=1");
         });
 
-        grupo.MapPost("/restaurar", async (Guid videoId, AdminVideoService admin, CancellationToken cancellationToken) =>
+        grupo.MapPost("/restaurar", async (
+            Guid videoId, AdminVideoService admin, HttpContext contexto, CancellationToken cancellationToken) =>
         {
             await admin.RestoreAsync(videoId, cancellationToken);
+
+            await contexto.RegistrarAsync(
+                AuditActions.VideoRestaurado, AuditEntities.Video, videoId, "Vídeo restaurado", cancellationToken);
 
             return Results.Redirect($"/admin/videos/{videoId}?restaurado=1");
         });
 
-        grupo.MapPost("/reprocessar", async (Guid videoId, AdminVideoService admin, CancellationToken cancellationToken) =>
+        grupo.MapPost("/reprocessar", async (
+            Guid videoId, AdminVideoService admin, HttpContext contexto, CancellationToken cancellationToken) =>
         {
             try
             {
                 await admin.RequeueAsync(videoId, cancellationToken);
+
+                await contexto.RegistrarAsync(
+                    AuditActions.VideoReprocessado, AuditEntities.Video, videoId,
+                    "Vídeo recolocado na fila de processamento", cancellationToken);
 
                 return Results.Redirect($"/admin/videos/{videoId}?enfileirado=1");
             }
