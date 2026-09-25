@@ -1,30 +1,54 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">OpenTube.Web</a>
+@using Microsoft.AspNetCore.Components.Authorization
+
+<nav class="navbar navbar-expand-md bg-body border-bottom sticky-top">
+    <div class="container">
+        <a class="navbar-brand fw-semibold" href="/">OpenTube</a>
+
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu-principal"
+                aria-controls="menu-principal" aria-expanded="false" aria-label="Abrir o menu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="menu-principal">
+            <form class="d-flex ms-md-3 me-auto my-2 my-md-0 flex-grow-1" action="/" method="get" role="search">
+                <input class="form-control" type="search" name="q" value="@Termo"
+                       placeholder="Buscar vídeos" aria-label="Buscar vídeos" />
+                <button class="btn btn-outline-secondary ms-2" type="submit">Buscar</button>
+            </form>
+
+            <ul class="navbar-nav align-items-md-center gap-md-2">
+                <AuthorizeView Policy="@Policies.Administrator">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin">Administração</a>
+                    </li>
+                </AuthorizeView>
+
+                <AuthorizeView>
+                    <Authorized>
+                        <li class="nav-item text-body-secondary small d-none d-md-block">
+                            @context.User.Identity?.Name
+                        </li>
+                        <li class="nav-item">
+                            <form action="/sair" method="post">
+                                <AntiforgeryToken />
+                                <button class="btn btn-sm btn-outline-secondary" type="submit">Sair</button>
+                            </form>
+                        </li>
+                    </Authorized>
+                    <NotAuthorized>
+                        <li class="nav-item">
+                            <a class="btn btn-sm btn-primary" href="/entrar">Entrar</a>
+                        </li>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </ul>
+        </div>
     </div>
-</div>
+</nav>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+@code {
+    [CascadingParameter]
+    private HttpContext? Http { get; set; }
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-    </nav>
-</div>
-
+    private string? Termo => Http?.Request.Query["q"].ToString();
+}

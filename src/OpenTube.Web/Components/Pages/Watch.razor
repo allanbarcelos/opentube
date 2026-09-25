@@ -1,0 +1,110 @@
+@page "/v/{slug}"
+@using OpenTube.Domain.Entities
+@using OpenTube.Infrastructure.Playback
+@inject VideoCatalog Catalogo
+@inject NavigationManager Navegacao
+
+<PageTitle>@(Video?.Title ?? "Vídeo não encontrado") — OpenTube</PageTitle>
+
+<div class="container py-4">
+    @if (Video is null)
+    {
+        @* A navegação já foi desviada para a página de não encontrado. *@
+    }
+    else if (!Video.IsPlayable)
+    {
+        <h1 class="h4">@Video.Title</h1>
+        <div class="alert alert-info">
+            Este vídeo ainda está sendo processado. Volte em alguns minutos.
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="player-shell rounded overflow-hidden shadow-sm">
+                    <video id="player-video" controls playsinline preload="metadata"
+                           poster="/api/videos/@Video.Id/miniatura"></video>
+                </div>
+
+                <h1 class="h4 mt-3 mb-1">@Video.Title</h1>
+                <p class="text-body-secondary small mb-3">
+                    @DuracaoTexto
+                    @if (Video.PublishedAt is { } publicado)
+                    {
+                        <span class="mx-1">&middot;</span>
+                        <span>@publicado.ToLocalTime().ToString("dd/MM/yyyy")</span>
+                    }
+                </p>
+
+                @if (!string.IsNullOrWhiteSpace(Video.Description))
+                {
+                    <div class="card">
+                        <div class="card-body">
+                            <p class="card-text mb-0" style="white-space: pre-wrap">@Video.Description</p>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="col-lg-4">
+                @if (Video.Tags.Count > 0)
+                {
+                    <h2 class="h6">Etiquetas</h2>
+                    <p>
+                        @foreach (var etiqueta in Video.Tags)
+                        {
+                            <a class="badge text-bg-light text-decoration-none me-1"
+                               href="/?q=@Uri.EscapeDataString(etiqueta)">@etiqueta</a>
+                        }
+                    </p>
+                }
+
+                <div class="alert alert-light border small mb-0">
+                    O acesso a este vídeo é registrado, incluindo quanto foi assistido.
+                </div>
+            </div>
+        </div>
+
+        <script src="lib/hlsjs/hls.min.js"></script>
+        <script src="js/player.js"></script>
+        <script>
+            window.openTubePlayer.iniciar('player-video', '/api/videos/@Video.Id/master.m3u8');
+        </script>
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [Parameter]
+    public string Slug { get; set; } = string.Empty;
+
+    private Viewer Espectador = Viewer.Anonymous;
+
+    private Video? Video;
+
+    private string DuracaoTexto
+    {
+        get
+        {
+            var tempo = TimeSpan.FromSeconds(Video?.DurationSeconds ?? 0);
+
+            return tempo.TotalHours >= 1
+                ? $"{(int)tempo.TotalHours}:{tempo.Minutes:D2}:{tempo.Seconds:D2}"
+                : $"{tempo.Minutes}:{tempo.Seconds:D2}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Espectador = ViewerContext.From(Http.User);
+        Video = await Catalogo.FindBySlugAsync(Espectador, Slug, Http.RequestAborted);
+
+        // Vídeo inexistente e vídeo sem acesso respondem exatamente igual. A diferença entre
+        // "não existe" e "existe mas não é para você" já seria informação sobre o acervo.
+        if (Video is null)
+            Navegacao.NotFound();
+    }
+}

@@ -1,0 +1,41 @@
+@* Navegação entre páginas de resultados, preservando o termo buscado. *@
+
+@if (Resultado.PageCount > 1)
+{
+    <nav aria-label="Paginação dos resultados" class="mt-4">
+        <ul class="pagination justify-content-center">
+            <li class="page-item @(Resultado.HasPrevious ? "" : "disabled")">
+                <a class="page-link" href="@Endereco(Resultado.Page - 1)">Anterior</a>
+            </li>
+
+            <li class="page-item disabled">
+                <span class="page-link">Página @Resultado.Page de @Resultado.PageCount</span>
+            </li>
+
+            <li class="page-item @(Resultado.HasNext ? "" : "disabled")">
+                <a class="page-link" href="@Endereco(Resultado.Page + 1)">Próxima</a>
+            </li>
+        </ul>
+    </nav>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public PagedResult<VideoSummary> Resultado { get; set; } = default!;
+
+    [Parameter]
+    public string BasePath { get; set; } = "/";
+
+    [Parameter]
+    public string? Termo { get; set; }
+
+    private string Endereco(int pagina)
+    {
+        var parametros = new List<string> { $"pagina={pagina}" };
+
+        if (!string.IsNullOrWhiteSpace(Termo))
+            parametros.Add("q=" + Uri.EscapeDataString(Termo));
+
+        return $"{BasePath}?{string.Join('&', parametros)}";
+    }
+}

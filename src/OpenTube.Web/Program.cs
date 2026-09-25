@@ -1,27 +1,72 @@
+using System.Text.Encodings.Web;
+using System.Text.Unicode;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.WebEncoders;
+using OpenTube.Infrastructure;
+using OpenTube.Infrastructure.Persistence;
+using OpenTube.Infrastructure.Security;
+using OpenTube.Infrastructure.Storage;
+using OpenTube.Web.Auth;
 using OpenTube.Web.Components;
+using OpenTube.Web.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+builder.Configuration.AddEnvironmentVariables("OPENTUBE_");
+
+// Sem isto o codificador padrão transforma todo acento em entidade numérica, o que incha
+// cada página de um site em português e atrapalha qualquer inspeção do HTML.
+builder.Services.Configure<WebEncoderOptions>(opcoes =>
+    opcoes.TextEncoderSettings = new TextEncoderSettings(UnicodeRanges.All));
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+builder.Services.AddOpenTubeInfrastructure(builder.Configuration);
+builder.Services.AddSessionAuthentication();
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddAntiforgery();
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+    app.UseExceptionHandler("/erro", createScopeForErrors: true);
     app.UseHsts();
 }
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
 
+app.UseStaticFiles();
 app.UseAntiforgery();
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-app.Run();
+app.MapAuthEndpoints();
+app.MapPlaybackEndpoints();
+app.MapHealthChecks("/saude");
+
+await PrepararAsync(app);
+
+await app.RunAsync();
+
+/// <summary>
+/// Deixa o ambiente pronto antes de atender: esquema aplicado, buckets criados e
+/// administradores promovidos. Sem isso, a primeira requisição falharia numa instalação nova.
+/// </summary>
+static async Task PrepararAsync(WebApplication app)
+{
+    using var escopo = app.Services.CreateScope();
+    var servicos = escopo.ServiceProvider;
+
+    var db = servicos.GetRequiredService<OpenTubeDbContext>();
+    await db.Database.MigrateAsync();
+
+    await servicos.GetRequiredService<IVideoStorage>().EnsureBucketsAsync();
+    await servicos.GetRequiredService<AdminSeeder>().EnsureAdminsAsync();
+}
+
+/// <summary>Exposto para que a suíte de testes possa subir a aplicação em memória.</summary>
+public partial class Program;

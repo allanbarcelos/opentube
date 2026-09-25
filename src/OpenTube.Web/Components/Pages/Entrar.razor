@@ -1,0 +1,81 @@
+@page "/entrar"
+
+<PageTitle>Entrar — OpenTube</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h1 class="h4 mb-1">Entrar</h1>
+                    <p class="text-body-secondary small">
+                        Não usamos senha. Enviamos um código de seis dígitos para o seu email.
+                    </p>
+
+                    @if (!string.IsNullOrWhiteSpace(Erro))
+                    {
+                        <div class="alert alert-danger" role="alert">@Erro</div>
+                    }
+
+                    @if (Enviado)
+                    {
+                        <div class="alert alert-success" role="status">
+                            Se este endereço tiver acesso, o código já está a caminho.
+                        </div>
+
+                        <form method="post" action="/entrar/verificar">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="email" value="@Email" />
+
+                            <div class="mb-3">
+                                <label class="form-label" for="codigo">Código recebido</label>
+                                <input class="form-control codigo-acesso" id="codigo" name="codigo"
+                                       inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+                                       pattern="[0-9]{6}" required autofocus />
+                            </div>
+
+                            <button class="btn btn-primary w-100" type="submit">Entrar</button>
+                        </form>
+
+                        <form method="post" action="/entrar/codigo" class="mt-3 text-center">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="email" value="@Email" />
+                            <button class="btn btn-link btn-sm" type="submit">Enviar outro código</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form method="post" action="/entrar/codigo">
+                            <AntiforgeryToken />
+
+                            <div class="mb-3">
+                                <label class="form-label" for="email">Seu email</label>
+                                <input class="form-control" id="email" name="email" type="email"
+                                       value="@Email" autocomplete="email" required autofocus />
+                            </div>
+
+                            <button class="btn btn-primary w-100" type="submit">Receber código</button>
+                        </form>
+                    }
+                </div>
+            </div>
+
+            <p class="text-center text-body-secondary small mt-3 mb-0">
+                O link do email também entra direto, sem digitar o código.
+            </p>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "email")]
+    private string? Email { get; set; }
+
+    [SupplyParameterFromQuery(Name = "enviado")]
+    private string? EnviadoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "erro")]
+    private string? Erro { get; set; }
+
+    private bool Enviado => EnviadoBruto == "1" && !string.IsNullOrWhiteSpace(Email);
+}

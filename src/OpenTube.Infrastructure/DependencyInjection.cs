@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
+using OpenTube.Infrastructure.Playback;
 using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Email;
 using OpenTube.Infrastructure.Security;
@@ -48,6 +49,8 @@ public static class DependencyInjection
         services.AddScoped<PasswordlessAuthService>();
         services.AddSingleton<PrivacyHasher>();
         services.AddScoped<AdminSeeder>();
+        services.AddScoped<PlaybackService>();
+        services.AddScoped<VideoCatalog>();
 
         return services;
     }

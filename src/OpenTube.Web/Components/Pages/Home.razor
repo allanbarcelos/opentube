@@ -1,7 +1,69 @@
-﻿@page "/"
+@page "/"
+@using OpenTube.Infrastructure.Playback
+@inject VideoCatalog Catalogo
 
-<PageTitle>Home</PageTitle>
+<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "OpenTube" : $"Busca: {Q} — OpenTube")</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="container py-4">
+    @if (!string.IsNullOrWhiteSpace(Q))
+    {
+        <h1 class="h4 mb-1">Resultados para &ldquo;@Q&rdquo;</h1>
+        <p class="text-body-secondary">@Resultado.Total @(Resultado.Total == 1 ? "vídeo encontrado" : "vídeos encontrados")</p>
+    }
+    else
+    {
+        <h1 class="h4 mb-3">Vídeos</h1>
+    }
 
-Welcome to your new app.
+    @if (Resultado.Items.Count == 0)
+    {
+        <div class="alert alert-light border text-center py-5">
+            @if (!string.IsNullOrWhiteSpace(Q))
+            {
+                <p class="mb-1">Nenhum vídeo corresponde à busca.</p>
+                <a href="/">Ver todos os vídeos</a>
+            }
+            else if (Espectador.IsAuthenticated)
+            {
+                <p class="mb-0">Nenhum vídeo disponível para você no momento.</p>
+            }
+            else
+            {
+                <p class="mb-1">Nenhum vídeo público disponível.</p>
+                <a href="/entrar">Entrar para ver o conteúdo liberado a você</a>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xxl-4 g-3">
+            @foreach (var video in Resultado.Items)
+            {
+                <VideoCard Video="video" MostrarVisibilidade="Espectador.IsAdmin" />
+            }
+        </div>
+
+        <Paginacao Resultado="Resultado" Termo="Q" />
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "q")]
+    private string? Q { get; set; }
+
+    [SupplyParameterFromQuery(Name = "pagina")]
+    private int? Pagina { get; set; }
+
+    private Viewer Espectador = Viewer.Anonymous;
+
+    private PagedResult<VideoSummary> Resultado = PagedResult<VideoSummary>.Empty(VideoCatalog.DefaultPageSize);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Espectador = ViewerContext.From(Http.User);
+        Resultado = await Catalogo.BrowseAsync(Espectador, Q, Pagina ?? 1, cancellationToken: Http.RequestAborted);
+    }
+}

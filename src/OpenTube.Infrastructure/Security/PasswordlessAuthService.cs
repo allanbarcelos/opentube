@@ -38,11 +38,11 @@ public readonly record struct CodeRequestResult(bool Sent, AuthFailure Failure, 
 /// <param name="Failure">Motivo, quando não entrou.</param>
 /// <param name="Session">Sessão aberta, em caso de sucesso.</param>
 /// <param name="User">Pessoa autenticada, em caso de sucesso.</param>
-public sealed record SignInResult(bool Succeeded, AuthFailure Failure, AuthSession? Session, User? User)
+public sealed record SignInOutcome(bool Succeeded, AuthFailure Failure, AuthSession? Session, User? User)
 {
-    public static SignInResult Fail(AuthFailure failure) => new(false, failure, null, null);
+    public static SignInOutcome Fail(AuthFailure failure) => new(false, failure, null, null);
 
-    public static SignInResult Ok(AuthSession session, User user) => new(true, AuthFailure.None, session, user);
+    public static SignInOutcome Ok(AuthSession session, User user) => new(true, AuthFailure.None, session, user);
 }
 
 /// <summary>
@@ -122,7 +122,7 @@ public class PasswordlessAuthService(
     }
 
     /// <summary>Confere o código de seis dígitos e abre a sessão.</summary>
-    public async Task<SignInResult> VerifyCodeAsync(
+    public async Task<SignInOutcome> VerifyCodeAsync(
         string emailInput,
         string code,
         string? ip = null,
@@ -130,7 +130,7 @@ public class PasswordlessAuthService(
         CancellationToken cancellationToken = default)
     {
         if (!EmailAddress.TryParse(emailInput, out var endereco))
-            return SignInResult.Fail(AuthFailure.InvalidEmail);
+            return SignInOutcome.Fail(AuthFailure.InvalidEmail);
 
         var agora = clock.GetUtcNow();
         var digitado = (code ?? string.Empty).Trim();
@@ -141,52 +141,55 @@ public class PasswordlessAuthService(
             .FirstOrDefaultAsync(cancellationToken);
 
         if (candidato is null)
-            return SignInResult.Fail(AuthFailure.InvalidCode);
+            return SignInOutcome.Fail(AuthFailure.InvalidCode);
 
         if (candidato.IsExhausted)
-            return SignInResult.Fail(AuthFailure.TooManyAttempts);
+            return SignInOutcome.Fail(AuthFailure.TooManyAttempts);
 
         if (candidato.IsExpiredAt(agora))
-            return SignInResult.Fail(AuthFailure.CodeExpired);
+            return SignInOutcome.Fail(AuthFailure.CodeExpired);
 
         if (!TokenHasher.Verify(digitado, candidato.CodeHash, _options.TokenPepper))
         {
             candidato.RegisterFailedAttempt();
             await db.SaveChangesAsync(cancellationToken);
 
-            return SignInResult.Fail(candidato.IsExhausted ? AuthFailure.TooManyAttempts : AuthFailure.InvalidCode);
+            return SignInOutcome.Fail(candidato.IsExhausted ? AuthFailure.TooManyAttempts : AuthFailure.InvalidCode);
         }
 
         return await ConcluirAsync(candidato, endereco, ip, userAgent, cancellationToken);
     }
 
     /// <summary>Confere o token do link de acesso direto e abre a sessão.</summary>
-    public async Task<SignInResult> VerifyTokenAsync(
+    public async Task<SignInOutcome> VerifyTokenAsync(
         string token,
         string? ip = null,
         string? userAgent = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(token))
-            return SignInResult.Fail(AuthFailure.InvalidCode);
+            return SignInOutcome.Fail(AuthFailure.InvalidCode);
 
         var hash = TokenHasher.Hash(token.Trim(), _options.TokenPepper);
 
         var candidato = await db.LoginCodes.FirstOrDefaultAsync(c => c.TokenHash == hash, cancellationToken);
 
         if (candidato is null)
-            return SignInResult.Fail(AuthFailure.InvalidCode);
+            return SignInOutcome.Fail(AuthFailure.InvalidCode);
 
         if (candidato.IsConsumed)
-            return SignInResult.Fail(AuthFailure.CodeAlreadyUsed);
+            return SignInOutcome.Fail(AuthFailure.CodeAlreadyUsed);
 
         if (candidato.IsExpiredAt(clock.GetUtcNow()))
-            return SignInResult.Fail(AuthFailure.CodeExpired);
+            return SignInOutcome.Fail(AuthFailure.CodeExpired);
 
         return await ConcluirAsync(candidato, EmailAddress.Parse(candidato.Email), ip, userAgent, cancellationToken);
     }
 
-    /// <summary>Recupera a sessão válida e renova sua validade.</summary>
+    /// <summary>
+    /// Recupera a sessão válida e a renova quando já passou da metade da validade. Renovar a
+    /// cada requisição faria uma escrita no banco por página carregada, sem ganho nenhum.
+    /// </summary>
     public async Task<(AuthSession Session, User User)?> TouchSessionAsync(Guid sessionId, CancellationToken cancellationToken = default)
     {
         var agora = clock.GetUtcNow();
@@ -199,9 +202,12 @@ public class PasswordlessAuthService(
         if (usuario is null || !usuario.IsActive)
             return null;
 
-        sessao.Touch(agora, _options.SessionLifetime);
-        usuario.Touch(agora);
-        await db.SaveChangesAsync(cancellationToken);
+        if (sessao.ExpiresAt - agora < _options.SessionLifetime / 2)
+        {
+            sessao.Touch(agora, _options.SessionLifetime);
+            usuario.Touch(agora);
+            await db.SaveChangesAsync(cancellationToken);
+        }
 
         return (sessao, usuario);
     }
@@ -237,7 +243,7 @@ public class PasswordlessAuthService(
         return encerradas;
     }
 
-    private async Task<SignInResult> ConcluirAsync(
+    private async Task<SignInOutcome> ConcluirAsync(
         LoginCode codigo,
         EmailAddress endereco,
         string? ip,
@@ -257,7 +263,7 @@ public class PasswordlessAuthService(
         }
         else if (!usuario.IsActive)
         {
-            return SignInResult.Fail(AuthFailure.UserDisabled);
+            return SignInOutcome.Fail(AuthFailure.UserDisabled);
         }
 
         codigo.Consume(agora);
@@ -270,6 +276,6 @@ public class PasswordlessAuthService(
 
         logger.LogInformation("Sessão aberta para {UsuarioId}", usuario.Id);
 
-        return SignInResult.Ok(sessao, usuario);
+        return SignInOutcome.Ok(sessao, usuario);
     }
 }
