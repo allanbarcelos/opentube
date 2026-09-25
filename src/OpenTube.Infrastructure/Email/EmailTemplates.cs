@@ -93,6 +93,70 @@ public static class EmailTemplates
         return new EmailMessage(to, $"Acesso ao OpenTube para {domain}", html, texto);
     }
 
+    /// <summary>Aviso à administração de que alguém escreveu sobre um vídeo.</summary>
+    public static EmailMessage SupportForAdmin(string to, string author, string videoTitle, string message, string link)
+    {
+        var texto = $"""
+            {author} escreveu sobre "{videoTitle}":
+
+            {Resumir(message)}
+
+            Responda por aqui:
+            {link}
+            """;
+
+        var html = $"""
+            <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#212529">
+              <h1 style="font-size:20px;margin:0 0 16px">OpenTube</h1>
+              <p style="margin:0 0 8px"><strong>{WebUtility.HtmlEncode(author)}</strong> escreveu sobre
+                <strong>{WebUtility.HtmlEncode(videoTitle)}</strong>:</p>
+              <blockquote style="margin:0 0 24px;padding:12px 16px;border-left:3px solid #dee2e6;color:#495057;white-space:pre-wrap">{WebUtility.HtmlEncode(Resumir(message))}</blockquote>
+              <p style="margin:0">
+                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">Responder</a>
+              </p>
+            </div>
+            """;
+
+        return new EmailMessage(to, $"Nova mensagem sobre {videoTitle}", html, texto);
+    }
+
+    /// <summary>Aviso a quem perguntou de que a administração respondeu.</summary>
+    public static EmailMessage SupportForUser(string to, string videoTitle, string message, string link)
+    {
+        var texto = $"""
+            Você recebeu uma resposta sobre "{videoTitle}":
+
+            {Resumir(message)}
+
+            Continue a conversa na página do vídeo:
+            {link}
+            """;
+
+        var html = $"""
+            <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#212529">
+              <h1 style="font-size:20px;margin:0 0 16px">OpenTube</h1>
+              <p style="margin:0 0 8px">Você recebeu uma resposta sobre <strong>{WebUtility.HtmlEncode(videoTitle)}</strong>:</p>
+              <blockquote style="margin:0 0 24px;padding:12px 16px;border-left:3px solid #dee2e6;color:#495057;white-space:pre-wrap">{WebUtility.HtmlEncode(Resumir(message))}</blockquote>
+              <p style="margin:0">
+                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">Ver a conversa</a>
+              </p>
+            </div>
+            """;
+
+        return new EmailMessage(to, $"Resposta sobre {videoTitle}", html, texto);
+    }
+
+    /// <summary>
+    /// Trecho da mensagem para o aviso. O email leva só o começo: a conversa inteira fica na
+    /// plataforma, onde o acesso é conferido.
+    /// </summary>
+    private static string Resumir(string mensagem)
+    {
+        var texto = (mensagem ?? string.Empty).Trim();
+
+        return texto.Length <= 300 ? texto : texto[..300] + "…";
+    }
+
     public static EmailMessage AccessCode(string to, string code, string link, AuthPurpose purpose, TimeSpan validity)
     {
         var assunto = purpose switch

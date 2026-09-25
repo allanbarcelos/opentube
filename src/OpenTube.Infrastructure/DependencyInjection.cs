@@ -12,6 +12,7 @@ using OpenTube.Infrastructure.Email;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
 using OpenTube.Infrastructure.Storage;
+using OpenTube.Infrastructure.Support;
 
 namespace OpenTube.Infrastructure;
 
@@ -62,6 +63,7 @@ public static class DependencyInjection
         services.AddScoped<AnalyticsCollector>();
         services.AddScoped<AnalyticsAggregator>();
         services.AddScoped<AnalyticsQueries>();
+        services.AddScoped<SupportService>();
         services.AddScoped<VideoCatalog>();
 
         return services;

@@ -22,6 +22,8 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<PlaybackEvent> PlaybackEvents => Set<PlaybackEvent>();
     public DbSet<VideoDailyStat> VideoDailyStats => Set<VideoDailyStat>();
     public DbSet<VideoRetentionBucket> VideoRetentionBuckets => Set<VideoRetentionBucket>();
+    public DbSet<SupportThread> SupportThreads => Set<SupportThread>();
+    public DbSet<SupportMessage> SupportMessages => Set<SupportMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

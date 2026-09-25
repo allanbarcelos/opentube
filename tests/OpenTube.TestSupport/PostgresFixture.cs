@@ -29,14 +29,17 @@ public class PostgresFixture : IAsyncLifetime
 
     public async Task DisposeAsync() => await _container.DisposeAsync();
 
-    public OpenTubeDbContext CreateContext()
+    public OpenTubeDbContext CreateContext(Action<string>? log = null)
     {
-        var options = new DbContextOptionsBuilder<OpenTubeDbContext>()
+        var construtor = new DbContextOptionsBuilder<OpenTubeDbContext>()
             .UseNpgsql(ConnectionString)
-            .UseSnakeCaseNamingConvention()
-            .Options;
+            .UseSnakeCaseNamingConvention();
 
-        return new OpenTubeDbContext(options);
+        // Um teste pode pedir o SQL gerado quando precisa entender o que o EF decidiu fazer.
+        if (log is not null)
+            construtor.LogTo(log, Microsoft.Extensions.Logging.LogLevel.Information).EnableSensitiveDataLogging();
+
+        return new OpenTubeDbContext(construtor.Options);
     }
 
     /// <summary>
