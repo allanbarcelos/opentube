@@ -191,6 +191,21 @@ public class AdminVideoServiceTests(PostgresFixture postgres, MinioFixture minio
     }
 
     [Fact]
+    public async Task Nao_enfileira_outra_transcodificacao_enquanto_uma_esta_aberta()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await CriarVideoAsync(storage: storage);
+        var (servico, db, _, _) = Criar();
+        await using var _2 = db;
+
+        await servico.RequeueAsync(video.Id);
+
+        var erro = await Assert.ThrowsAsync<InvalidOperationException>(() => servico.RequeueAsync(video.Id));
+
+        Assert.Contains("já está na fila", erro.Message);
+    }
+
+    [Fact]
     public async Task Nao_reprocessa_sem_o_arquivo_original()
     {
         var video = await CriarVideoAsync();

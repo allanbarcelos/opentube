@@ -31,14 +31,14 @@ public static class SegmentAuthorizationEndpoints
 
             var caminho = EnderecoOriginal(contexto);
 
-            if (ExtrairVideo(caminho, options.Value.SegmentPath) is not { } videoId)
+            if (ExtrairSegmento(caminho, options.Value.SegmentPath) is not { } segmento)
                 return Results.Forbid();
 
             var espectador = await espectadores.GetAsync(cancellationToken);
 
-            // Só confere o acesso: um segmento não é uma visualização nova e não pode ler a
-            // playlist nem registrar uso da concessão.
-            return await playback.CanWatchAsync(videoId, espectador, cancellationToken)
+            // Não conta visualização: o bilhete da playlist principal é que autoriza o resto.
+            // A chave tem de ser a geração publicada, senão a anterior continua saindo.
+            return await playback.CanReceiveMediaAsync(segmento.VideoId, espectador, segmento.Key, cancellationToken)
                 ? Results.Ok()
                 : Results.Forbid();
         });
@@ -64,7 +64,17 @@ public static class SegmentAuthorizationEndpoints
     /// Extrai o vídeo do caminho do segmento. Devolve <c>null</c> para qualquer coisa fora do
     /// formato esperado, o que faz a autorização recusar em vez de adivinhar.
     /// </summary>
-    public static Guid? ExtrairVideo(string? caminho, string prefixo)
+    public static Guid? ExtrairVideo(string? caminho, string prefixo) =>
+        ExtrairSegmento(caminho, prefixo)?.VideoId;
+
+    /// <summary>Vídeo e chave no bucket, já sem o prefixo público do caminho.</summary>
+    public readonly record struct SegmentoPedido(Guid VideoId, string Key);
+
+    /// <summary>
+    /// Extrai o vídeo e a chave do caminho. Devolve <c>null</c> para qualquer coisa fora do
+    /// formato esperado, o que faz a autorização recusar em vez de adivinhar.
+    /// </summary>
+    public static SegmentoPedido? ExtrairSegmento(string? caminho, string prefixo)
     {
         if (string.IsNullOrWhiteSpace(caminho))
             return null;
@@ -86,6 +96,8 @@ public static class SegmentAuthorizationEndpoints
         if (partes.Any(p => p is "" or "." or ".."))
             return null;
 
-        return partes.Length >= 2 && Guid.TryParse(partes[0], out var videoId) ? videoId : null;
+        return partes.Length >= 2 && Guid.TryParse(partes[0], out var videoId)
+            ? new SegmentoPedido(videoId, string.Join('/', partes))
+            : null;
     }
 }

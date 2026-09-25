@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Services;
@@ -28,6 +30,8 @@ public class TranscodeJobHandler(
     OpenTubeDbContext db,
     IVideoStorage storage,
     TranscodePipeline pipeline,
+    IJobQueue queue,
+    IOptions<StorageOptions> storageOptions,
     TimeProvider clock,
     ILogger<TranscodeJobHandler> logger) : IJobHandler
 {
@@ -46,6 +50,22 @@ public class TranscodeJobHandler(
         if (video.IsDeleted)
         {
             logger.LogInformation("Vídeo {VideoId} foi excluído; transcodificação descartada", video.Id);
+            return;
+        }
+
+        // Dois trabalhos do mesmo vídeo apagam a geração um do outro. O de identificador
+        // menor (o mais antigo, em Guid versão 7) segue; o outro encerra sem publicar.
+        var emAndamento = await db.ProcessingJobs.AsNoTracking()
+            .Where(j => j.Id != job.Id
+                && j.Kind == JobKind.Transcode
+                && j.TargetId == video.Id
+                && j.Status == JobStatus.Running)
+            .Select(j => j.Id)
+            .ToListAsync(cancellationToken);
+
+        if (emAndamento.Any(id => id.CompareTo(job.Id) < 0))
+        {
+            logger.LogInformation("Vídeo {VideoId} já está sendo transcodificado; trabalho {JobId} encerrado", video.Id, job.Id);
             return;
         }
 
@@ -76,15 +96,19 @@ public class TranscodeJobHandler(
 
             await db.SaveChangesAsync(cancellationToken);
             publicado = true;
-
-            logger.LogInformation("Vídeo {VideoId} pronto em {Versoes} versões", video.Id, saida.Ladder.Count);
         }
         catch (Exception e)
         {
             // O desligamento do worker também cai aqui; a marcação precisa chegar ao banco
             // mesmo com o cancelamento já pedido.
             await RegistrarFalhaAsync(video, e);
-            await TentarApagarAsync(storage.DeletePrefixAsync(StorageBucket.Vod, prefixo, CancellationToken.None), prefixo);
+
+            // Só apaga o prefixo desta tentativa quando ele não é o que o banco publicou.
+            // Um save que já commitou e depois falhou no processo não pode levar a geração
+            // que acabou de entrar no ar.
+            if (!await EhOPrefixoPublicadoAsync(video.Id, prefixo))
+                await TentarApagarAsync(storage.DeletePrefixAsync(StorageBucket.Vod, prefixo, CancellationToken.None), prefixo);
+
             throw;
         }
         finally
@@ -92,9 +116,30 @@ public class TranscodeJobHandler(
             TentarApagar(trabalho.FullName);
         }
 
-        if (publicado)
-            await TentarApagarAsync(ApagarGeracoesAntigasAsync(video.Id, prefixo), StorageKeys.VodPrefix(video.Id));
+        if (!publicado)
+            return;
+
+        logger.LogInformation("Vídeo {VideoId} pronto em {Prefixo}", video.Id, prefixo);
+
+        try
+        {
+            // As URLs já assinadas da geração anterior continuam válidas até o fim do prazo.
+            // A limpeza só corre depois disso, e só se esta geração seguir sendo a publicada.
+            await queue.EnqueueAsync(
+                JobKind.RetireOutputs,
+                video.Id,
+                new RetireOutputsPayload(video.Id, prefixo),
+                storageOptions.Value.PlaybackUrlLifetime,
+                CancellationToken.None);
+        }
+        catch (Exception e)
+        {
+            logger.LogWarning(e, "Não foi possível agendar a limpeza das saídas antigas de {VideoId}", video.Id);
+        }
     }
+
+    private Task<bool> EhOPrefixoPublicadoAsync(Guid videoId, string prefixo) =>
+        db.Videos.AsNoTracking().AnyAsync(v => v.Id == videoId && v.HlsPrefix == prefixo, CancellationToken.None);
 
     /// <summary>
     /// Num vídeo que nunca ficou pronto, a falha vira estado <c>Failed</c>. Num vídeo já
@@ -114,23 +159,6 @@ public class TranscodeJobHandler(
 
         video.MarkFailed();
         await db.SaveChangesAsync(CancellationToken.None);
-    }
-
-    /// <summary>
-    /// Apaga as saídas que não pertencem à geração em uso: gerações anteriores e o layout
-    /// antigo, gravado direto na raiz do vídeo. As legendas ficam, porque não são geradas aqui.
-    /// </summary>
-    private async Task ApagarGeracoesAntigasAsync(Guid videoId, string emUso)
-    {
-        var legendas = StorageKeys.CaptionsPrefix(videoId);
-        var chaves = await storage.ListAsync(StorageBucket.Vod, StorageKeys.VodPrefix(videoId), CancellationToken.None);
-
-        var antigas = chaves
-            .Where(k => !k.StartsWith(emUso, StringComparison.Ordinal) && !k.StartsWith(legendas, StringComparison.Ordinal))
-            .ToList();
-
-        if (antigas.Count > 0)
-            await storage.DeleteKeysAsync(StorageBucket.Vod, antigas, CancellationToken.None);
     }
 
     private async Task EnviarSaidasAsync(string prefixo, TranscodeOutput saida, CancellationToken cancellationToken)

@@ -62,6 +62,16 @@ public class PlaybackService(
         if (!await limite.AllowsAnotherAsync(viewer.UserId, ipHash, cancellationToken))
             return PlaybackResult.Deny(AccessReason.TooManyStreams);
 
+        // Lê antes de contar. Se o storage falhar, a visualização não é consumida.
+        var master = await storage.GetTextAsync(StorageBucket.Vod, StorageKeys.MasterUnder(Prefixo(video)), cancellationToken);
+
+        var reescrito = HlsManifestRewriter.Rewrite(master, uri =>
+        {
+            var versao = HlsManifestRewriter.RenditionFromVariantUri(uri);
+
+            return versao is null ? uri : renditionUrl(versao);
+        });
+
         // O uso é registrado aqui, e não a cada segmento: a playlist principal é pedida uma
         // vez por reprodução, então é o ponto que corresponde a "assistiu".
         IssuedTicket? bilhete = null;
@@ -73,15 +83,6 @@ public class PlaybackService(
 
             bilhete = bilhetes.Issue(videoId, concessao, video.DurationSeconds);
         }
-
-        var master = await storage.GetTextAsync(StorageBucket.Vod, StorageKeys.MasterUnder(Prefixo(video)), cancellationToken);
-
-        var reescrito = HlsManifestRewriter.Rewrite(master, uri =>
-        {
-            var versao = HlsManifestRewriter.RenditionFromVariantUri(uri);
-
-            return versao is null ? uri : renditionUrl(versao);
-        });
 
         return PlaybackResult.Allow(resultado.Reason, reescrito, bilhete);
     }
@@ -99,8 +100,8 @@ public class PlaybackService(
     {
         var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
 
-        if (video is null || !resultado.Allowed)
-            return PlaybackResult.Deny(resultado.Reason);
+        if (video is null || !resultado.Allowed || !ContinuacaoOk(videoId, viewer, resultado))
+            return PlaybackResult.Deny(video is null || !resultado.Allowed ? resultado.Reason : AccessReason.GrantExhausted);
 
         var chave = StorageKeys.RenditionPlaylistUnder(Prefixo(video), rendition);
         var prefixo = StorageKeys.RenditionPrefixUnder(Prefixo(video), rendition);
@@ -135,16 +136,49 @@ public class PlaybackService(
     }
 
     /// <summary>
-    /// Só responde se o espectador pode assistir, sem registrar visualização, sem aplicar o
-    /// limite de reproduções simultâneas e sem ler nada do storage. É a conferência usada
-    /// pelos pedidos que fazem parte de uma reprodução já aberta: segmentos, legendas e
-    /// coleta de audiência.
+    /// Só responde se o espectador pode assistir, sem registrar visualização e sem ler o
+    /// storage. Não entrega mídia: segmentos e legendas passam por <see cref="CanReceiveMediaAsync"/>.
     /// </summary>
     public async Task<bool> CanWatchAsync(Guid videoId, Viewer viewer, CancellationToken cancellationToken = default)
     {
         var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
 
         return video is not null && resultado.Allowed;
+    }
+
+    /// <summary>
+    /// Autoriza a entrega de um arquivo já publicado. Com teto de visualizações, exige o
+    /// bilhete da reprodução contada — senão a playlist de versão, o segmento e a legenda
+    /// contornam o limite pulando a playlist principal. A chave, quando informada, tem de
+    /// estar na geração publicada ou nas legendas: uma geração substituída deixa de ser servida
+    /// mesmo que o arquivo ainda exista.
+    /// </summary>
+    public async Task<bool> CanReceiveMediaAsync(Guid videoId, Viewer viewer, string? objectKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(viewer);
+
+        var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
+
+        if (video is null || !resultado.Allowed || !ContinuacaoOk(videoId, viewer, resultado))
+            return false;
+
+        return objectKey is null || ChavePublicada(video, objectKey);
+    }
+
+    /// <summary>
+    /// Concessão com teto só entrega o resto da reprodução a quem já teve a visualização
+    /// contada. Sem isso, pedir a versão direto não passa pelo incremento.
+    /// </summary>
+    private static bool ContinuacaoOk(Guid videoId, Viewer viewer, AccessOutcome resultado) =>
+        !resultado.CountsViews || (resultado.GrantId is { } concessao && viewer.IsContinuing(videoId, concessao));
+
+    private static bool ChavePublicada(Video video, string objectKey)
+    {
+        if (string.IsNullOrWhiteSpace(objectKey) || objectKey.Contains("..", StringComparison.Ordinal))
+            return false;
+
+        return objectKey.StartsWith(Prefixo(video), StringComparison.Ordinal)
+            || objectKey.StartsWith(StorageKeys.CaptionsPrefix(video.Id), StringComparison.Ordinal);
     }
 
     /// <summary>

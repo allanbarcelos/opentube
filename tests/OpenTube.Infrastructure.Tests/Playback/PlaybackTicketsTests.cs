@@ -70,6 +70,15 @@ public class PlaybackTicketsTests
         Assert.Null(Criar("outro-segredo").Validate(bilhete.CookieName, bilhete.Value));
     }
 
+    [Fact]
+    public void Ignora_prazo_fora_do_intervalo()
+    {
+        var nome = PlaybackTickets.CookiePrefix + Video.ToString("n");
+        var valor = string.Join('.', Concessao.ToString("n"), long.MaxValue.ToString(), "assinatura");
+
+        Assert.Null(Criar().Validate(nome, valor));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("lixo")]

@@ -242,7 +242,51 @@ public class PlaybackServiceTests(PostgresFixture postgres, MinioFixture minio) 
         var continuando = ComBilhete(espectador, master.Ticket);
 
         Assert.True((await servico.GetRenditionAsync(video.Id, "360p", continuando)).Allowed);
+        Assert.True(await servico.CanReceiveMediaAsync(video.Id, continuando, $"{video.Id}/360p/seg.m4s"));
         Assert.True(await servico.CanWatchAsync(video.Id, continuando));
+    }
+
+    [Fact]
+    public async Task Versao_e_segmento_sem_bilhete_nao_contornam_o_limite()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PublicarAsync(storage, VideoVisibility.Restricted);
+        var (concessao, espectador) = await LinkAsync(video, maxViews: 3);
+        await using var db = postgres.CreateContext();
+        var servico = Criar(db, storage);
+
+        Assert.False((await servico.GetRenditionAsync(video.Id, "360p", espectador)).Allowed);
+        Assert.False(await servico.CanReceiveMediaAsync(video.Id, espectador, $"{video.Id}/360p/seg.m4s"));
+
+        await using var leitura = postgres.CreateContext();
+        Assert.Equal(0, (await leitura.AccessGrants.FindAsync(concessao.Id))!.ViewsUsed);
+    }
+
+    [Fact]
+    public async Task Segmento_fora_da_geracao_publicada_nao_e_servido()
+    {
+        using var storage = minio.CreateStorage();
+        var videoId = Guid.CreateVersion7();
+        var atual = StorageKeys.OutputPrefix(videoId, Guid.CreateVersion7());
+        var antiga = StorageKeys.OutputPrefix(videoId, Guid.CreateVersion7());
+
+        await using (var gravacao = postgres.CreateContext())
+        {
+            var video = Video.CreateDraft("Geração", $"geracao-{videoId:n}"[..30], "originals/a.mp4", Guid.CreateVersion7(), Agora, id: videoId);
+            video.MarkUploaded(1024);
+            video.StartProcessing();
+            video.MarkReady(atual, 120, 640, 360, null, null, Agora);
+            video.ChangeVisibility(VideoVisibility.Public);
+            gravacao.Videos.Add(video);
+            await gravacao.SaveChangesAsync();
+        }
+
+        await using var db = postgres.CreateContext();
+        var servico = Criar(db, storage);
+
+        Assert.True(await servico.CanReceiveMediaAsync(videoId, Viewer.Anonymous, atual + "360p/seg.m4s"));
+        Assert.True(await servico.CanReceiveMediaAsync(videoId, Viewer.Anonymous, StorageKeys.Caption(videoId, "pt")));
+        Assert.False(await servico.CanReceiveMediaAsync(videoId, Viewer.Anonymous, antiga + "360p/seg.m4s"));
     }
 
     [Fact]

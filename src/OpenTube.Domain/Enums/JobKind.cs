@@ -13,5 +13,8 @@ public enum JobKind
     AnalyticsRollup = 2,
 
     /// <summary>Remoção dos arquivos de um vídeo excluído.</summary>
-    StorageCleanup = 3
+    StorageCleanup = 3,
+
+    /// <summary>Remoção das gerações de saída que deixaram de ser a publicada.</summary>
+    RetireOutputs = 4
 }

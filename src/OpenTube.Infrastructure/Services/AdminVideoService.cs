@@ -92,6 +92,9 @@ public class AdminVideoService(
         if (!await storage.ExistsAsync(StorageBucket.Originals, video.OriginalKey, cancellationToken))
             throw new InvalidOperationException("O arquivo original não está mais no storage.");
 
+        if (await TranscodificacaoEmAbertoAsync(video.Id, cancellationToken))
+            throw new InvalidOperationException("Este vídeo já está na fila de transcodificação.");
+
         var jobId = await queue.EnqueueAsync(
             JobKind.Transcode,
             video.Id,
@@ -106,6 +109,13 @@ public class AdminVideoService(
     /// <summary>Contagem de trabalhos por estado, exibida no painel.</summary>
     public Task<IReadOnlyDictionary<JobStatus, int>> QueueSummaryAsync(CancellationToken cancellationToken = default) =>
         queue.CountByStatusAsync(cancellationToken);
+
+    private Task<bool> TranscodificacaoEmAbertoAsync(Guid videoId, CancellationToken cancellationToken) =>
+        db.ProcessingJobs.AnyAsync(j =>
+            j.Kind == JobKind.Transcode
+            && j.TargetId == videoId
+            && (j.Status == JobStatus.Pending || j.Status == JobStatus.Running),
+            cancellationToken);
 
     private async Task<Video> CarregarAsync(Guid videoId, CancellationToken cancellationToken) =>
         await db.Videos.FirstOrDefaultAsync(v => v.Id == videoId, cancellationToken)

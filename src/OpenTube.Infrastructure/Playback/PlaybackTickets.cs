@@ -63,7 +63,19 @@ public class PlaybackTickets(IOptions<SecurityOptions> options, TimeProvider clo
             || !long.TryParse(partes[1], NumberStyles.None, CultureInfo.InvariantCulture, out var expira))
             return null;
 
-        if (DateTimeOffset.FromUnixTimeSeconds(expira) <= clock.GetUtcNow())
+        // Um prazo fora do intervalo do relógio é lixo, como uma assinatura errada: não pode
+        // derrubar o pedido inteiro só porque o cookie veio malformado.
+        DateTimeOffset instante;
+        try
+        {
+            instante = DateTimeOffset.FromUnixTimeSeconds(expira);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+
+        if (instante <= clock.GetUtcNow())
             return null;
 
         return TokenHasher.Verify(Conteudo(videoId, grantId, expira), Base64Padrao(partes[2]), _options.TokenPepper)

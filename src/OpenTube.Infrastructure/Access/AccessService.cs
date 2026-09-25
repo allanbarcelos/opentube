@@ -12,7 +12,8 @@ namespace OpenTube.Infrastructure.Access;
 /// <summary>Decisão de acesso junto com a concessão que a sustentou.</summary>
 /// <param name="Decision">Resultado da avaliação.</param>
 /// <param name="GrantId">Concessão usada, quando o acesso veio de uma.</param>
-public readonly record struct AccessOutcome(AccessDecision Decision, Guid? GrantId)
+/// <param name="CountsViews">A concessão tem teto de visualizações. A mídia só segue depois que uma reprodução foi contada.</param>
+public readonly record struct AccessOutcome(AccessDecision Decision, Guid? GrantId, bool CountsViews = false)
 {
     public bool Allowed => Decision.Allowed;
 
@@ -69,7 +70,7 @@ public class AccessService(OpenTubeDbContext db, IOptions<SecurityOptions> optio
         // contar visualizações no limite configurado.
         var usada = concessoes.FirstOrDefault(g => AccessPolicy.CanWatch(viewer, video, [g], colecoes, agora));
 
-        return new AccessOutcome(decisao, usada?.Id);
+        return new AccessOutcome(decisao, usada?.Id, usada?.MaxViews is not null);
     }
 
     /// <summary>Coleções às quais o vídeo pertence.</summary>

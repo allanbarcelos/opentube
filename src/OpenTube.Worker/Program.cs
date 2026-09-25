@@ -19,6 +19,7 @@ builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
 builder.Services.AddScoped<IMediaProbe, FfprobeMediaProbe>();
 builder.Services.AddScoped<TranscodePipeline>();
 builder.Services.AddScoped<IJobHandler, TranscodeJobHandler>();
+builder.Services.AddScoped<IJobHandler, RetireOutputsJobHandler>();
 builder.Services.AddScoped<IJobHandler, AnalyticsRollupJobHandler>();
 builder.Services.AddScoped<ITranscriber, CommandLineTranscriber>();
 builder.Services.AddScoped<IJobHandler, TranscriptionJobHandler>();

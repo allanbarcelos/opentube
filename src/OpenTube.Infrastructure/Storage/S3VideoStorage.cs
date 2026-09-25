@@ -311,11 +311,17 @@ public class S3VideoStorage : IVideoStorage, IDisposable
         // A API apaga no máximo mil objetos por chamada.
         foreach (var lote in chaves.Chunk(1000))
         {
-            await _client.DeleteObjectsAsync(new DeleteObjectsRequest
+            var resposta = await _client.DeleteObjectsAsync(new DeleteObjectsRequest
             {
                 BucketName = BucketName(bucket),
                 Objects = [.. lote.Select(k => new KeyVersion { Key = k })]
             }, cancellationToken);
+
+            // O storage responde 200 mesmo quando uma chave do lote falha. Tratar isso como
+            // sucesso faria a limpeza achar que a geração antiga sumiu.
+            if (resposta.DeleteErrors is { Count: > 0 })
+                throw new InvalidOperationException(
+                    $"O storage não apagou {resposta.DeleteErrors.Count} objeto(s); o primeiro foi {resposta.DeleteErrors[0].Key}.");
         }
 
         return chaves.Count;

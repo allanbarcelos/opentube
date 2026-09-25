@@ -31,6 +31,11 @@ public sealed record UploadTicket(
 /// <param name="OriginalKey">Arquivo de origem no bucket de originais.</param>
 public sealed record TranscodePayload(Guid VideoId, string OriginalKey);
 
+/// <summary>Geração publicada cuja saída antiga pode ser apagada quando o prazo das URLs vencer.</summary>
+/// <param name="VideoId">Vídeo dono das saídas.</param>
+/// <param name="Prefix">Prefixo que precisa continuar sendo o publicado para a limpeza valer.</param>
+public sealed record RetireOutputsPayload(Guid VideoId, string Prefix);
+
 /// <summary>
 /// Conduz o envio de um vídeo: cria o registro, abre o envio multipart, assina os pedaços e,
 /// ao fim, enfileira a transcodificação. O arquivo nunca passa pela aplicação.

@@ -48,7 +48,20 @@ public class TranscodeJobHandlerTests(PostgresFixture postgres, MinioFixture min
         var opcoes = Microsoft.Extensions.Options.Options.Create(new MediaToolOptions());
         var pipeline = new TranscodePipeline(runner, new FfprobeMediaProbe(runner, opcoes), opcoes, NullLogger<TranscodePipeline>.Instance);
 
-        return new TranscodeJobHandler(db, storage, pipeline, _relogio, NullLogger<TranscodeJobHandler>.Instance);
+        return new TranscodeJobHandler(
+            db,
+            storage,
+            pipeline,
+            new PostgresJobQueue(db, _relogio),
+            Microsoft.Extensions.Options.Options.Create(new OpenTube.Infrastructure.Options.StorageOptions
+            {
+                Endpoint = "http://localhost:9000",
+                AccessKey = "teste",
+                SecretKey = "teste",
+                PlaybackUrlLifetime = TimeSpan.FromHours(8)
+            }),
+            _relogio,
+            NullLogger<TranscodeJobHandler>.Instance);
     }
 
     private async Task<Video> PrepararVideoAsync(IVideoStorage storage, double segundos = 5, int largura = 640, int altura = 360)
@@ -145,6 +158,54 @@ public class TranscodeJobHandlerTests(PostgresFixture postgres, MinioFixture min
         return (await leitura.Videos.SingleAsync(v => v.Id == videoId)).HlsPrefix!;
     }
 
+    [Fact]
+    public async Task Limpeza_atrasada_preserva_a_geracao_que_ainda_esta_publicada()
+    {
+        using var storage = minio.CreateStorage();
+        var videoId = Guid.CreateVersion7();
+        var publicada = StorageKeys.OutputPrefix(videoId, Guid.CreateVersion7());
+        var antiga = StorageKeys.OutputPrefix(videoId, Guid.CreateVersion7());
+
+        await storage.PutTextAsync(StorageBucket.Vod, StorageKeys.MasterUnder(publicada), "#EXTM3U", MediaTypes.HlsPlaylist);
+        await storage.PutTextAsync(StorageBucket.Vod, StorageKeys.MasterUnder(antiga), "#EXTM3U", MediaTypes.HlsPlaylist);
+        await storage.PutTextAsync(StorageBucket.Vod, StorageKeys.Caption(videoId, "pt"), "WEBVTT", MediaTypes.WebVtt);
+
+        await using (var db = postgres.CreateContext())
+        {
+            var video = Video.CreateDraft("Limpeza", $"limpeza-{videoId:n}"[..30], "originals/a.mp4", Admin, Agora, id: videoId);
+            video.MarkUploaded(10);
+            video.StartProcessing();
+            video.MarkReady(publicada, 4, 640, 360, null, null, Agora);
+            db.Videos.Add(video);
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = postgres.CreateContext())
+        {
+            var limpeza = new RetireOutputsJobHandler(db, storage, NullLogger<RetireOutputsJobHandler>.Instance);
+
+            await limpeza.HandleAsync(TrabalhoDeLimpeza(videoId, antiga));
+
+            Assert.True(await storage.ExistsAsync(StorageBucket.Vod, StorageKeys.MasterUnder(antiga)));
+
+            await limpeza.HandleAsync(TrabalhoDeLimpeza(videoId, publicada));
+        }
+
+        Assert.True(await storage.ExistsAsync(StorageBucket.Vod, StorageKeys.MasterUnder(publicada)));
+        Assert.False(await storage.ExistsAsync(StorageBucket.Vod, StorageKeys.MasterUnder(antiga)));
+        Assert.True(await storage.ExistsAsync(StorageBucket.Vod, StorageKeys.Caption(videoId, "pt")));
+    }
+
+    private static QueuedJob TrabalhoDeLimpeza(Guid videoId, string prefixo) =>
+        new(
+            Guid.CreateVersion7(),
+            JobKind.RetireOutputs,
+            videoId,
+            System.Text.Json.JsonSerializer.Serialize(
+                new RetireOutputsPayload(videoId, prefixo),
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)),
+            1);
+
     [FfmpegFact]
     public async Task Reprocessar_troca_a_geracao_e_apaga_as_anteriores_sem_tocar_nas_legendas()
     {
@@ -165,9 +226,27 @@ public class TranscodeJobHandlerTests(PostgresFixture postgres, MinioFixture min
             await Criar(db, storage).HandleAsync(Job(video));
 
         var atual = await PrefixoEmUsoAsync(video.Id);
-        var chaves = await storage.ListAsync(StorageBucket.Vod, StorageKeys.VodPrefix(video.Id));
+        var antesDaLimpeza = await storage.ListAsync(StorageBucket.Vod, StorageKeys.VodPrefix(video.Id));
 
         Assert.NotEqual(anterior, atual);
+        Assert.Contains(antesDaLimpeza, k => k.StartsWith(anterior, StringComparison.Ordinal));
+        Assert.Contains(StorageKeys.Caption(video.Id, "pt"), antesDaLimpeza);
+
+        await using (var db = postgres.CreateContext())
+        {
+            var limpeza = new RetireOutputsJobHandler(db, storage, NullLogger<RetireOutputsJobHandler>.Instance);
+            var trabalhos = await db.ProcessingJobs
+                .Where(j => j.Kind == JobKind.RetireOutputs && j.TargetId == video.Id)
+                .ToListAsync();
+
+            foreach (var trabalho in trabalhos)
+            {
+                await limpeza.HandleAsync(new QueuedJob(trabalho.Id, trabalho.Kind, trabalho.TargetId, trabalho.Payload, 1));
+            }
+        }
+
+        var chaves = await storage.ListAsync(StorageBucket.Vod, StorageKeys.VodPrefix(video.Id));
+
         Assert.DoesNotContain(chaves, k => k.StartsWith(anterior, StringComparison.Ordinal));
         Assert.DoesNotContain(chaves, k => k.Contains("2160p"));
         Assert.Contains(StorageKeys.MasterUnder(atual), chaves);
