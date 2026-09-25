@@ -1,0 +1,29 @@
+# Build
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Ambiente
+.env
+*.local.json
+appsettings.Development.local.json
+
+# Dados locais
+data/
+storage/
+TestResults/
+coverage/
+*.trx

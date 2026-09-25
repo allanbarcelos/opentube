@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenTube.Domain/OpenTube.Domain.csproj" />
+    <Project Path="src/OpenTube.Infrastructure/OpenTube.Infrastructure.csproj" />
+    <Project Path="src/OpenTube.Shared/OpenTube.Shared.csproj" />
+    <Project Path="src/OpenTube.Web/OpenTube.Web.csproj" />
+    <Project Path="src/OpenTube.Worker/OpenTube.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenTube.Domain.Tests/OpenTube.Domain.Tests.csproj" />
+    <Project Path="tests/OpenTube.Infrastructure.Tests/OpenTube.Infrastructure.Tests.csproj" />
+    <Project Path="tests/OpenTube.Web.Tests/OpenTube.Web.Tests.csproj" />
+    <Project Path="tests/OpenTube.Worker.Tests/OpenTube.Worker.Tests.csproj" />
+  </Folder>
+</Solution>
