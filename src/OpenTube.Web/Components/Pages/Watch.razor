@@ -3,6 +3,7 @@
 @using OpenTube.Infrastructure.Playback
 @inject VideoCatalog Catalogo
 @inject CurrentViewer Espectadores
+@inject OpenTube.Infrastructure.Services.CaptionService Legendas
 @inject Microsoft.Extensions.Options.IOptions<OpenTube.Infrastructure.Options.SecurityOptions> Seguranca
 @inject NavigationManager Navegacao
 
@@ -26,7 +27,13 @@
             <div class="col-lg-8">
                 <div class="player-shell rounded overflow-hidden shadow-sm position-relative">
                     <video id="player-video" controls playsinline preload="metadata"
-                           poster="/api/videos/@Video.Id/miniatura"></video>
+                           poster="/api/videos/@Video.Id/miniatura" crossorigin="use-credentials">
+                        @foreach (var legenda in ListaDeLegendas)
+                        {
+                            <track kind="subtitles" src="/api/videos/@Video.Id/legendas/@(legenda.Id).vtt"
+                                   srclang="@legenda.Language" label="@(legenda.Label ?? legenda.Language)" />
+                        }
+                    </video>
 
                     @if (!string.IsNullOrWhiteSpace(MarcaDagua))
                     {
@@ -103,6 +110,8 @@
     /// </summary>
     private string? MarcaDagua;
 
+    private IReadOnlyList<OpenTube.Domain.Entities.VideoAsset> ListaDeLegendas = [];
+
     private string DuracaoTexto
     {
         get
@@ -119,6 +128,9 @@
     {
         Espectador = await Espectadores.GetAsync(Http.RequestAborted);
         Video = await Catalogo.FindBySlugAsync(Espectador, Slug, Http.RequestAborted);
+
+        if (Video is not null)
+            ListaDeLegendas = await Legendas.ListAsync(Video.Id, Http.RequestAborted);
 
         if (Seguranca.Value.WatermarkEnabled && Espectador.IsAuthenticated)
             MarcaDagua = Espectador.Email;

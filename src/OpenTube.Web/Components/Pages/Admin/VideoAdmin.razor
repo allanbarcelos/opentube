@@ -3,6 +3,7 @@
 @using OpenTube.Infrastructure.Services
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject AdminVideoService Admin
+@inject OpenTube.Infrastructure.Services.CaptionService Legendas
 @inject ShareLinkFlash Links
 @inject NavigationManager Navegacao
 
@@ -47,6 +48,16 @@
         @if (Revogado)
         {
             <div class="alert alert-success" role="status">Acesso revogado.</div>
+        }
+        @if (LegendaEnviada)
+        {
+            <div class="alert alert-success" role="status">Legenda enviada.</div>
+        }
+        @if (Transcrevendo)
+        {
+            <div class="alert alert-success" role="status">
+                Transcrição na fila. A legenda aparece aqui quando terminar.
+            </div>
         }
         @if (!string.IsNullOrWhiteSpace(LinkCriado))
         {
@@ -181,6 +192,69 @@
                     </div>
                 </div>
 
+                <div class="card mb-3">
+                    <div class="card-header">Legendas</div>
+
+                    @if (ListaDeLegendas.Count == 0)
+                    {
+                        <div class="card-body text-body-secondary small">
+                            Nenhuma legenda ainda. Envie um arquivo ou gere a partir da fala.
+                        </div>
+                    }
+                    else
+                    {
+                        <ul class="list-group list-group-flush">
+                            @foreach (var legenda in ListaDeLegendas)
+                            {
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <span>
+                                        @legenda.Label
+                                        <span class="d-block small text-body-secondary">@legenda.Language</span>
+                                    </span>
+                                    <form method="post" action="/admin/videos/@Video.Id/legendas/@legenda.Id/excluir">
+                                        <AntiforgeryToken />
+                                        <button class="btn btn-sm btn-outline-secondary" type="submit">Remover</button>
+                                    </form>
+                                </li>
+                            }
+                        </ul>
+                    }
+
+                    <div class="card-body border-top">
+                        <form method="post" action="/admin/videos/@Video.Id/legendas" enctype="multipart/form-data">
+                            <AntiforgeryToken />
+
+                            <div class="mb-2">
+                                <label class="form-label small" for="arquivo-legenda">Arquivo WebVTT</label>
+                                <input class="form-control form-control-sm" id="arquivo-legenda" name="arquivo"
+                                       type="file" accept=".vtt,text/vtt" required />
+                            </div>
+
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <label class="form-label small" for="idioma">Idioma</label>
+                                    <input class="form-control form-control-sm" id="idioma" name="idioma"
+                                           value="pt-BR" maxlength="20" required />
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small" for="rotulo">Rótulo</label>
+                                    <input class="form-control form-control-sm" id="rotulo" name="rotulo"
+                                           placeholder="Português" maxlength="120" />
+                                </div>
+                            </div>
+
+                            <button class="btn btn-sm btn-outline-primary w-100" type="submit">Enviar legenda</button>
+                        </form>
+
+                        <form method="post" action="/admin/videos/@Video.Id/legendas/transcrever" class="mt-2">
+                            <AntiforgeryToken />
+                            <button class="btn btn-sm btn-outline-secondary w-100" type="submit">
+                                Gerar a partir da fala
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
                 @if (!Video.IsDeleted)
                 {
                     <div class="card border-danger">
@@ -244,6 +318,15 @@
     [SupplyParameterFromQuery(Name = "aba")]
     private string? Aba { get; set; }
 
+    [SupplyParameterFromQuery(Name = "legenda")]
+    private string? LegendaBruta { get; set; }
+
+    [SupplyParameterFromQuery(Name = "transcrevendo")]
+    private string? TranscrevendoBruto { get; set; }
+
+    private bool LegendaEnviada => LegendaBruta == "1";
+    private bool Transcrevendo => TranscrevendoBruto == "1";
+
     private bool MostrarAudiencia => Aba == "audiencia";
 
     private int Convidados => ConvidadosBruto ?? 0;
@@ -256,6 +339,8 @@
     private bool Restaurado => RestauradoBruto == "1";
 
     private Video? Video;
+
+    private IReadOnlyList<VideoAsset> ListaDeLegendas = [];
 
     private string EstadoTexto => Video?.Status switch
     {
@@ -316,6 +401,11 @@
         Video = await Admin.FindAsync(VideoId, Http.RequestAborted);
 
         if (Video is null)
+        {
             Navegacao.NotFound();
+            return;
+        }
+
+        ListaDeLegendas = await Legendas.ListAsync(VideoId, Http.RequestAborted);
     }
 }
