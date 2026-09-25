@@ -1,0 +1,263 @@
+@page "/admin/dominios/{domainId:guid}"
+@using OpenTube.Domain.Entities
+@using OpenTube.Infrastructure.Access
+@using OpenTube.Infrastructure.Domains
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject DomainService Servico
+@inject GrantService Concessoes
+@inject NavigationManager Navegacao
+
+<PageTitle>@(Dominio?.Name ?? "Domínio") — Administração</PageTitle>
+
+<div class="container py-4">
+    @if (Dominio is null)
+    {
+        @* A navegação já foi desviada para a página de não encontrado. *@
+    }
+    else
+    {
+        <nav aria-label="Trilha de navegação">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/admin">Administração</a></li>
+                <li class="breadcrumb-item"><a href="/admin/dominios">Domínios</a></li>
+                <li class="breadcrumb-item active" aria-current="page">@Dominio.Name</li>
+            </ol>
+        </nav>
+
+        @foreach (var aviso in Avisos)
+        {
+            <div class="alert alert-success" role="status">@aviso</div>
+        }
+        @if (Falhou)
+        {
+            <div class="alert alert-warning" role="alert">
+                O registro ainda não foi encontrado. A propagação do DNS pode levar alguns minutos.
+            </div>
+        }
+        @if (SemResponsavel)
+        {
+            <div class="alert alert-warning" role="alert">
+                Cadastre o email do responsável antes de enviar o link.
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Erro))
+        {
+            <div class="alert alert-danger" role="alert">@Erro</div>
+        }
+
+        <div class="row g-4">
+            <div class="col-lg-7">
+                @if (!Dominio.IsVerified)
+                {
+                    <div class="card border-warning mb-4">
+                        <div class="card-header">Comprovar a posse do domínio</div>
+                        <div class="card-body">
+                            <p>Publique este registro no DNS de <strong>@Dominio.Name</strong>:</p>
+
+                            <dl class="row mb-3">
+                                <dt class="col-sm-3">Tipo</dt>
+                                <dd class="col-sm-9"><code>TXT</code></dd>
+
+                                <dt class="col-sm-3">Nome</dt>
+                                <dd class="col-sm-9"><code class="user-select-all">@Dominio.VerificationRecordName</code></dd>
+
+                                <dt class="col-sm-3">Valor</dt>
+                                <dd class="col-sm-9"><code class="user-select-all">@Dominio.ExpectedRecordValue</code></dd>
+                            </dl>
+
+                            <div class="d-flex gap-2">
+                                <form method="post" action="/admin/dominios/@Dominio.Id/verificar">
+                                    <AntiforgeryToken />
+                                    <button class="btn btn-primary" type="submit">Já publiquei, verificar</button>
+                                </form>
+
+                                <form method="post" action="/admin/dominios/@Dominio.Id/reemitir">
+                                    <AntiforgeryToken />
+                                    <button class="btn btn-outline-secondary" type="submit">Gerar outro token</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span>Porta de entrada</span>
+                            <span class="badge @(Dominio.EntryAvailable ? "text-bg-success" : "text-bg-secondary")">
+                                @(Dominio.EntryAvailable ? "No ar" : "Fechada")
+                            </span>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-2">Endereço para repassar às pessoas do domínio:</p>
+                            <input class="form-control font-monospace mb-3" value="@Endereco" readonly
+                                   onclick="this.select()" aria-label="Endereço da porta de entrada" />
+
+                            <form method="post" action="/admin/dominios/@Dominio.Id/enviar-link">
+                                <AntiforgeryToken />
+                                <button class="btn btn-outline-primary" type="submit"
+                                        disabled="@(Dominio.ContactEmail is null)">
+                                    Enviar ao responsável
+                                </button>
+                                @if (Dominio.ContactEmail is not null)
+                                {
+                                    <span class="ms-2 small text-body-secondary">@Dominio.ContactEmail</span>
+                                }
+                            </form>
+                        </div>
+                    </div>
+                }
+
+                <div class="card">
+                    <div class="card-header">Quem do domínio já tem acesso</div>
+
+                    @if (ConcessoesDoDominio.Count == 0)
+                    {
+                        <div class="card-body text-body-secondary">
+                            Nenhuma concessão para este domínio ainda. Conceda na página de um vídeo
+                            ou de uma coleção; a porta de entrada sozinha não libera conteúdo.
+                        </div>
+                    }
+                    else
+                    {
+                        <ul class="list-group list-group-flush">
+                            @foreach (var concessao in ConcessoesDoDominio)
+                            {
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>@AlvoTexto(concessao)</span>
+                                    <span class="small text-body-secondary">
+                                        @(concessao.IsRevoked ? "revogada" : "em vigor")
+                                    </span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="card">
+                    <div class="card-header">Configuração</div>
+                    <div class="card-body">
+                        <form method="post" action="/admin/dominios/@Dominio.Id/salvar">
+                            <AntiforgeryToken />
+
+                            <div class="mb-3">
+                                <label class="form-label" for="endereco">Endereço da porta</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">/d/</span>
+                                    <input class="form-control" id="endereco" name="endereco"
+                                           value="@Dominio.EntrySlug" maxlength="120" />
+                                </div>
+                                <div class="form-text">
+                                    Troque por um valor não adivinhável se não quiser que o endereço revele
+                                    que a organização usa a plataforma.
+                                </div>
+                            </div>
+
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="portaAtiva" name="portaAtiva"
+                                       checked="@Dominio.EntryEnabled" />
+                                <label class="form-check-label" for="portaAtiva">Porta de entrada no ar</label>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label" for="permitidos">Endereços permitidos</label>
+                                <textarea class="form-control" id="permitidos" name="permitidos" rows="3"
+                                          placeholder="deixe vazio para aceitar qualquer email do domínio">@string.Join(", ", Dominio.AllowedEmails)</textarea>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label" for="responsavel">Email do responsável</label>
+                                <input class="form-control" id="responsavel" name="responsavel" type="email"
+                                       value="@Dominio.ContactEmail" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label" for="nota">Anotação</label>
+                                <input class="form-control" id="nota" name="nota" maxlength="500"
+                                       value="@Dominio.Note" />
+                            </div>
+
+                            <button class="btn btn-primary w-100" type="submit">Salvar</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [Parameter]
+    public Guid DomainId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "cadastrado")]
+    private string? Cadastrado { get; set; }
+
+    [SupplyParameterFromQuery(Name = "verificado")]
+    private string? Verificado { get; set; }
+
+    [SupplyParameterFromQuery(Name = "reemitido")]
+    private string? Reemitido { get; set; }
+
+    [SupplyParameterFromQuery(Name = "salvo")]
+    private string? Salvo { get; set; }
+
+    [SupplyParameterFromQuery(Name = "linkEnviado")]
+    private string? LinkEnviado { get; set; }
+
+    [SupplyParameterFromQuery(Name = "falhou")]
+    private string? FalhouBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "semResponsavel")]
+    private string? SemResponsavelBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "erro")]
+    private string? Erro { get; set; }
+
+    private bool Falhou => FalhouBruto == "1";
+    private bool SemResponsavel => SemResponsavelBruto == "1";
+
+    private VerifiedDomain? Dominio;
+
+    private string Endereco = string.Empty;
+
+    private IReadOnlyList<AccessGrant> ConcessoesDoDominio = [];
+
+    private IEnumerable<string> Avisos
+    {
+        get
+        {
+            if (Cadastrado == "1") yield return "Domínio cadastrado. Publique o registro DNS para comprovar a posse.";
+            if (Verificado == "1") yield return "Domínio verificado. A porta de entrada está no ar.";
+            if (Reemitido == "1") yield return "Token reemitido. Publique o novo valor e verifique de novo.";
+            if (Salvo == "1") yield return "Configuração salva.";
+            if (LinkEnviado == "1") yield return "Link enviado ao responsável.";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Dominio = await Servico.FindAsync(DomainId, Http.RequestAborted);
+
+        if (Dominio is null)
+        {
+            Navegacao.NotFound();
+            return;
+        }
+
+        Endereco = Servico.EntryUrl(Dominio);
+        ConcessoesDoDominio = await Concessoes.ListForDomainAsync(Dominio.Name, Http.RequestAborted);
+    }
+
+    private static string AlvoTexto(AccessGrant concessao) => concessao.TargetType switch
+    {
+        OpenTube.Domain.Enums.GrantTargetType.All => "Todo o acervo",
+        OpenTube.Domain.Enums.GrantTargetType.Collection => "Uma coleção",
+        _ => "Um vídeo"
+    };
+}

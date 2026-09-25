@@ -227,6 +227,18 @@ public class GrantService(
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>Concessões cujo sujeito é um domínio, usadas na página do domínio.</summary>
+    public Task<List<AccessGrant>> ListForDomainAsync(string domain, CancellationToken cancellationToken = default)
+    {
+        var normalizado = (domain ?? string.Empty).Trim().ToLowerInvariant();
+
+        return db.AccessGrants
+            .AsNoTracking()
+            .Where(g => g.SubjectType == GrantSubjectType.Domain && g.SubjectValue == normalizado)
+            .OrderByDescending(g => g.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
     private Task<AccessGrant?> ExistenteAsync(
         GrantSubjectType tipo, string valor, GrantTargetType alvo, Guid? alvoId, CancellationToken cancellationToken) =>
         db.AccessGrants.FirstOrDefaultAsync(

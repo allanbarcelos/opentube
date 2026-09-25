@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using OpenTube.Infrastructure.Domains;
 using OpenTube.Infrastructure.Email;
 using OpenTube.TestSupport;
 
@@ -16,6 +17,9 @@ public class OpenTubeWebFactory(PostgresFixture postgres, MinioFixture minio, pa
     : WebApplicationFactory<Program>
 {
     public FakeEmailSender Emails { get; } = new();
+
+    /// <summary>Consulta de DNS controlada pelo teste, no lugar da consulta real.</summary>
+    public FakeDnsTxtLookup Dns { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -40,6 +44,9 @@ public class OpenTubeWebFactory(PostgresFixture postgres, MinioFixture minio, pa
         {
             servicos.RemoveAll<IEmailSender>();
             servicos.AddSingleton<IEmailSender>(Emails);
+
+            servicos.RemoveAll<IDnsTxtLookup>();
+            servicos.AddSingleton<IDnsTxtLookup>(Dns);
         });
     }
 
