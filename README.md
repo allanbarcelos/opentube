@@ -283,9 +283,21 @@ the password on first initialization. `make clean` deletes that volume so the da
 
 ### Production
 
+Install:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/allanbarcelos/opentube/main/install.sh | sudo bash
+curl -fsSL https://gist.githubusercontent.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a/raw/opentube-install.sh | sudo bash
 ```
+
+Uninstall:
+
+```bash
+curl -fsSL https://gist.githubusercontent.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a/raw/opentube-uninstall.sh | sudo bash
+```
+
+Both scripts come from the [install gist](https://gist.github.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a),
+kept in sync with `install.sh` and `uninstall.sh` on every push to `main`. The questions are
+asked on the terminal even when the script arrives through the pipe.
 
 The published images are `ghcr.io/allanbarcelos/opentube/app` and
 `ghcr.io/allanbarcelos/opentube/worker` (`latest`, the commit SHA, and `app-vA.B.C.D` /
@@ -298,8 +310,8 @@ printed to the terminal; copy it and keep it safe. Running it again does not rep
 already exist.
 
 The environment inside the containers is `Production`. To pick up newly published images, run
-`/opt/<name>/scripts/update.sh`. To remove what the installer created: `sudo bash uninstall.sh`
-(or the `opentube-uninstall.sh` copy published to the install gist).
+`/opt/<name>/scripts/update.sh`. To remove what the installer created, use the uninstall
+command above (or `sudo bash uninstall.sh` from a checkout).
 
 Pushing `main` builds `ghcr.io/allanbarcelos/opentube/app` and `worker` after the tests, and
 publishes `install.sh` and `uninstall.sh` to the gist named by the `GIST_ID` repository

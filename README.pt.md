@@ -277,9 +277,21 @@ senha na primeira inicialização. `make clean` apaga esse volume para o banco n
 
 ### Produção
 
+Instalar:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/allanbarcelos/opentube/main/install.sh | sudo bash
+curl -fsSL https://gist.githubusercontent.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a/raw/opentube-install.sh | sudo bash
 ```
+
+Desinstalar:
+
+```bash
+curl -fsSL https://gist.githubusercontent.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a/raw/opentube-uninstall.sh | sudo bash
+```
+
+Os dois scripts vêm do [gist de instalação](https://gist.github.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a),
+mantido em sincronia com o `install.sh` e o `uninstall.sh` a cada push no `main`. As perguntas
+são feitas no terminal mesmo quando o script chega pelo pipe.
 
 As imagens publicadas são `ghcr.io/allanbarcelos/opentube/app` e
 `ghcr.io/allanbarcelos/opentube/worker` (`latest`, o SHA do commit e `app-vA.B.C.D` /
@@ -291,8 +303,8 @@ do Swarm. Nada disso vai para o disco nem para o repositório. Na primeira vez o
 impresso no terminal; copie e guarde. Rodar de novo não troca segredo que já existe.
 
 O ambiente dentro dos containers é `Production`. Para receber imagens recém-publicadas, rode
-`/opt/<nome>/scripts/update.sh`. Para remover o que o instalador criou: `sudo bash uninstall.sh`
-(ou a cópia `opentube-uninstall.sh` publicada no gist de instalação).
+`/opt/<nome>/scripts/update.sh`. Para remover o que o instalador criou, use o comando de
+desinstalação acima (ou `sudo bash uninstall.sh` a partir de um checkout).
 
 Um push no `main` compila `ghcr.io/allanbarcelos/opentube/app` e `worker` depois dos testes e
 publica `install.sh` e `uninstall.sh` no gist indicado pela variável de repositório `GIST_ID`.
