@@ -1,5 +1,5 @@
 .PHONY: help up up-d down restart logs ps build clean shell _docker \
-        watch watch-web watch-worker deps-up deps-down
+        watch watch-web watch-worker deps-up deps-down test
 
 .DEFAULT_GOAL := help
 
@@ -80,6 +80,17 @@ ps: ## Lista containers e status
 # ── Build ─────────────────────────────────────────────────────────────────────
 build: .env ## Reconstrói as imagens sem subir
 	docker compose build
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+# Os testes de integração sobem Postgres e MinIO próprios (Testcontainers): precisam do
+# Docker, mas não do .env nem das dependências do 'make watch'. Os que usam FFmpeg são
+# pulados quando ele não está instalado.
+test: _docker ## Roda os testes  →  make test  |  make test p=Web  (Domain, Infrastructure, Worker, Web)
+ifeq ($(strip $(p)),)
+	dotnet test OpenTube.slnx
+else
+	dotnet test tests/OpenTube.$(p).Tests
+endif
 
 # ── Maintenance ───────────────────────────────────────────────────────────────
 clean: ## Remove containers, volumes e orphans  (reset completo)
