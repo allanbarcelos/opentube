@@ -26,13 +26,14 @@
         <div class="row g-4">
             <div class="col-lg-8">
                 @* Proteção básica: não impede gravação de tela (nada no navegador impede), mas tira
-                   os atalhos de download e de janela avulsa, e mantém a marca d'água visível em
-                   qualquer modo de exibição — quem grava a tela grava junto quem estava vendo. *@
+                   os atalhos de download e mantém a marca d'água na imagem — por cima do vídeo na
+                   página e na tela cheia do contêiner, como legenda na tela cheia nativa e no
+                   Picture-in-Picture. Quem grava a tela grava junto quem estava vendo. *@
                 <div class="player-shell rounded overflow-hidden shadow-sm position-relative"
                      data-fullscreen-label="@T["Full screen"]">
                     <video id="player-video" controls playsinline preload="metadata"
                            controlslist="nodownload nofullscreen noremoteplayback"
-                           disablepictureinpicture disableremoteplayback x-webkit-airplay="deny"
+                           disableremoteplayback x-webkit-airplay="deny"
                            poster="/api/videos/@Video.Id/thumbnail" crossorigin="use-credentials"
                            data-manifest="/api/videos/@Video.Id/master.m3u8" data-video-id="@Video.Id"
                            data-unsupported="@T["This browser cannot play the video."]">

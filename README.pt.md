@@ -146,14 +146,16 @@ aberta para adicionar DRM depois sem reescrever nada.
 
 O que o player faz contra a cópia casual:
 
-- Sem download, Picture-in-Picture ou transmissão (AirPlay, Chromecast) nos controles nativos, e
-  sem menu de contexto ou arrasto sobre o vídeo.
+- Sem download ou transmissão (AirPlay, Chromecast) nos controles nativos, e sem menu de contexto
+  ou arrasto sobre o vídeo. Tela cheia e Picture-in-Picture continuam disponíveis.
 - Marca d'água em duas camadas: um mosaico fraco e inclinado sobre o quadro inteiro, que não sai
   num recorte, e uma etiqueta legível com email, data e hora que muda de canto. Quem entrou por
   link secreto recebe o começo do identificador da concessão.
-- A tela cheia é do contêiner do player, não do `<video>` (que esconderia a marca). Tela cheia
-  pedida direto no `<video>` é desviada para o contêiner ou apenas desfeita, nunca mantida sem a
-  marca. No iPhone, que só permite a tela cheia do próprio vídeo, ele continua na página.
+- O botão de tela cheia do player (e o duplo clique) coloca o contêiner em tela cheia, com a marca
+  por cima. Na tela cheia do próprio vídeo (controle nativo do Safari e do Firefox, iPhone) e no
+  Picture-in-Picture o navegador desenha só o vídeo, então a marca vai como legenda, exibida só
+  nesses modos e religada se alguém a desligar. O Picture-in-Picture do Chromium não desenha
+  legendas: ali a janela fica sem marca.
 
 ---
 

@@ -93,7 +93,7 @@ public class MarcaDaguaTests(PostgresFixture postgres, MinioFixture minio) : IAs
     }
 
     [Fact]
-    public async Task O_player_sai_sem_os_atalhos_de_download_e_de_janela_avulsa()
+    public async Task O_player_sai_sem_download_e_com_tela_cheia_e_janela_avulsa_liberadas()
     {
         using var storage = minio.CreateStorage();
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
@@ -102,7 +102,8 @@ public class MarcaDaguaTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var html = await cliente.GetStringAsync($"/watch/{video.Slug}");
 
         Assert.Contains("controlslist=\"nodownload nofullscreen noremoteplayback\"", html);
-        Assert.Contains("disablepictureinpicture", html);
         Assert.Contains("disableremoteplayback", html);
+        // Tela cheia e Picture-in-Picture são do usuário; a marca d'água os acompanha.
+        Assert.DoesNotContain("disablepictureinpicture", html);
     }
 }

@@ -88,11 +88,103 @@ window.openTubeMarcaDagua = (function () {
         temporizador = setInterval(mover, INTERVALO);
     }
 
+    // Posições da legenda, em porcentagem do quadro (linha, coluna).
+    const POSICOES_DA_LEGENDA = [
+        { line: 8, position: 25 }, { line: 8, position: 75 },
+        { line: 80, position: 25 }, { line: 80, position: 75 }, { line: 45, position: 50 }
+    ];
+
+    // Na tela cheia do próprio <video> (controle nativo do Safari e do Firefox, iPhone) e no
+    // Picture-in-Picture, o navegador desenha só o vídeo: nada que esteja por cima aparece.
+    // O que ele desenha junto são as legendas, então a marca vira uma legenda, visível só
+    // enquanto o vídeo está num desses modos e reimposta se alguém a desligar no menu.
+    // No Chromium a tela cheia nativa fica escondida e o PiP não desenha legendas: lá a
+    // legenda não teria efeito e só apareceria no menu, por isso não é criada.
+    function acompanharModosNativos(video) {
+        const marca = document.getElementById(ETIQUETA);
+        const chromium = video.controlsList && video.controlsList.supports
+            && video.controlsList.supports('nofullscreen');
+
+        if (!marca || chromium || video.dataset.marcaNativa
+            || typeof video.addTextTrack !== 'function' || typeof VTTCue === 'undefined') {
+            return;
+        }
+
+        video.dataset.marcaNativa = '1';
+
+        const texto = marca.dataset.texto || marca.textContent;
+        const trilha = video.addTextTrack('subtitles', texto, '');
+        trilha.mode = 'hidden';
+
+        let legenda = null;
+        let posicao = Math.floor(Math.random() * POSICOES_DA_LEGENDA.length);
+
+        function emModoNativo() {
+            const telaCheia = document.fullscreenElement || document.webkitFullscreenElement;
+
+            return telaCheia === video
+                || video.webkitDisplayingFullscreen === true
+                || (!!video.webkitPresentationMode && video.webkitPresentationMode !== 'inline')
+                || document.pictureInPictureElement === video;
+        }
+
+        function ajustar() {
+            const modo = emModoNativo() ? 'showing' : 'hidden';
+            if (trilha.mode !== modo) {
+                trilha.mode = modo;
+            }
+        }
+
+        function mover() {
+            if (legenda) {
+                trilha.removeCue(legenda);
+            }
+
+            const lugar = POSICOES_DA_LEGENDA[posicao++ % POSICOES_DA_LEGENDA.length];
+
+            legenda = new VTTCue(0, 360000, texto + ' · ' + agora());
+            legenda.snapToLines = false;
+            legenda.line = lugar.line;
+            legenda.position = lugar.position;
+            legenda.align = 'center';
+            legenda.size = 60;
+            trilha.addCue(legenda);
+        }
+
+        mover();
+
+        const relogio = setInterval(function () {
+            if (!video.isConnected) {
+                clearInterval(relogio);
+                return;
+            }
+
+            mover();
+        }, INTERVALO);
+
+        // Conferência frequente: cobre quem desliga a legenda no menu do player nativo.
+        const vigia = setInterval(function () {
+            if (!video.isConnected) {
+                clearInterval(vigia);
+                return;
+            }
+
+            ajustar();
+        }, 1500);
+
+        ['webkitbeginfullscreen', 'webkitendfullscreen', 'webkitpresentationmodechanged',
+            'enterpictureinpicture', 'leavepictureinpicture'].forEach(function (evento) {
+            video.addEventListener(evento, ajustar);
+        });
+        document.addEventListener('fullscreenchange', ajustar);
+        document.addEventListener('webkitfullscreenchange', ajustar);
+    }
+
     // Chamado pelo player a cada página montada.
     function montar() {
         desenharMosaico();
         iniciar(ETIQUETA);
     }
 
-    return { iniciar: iniciar, montar: montar };
+    return { iniciar: iniciar, montar: montar, acompanharModosNativos: acompanharModosNativos };
 })();

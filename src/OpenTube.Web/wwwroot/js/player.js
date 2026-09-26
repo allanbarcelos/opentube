@@ -143,9 +143,8 @@ window.openTubePlayer = (function () {
     }
 
     // Proteção básica contra o usuário comum. Não impede gravação nem print de tela — nada
-    // no navegador impede —, mas tira os atalhos: menu de salvar, arrastar o vídeo, janela
-    // avulsa (Picture-in-Picture) e tela cheia do próprio <video>, que esconderia a marca
-    // d'água. A tela cheia passa a ser do contêiner, com a marca por cima.
+    // no navegador impede —, mas tira os atalhos de cópia (menu de salvar, arrastar o vídeo)
+    // e oferece a tela cheia do contêiner, com a marca d'água por cima.
     function proteger(video) {
         const shell = video.closest('.player-shell');
         if (!shell || shell.dataset.protegido) {
@@ -182,54 +181,13 @@ window.openTubePlayer = (function () {
             });
         }
 
-        // Safari e iOS entram em tela cheia e Picture-in-Picture pelos controles nativos,
-        // que ignoram os atributos de bloqueio: o vídeo volta para a página, e a tela cheia,
-        // quando o aparelho permite, vai para o contêiner.
-        video.addEventListener('webkitpresentationmodechanged', function () {
-            if (video.webkitPresentationMode && video.webkitPresentationMode !== 'inline'
-                && video.webkitSetPresentationMode) {
-                const eraTelaCheia = video.webkitPresentationMode === 'fullscreen';
-                video.webkitSetPresentationMode('inline');
-                if (eraTelaCheia) {
-                    pedirTelaCheia(shell);
-                }
-            }
-        });
-
-        video.addEventListener('webkitbeginfullscreen', function () {
-            if (video.webkitExitFullscreen) {
-                video.webkitExitFullscreen();
-            }
-        });
-
-        video.addEventListener('enterpictureinpicture', function () {
-            if (document.exitPictureInPicture) {
-                document.exitPictureInPicture().catch(function () { });
-            }
-        });
-    }
-
-    // Tela cheia pedida direto no <video> (atalho do navegador, controle nativo): troca pela
-    // do contêiner. Se o navegador recusar a troca sem um novo gesto, o vídeo apenas sai da
-    // tela cheia — sem marca d'água ele não fica.
-    function desviarTelaCheia() {
-        const atual = document.fullscreenElement || document.webkitFullscreenElement;
-
-        if (!atual || atual.tagName !== 'VIDEO' || !atual.dataset.manifest) {
-            return;
+        // Tela cheia nativa (controle do Safari e do Firefox, iPhone) e Picture-in-Picture
+        // ficam liberados. Nesses modos o navegador desenha só o vídeo, sem o que está por
+        // cima dele: a marca d'água passa a ir como legenda, que o navegador desenha junto.
+        if (window.openTubeMarcaDagua) {
+            window.openTubeMarcaDagua.acompanharModosNativos(video);
         }
-
-        const shell = atual.closest('.player-shell');
-
-        sairDaTelaCheia().then(function () {
-            if (shell) {
-                pedirTelaCheia(shell);
-            }
-        });
     }
-
-    document.addEventListener('fullscreenchange', desviarTelaCheia);
-    document.addEventListener('webkitfullscreenchange', desviarTelaCheia);
 
     // Monta os players descritos na página e encerra os que saíram dela. Roda na carga
     // inicial e a cada navegação aprimorada; montar duas vezes o mesmo vídeo não faz nada.
