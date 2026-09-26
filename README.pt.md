@@ -356,4 +356,4 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 
 ## Licença
 
-Uso privado.
+[MIT](LICENSE) © 2026 Allan Barcelos.

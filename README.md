@@ -364,4 +364,4 @@ testable without a database or network; the rest uses ephemeral containers.
 
 ## License
 
-Private use.
+[MIT](LICENSE) © 2026 Allan Barcelos.
