@@ -298,6 +298,25 @@ As imagens publicadas são `ghcr.io/allanbarcelos/opentube/app` e
 `worker-vA.B.C.D`). O instalador pede um usuário do GitHub e um token com o escopo
 `read:packages` e baixa essas imagens. Nada é compilado no servidor.
 
+O instalador oferece três modos de acesso:
+
+| Modo | TLS | Portas expostas |
+| --- | --- | --- |
+| Domínio público | Caddy obtém certificado do Let's Encrypt | 80 e 443 |
+| Rede local | Certificado interno | 80 e 443, só redes privadas |
+| Cloudflare | A Cloudflare termina o HTTPS; a origem responde em HTTP | Uma porta (padrão 8080), só faixas da Cloudflare |
+
+No modo Cloudflare, a porta da origem fica restrita às faixas da Cloudflare no UFW e no
+`DOCKER-USER` (porta publicada pelo Docker não passa pelo UFW), com uma unidade systemd que
+reaplica as regras depois que o Docker sobe. Um cron mensal atualiza as faixas. O Caddy só aceita
+o `CF-Connecting-IP` em conexões vindas dessas faixas, então a aplicação vê o endereço real de
+quem acessa. No painel da Cloudflare: registro DNS com proxy, SSL/TLS em Flexible, Always Use
+HTTPS e uma Origin Rule quando a porta não é uma das que a Cloudflare repassa direto (80, 8080,
+8880, 2052, 2082, 2086, 2095). Servir vídeo pela CDN da Cloudflare está sujeito aos termos do plano.
+
+O Caddy é publicado em modo host: a malha de ingress do Swarm trocaria o endereço de quem acessa
+por um interno, e os limites por origem passariam a valer para todo mundo de uma vez.
+
 Ele sobe um Docker Swarm de um nó, gera usuário, senha e chaves e grava isso só como segredo
 do Swarm. Nada disso vai para o disco nem para o repositório. Na primeira vez o resumo é
 impresso no terminal; copie e guarde. Rodar de novo não troca segredo que já existe.

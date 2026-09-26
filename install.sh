@@ -14,7 +14,8 @@
 #    7. Images pulled from ghcr.io/allanbarcelos/opentube/{app,worker}
 #    8. Stack file + Caddyfile
 #    9. docker stack deploy
-#   10. UFW (22, and 80/443 according to the mode)
+#   10. Firewall: UFW (22, and web access according to the mode). In Cloudflare
+#       mode the origin port only answers Cloudflare, in UFW and in DOCKER-USER.
 #   11. scripts/update.sh to pull the published images and republish
 #   12. Wait for the services
 #   13. Summary. The password is shown only this first time: Swarm does not return it.
@@ -133,6 +134,68 @@ create_swarm_secret() {
   fi
 }
 
+# Cloudflare ranges, used when https://www.cloudflare.com/ips-v4 and ips-v6
+# cannot be fetched: an install never ends up with an empty allow list.
+CF_FALLBACK_V4="173.245.48.0/20
+103.21.244.0/22
+103.22.200.0/22
+103.31.4.0/22
+141.101.64.0/18
+108.162.192.0/18
+190.93.240.0/20
+188.114.96.0/20
+197.234.240.0/22
+198.41.128.0/17
+162.158.0.0/15
+104.16.0.0/13
+104.24.0.0/14
+172.64.0.0/13
+131.0.72.0/22"
+CF_FALLBACK_V6="2400:cb00::/32
+2606:4700::/32
+2803:f800::/32
+2405:b500::/32
+2405:8100::/32
+2a06:98c0::/29
+2c0f:f248::/32"
+
+# Sets CF_IPV4 and CF_IPV6. Only lines shaped like a CIDR are kept, so an error
+# page served instead of the list never turns into firewall rules.
+fetch_cloudflare_ips() {
+  CF_IPV4="$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v4 2>/dev/null | grep -E '^[0-9.]+/[0-9]+$' || true)"
+  CF_IPV6="$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v6 2>/dev/null | grep -E '^[0-9a-fA-F:]+/[0-9]+$' || true)"
+  if [[ -z "$CF_IPV4" || -z "$CF_IPV6" ]]; then
+    warn "Could not fetch the Cloudflare ranges — using the embedded list"
+    CF_IPV4="$CF_FALLBACK_V4"
+    CF_IPV6="$CF_FALLBACK_V6"
+  fi
+}
+
+# Deletes the DOCKER-USER rules carrying the comment. "iptables -D" only matches
+# a full rule specification, so each rule is read back with -S and removed as is.
+docker_user_delete_tagged() {
+  local cmd="$1" tag="$2" rule
+  local -a args
+  "$cmd" -n -L DOCKER-USER >/dev/null 2>&1 || return 0
+  while IFS= read -r rule; do
+    read -ra args <<< "${rule/#-A /-D }"
+    "$cmd" "${args[@]}" 2>/dev/null || true
+  done < <("$cmd" -S DOCKER-USER | grep -E -- "--comment \"?${tag}\"?( |$)" || true)
+}
+
+port_in_use() { ss -ltnH "( sport = :$1 )" 2>/dev/null | grep -q .; }
+
+# Deletes every UFW rule whose comment contains the tag, from the top each time,
+# so the rule numbers stay valid.
+ufw_delete_tagged() {
+  local tag="$1" num
+  while true; do
+    num="$(ufw status numbered | grep -F "$tag" | head -1 | sed -n 's/.*\[\s*\([0-9][0-9]*\)\].*/\1/p' || true)"
+    [[ -n "$num" ]] || break
+    echo y | ufw delete "$num" >/dev/null 2>&1 || break
+  done
+}
+
 require_root
 command -v openssl >/dev/null 2>&1 || die "Install openssl before continuing."
 
@@ -172,19 +235,50 @@ echo ""
 _mode_default="$(read_conf "$INSTALL_CONF" INSTALL_MODE)"
 _access_default="1"
 [[ "$_mode_default" == "local" ]] && _access_default="2"
+[[ "$_mode_default" == "cloudflare" ]] && _access_default="3"
 echo -e "  ${BOLD}Access${NC}"
 echo -e "  ${BOLD}1)${NC} Public hostname — Caddy requests a certificate (ports 80 and 443)"
 echo -e "  ${BOLD}2)${NC} Local network — internal certificate, UFW limited to private networks"
+echo -e "  ${BOLD}3)${NC} Cloudflare — Cloudflare terminates HTTPS; this server answers HTTP on one"
+echo -e "     port that only Cloudflare can reach (UFW and DOCKER-USER)"
 echo ""
 while true; do
   read -rp "$(echo -e "  ${BOLD}Mode${NC} ${DIM}[${_access_default}]${NC}: ")" ACCESS_CHOICE </dev/tty
   ACCESS_CHOICE="${ACCESS_CHOICE:-$_access_default}"
-  [[ "$ACCESS_CHOICE" == "1" || "$ACCESS_CHOICE" == "2" ]] && break
-  echo -e "  ${RED}Choose 1 or 2.${NC}"
+  [[ "$ACCESS_CHOICE" =~ ^[123]$ ]] && break
+  echo -e "  ${RED}Choose 1, 2, or 3.${NC}"
 done
 
 CERTBOT_EMAIL=""
-if [[ "$ACCESS_CHOICE" == "1" ]]; then
+APP_PORT=""
+if [[ "$ACCESS_CHOICE" == "3" ]]; then
+  INSTALL_MODE="cloudflare"
+  _host_default="$(read_conf "$INSTALL_CONF" PUBLIC_HOST)"
+  ask "Domain (proxied through Cloudflare, orange cloud)" "$_host_default" PUBLIC_HOST
+  PUBLIC_HOST="${PUBLIC_HOST#http://}"; PUBLIC_HOST="${PUBLIC_HOST#https://}"
+  PUBLIC_HOST="${PUBLIC_HOST%%/*}"; PUBLIC_HOST="${PUBLIC_HOST%%:*}"
+  [[ "$PUBLIC_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}$ ]] \
+    || die "Invalid domain: ${PUBLIC_HOST}"
+
+  # 8080 is one of the HTTP ports Cloudflare proxies without an Origin Rule.
+  _port_default="$(read_conf "$INSTALL_CONF" APP_PORT)"
+  [[ -z "$_port_default" ]] && _port_default="8080"
+  while true; do
+    ask "Port Cloudflare connects to on this server" "$_port_default" APP_PORT
+    if ! [[ "$APP_PORT" =~ ^[0-9]+$ && "$APP_PORT" -ge 1 && "$APP_PORT" -le 65535 ]]; then
+      echo -e "  ${RED}Invalid port. Use a number between 1 and 65535.${NC}"
+      continue
+    fi
+    # On a re-run the port is held by this installation's own Caddy.
+    if port_in_use "$APP_PORT" \
+       && ! [[ "$_mode_default" == "cloudflare" && "$APP_PORT" == "$_port_default" ]]; then
+      echo -e "  ${RED}Port ${APP_PORT} is already in use on this machine.${NC}"
+      continue
+    fi
+    break
+  done
+  PUBLIC_URL="https://${PUBLIC_HOST}"
+elif [[ "$ACCESS_CHOICE" == "1" ]]; then
   INSTALL_MODE="letsencrypt"
   _host_default="$(read_conf "$INSTALL_CONF" PUBLIC_HOST)"
   ask "Domain (it must point at this machine)" "$_host_default" PUBLIC_HOST
@@ -266,7 +360,7 @@ phase "PHASE 2 — Packages"
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq curl ca-certificates openssl ufw >/dev/null
+  apt-get install -y -qq curl ca-certificates openssl ufw cron iproute2 >/dev/null
   ok "Base packages"
 else
   warn "No apt-get — docker, curl, and ufw must already be installed."
@@ -415,8 +509,31 @@ phase "PHASE 8 — Stack and Caddy"
 
 TLS_LINE=""
 ACME_BLOCK=""
+SITE_ADDRESS="${PUBLIC_HOST}"
+PROXY_HEADERS=""
+CF_TRUSTED="${APP_DIR}/etc/cloudflare-trusted.caddy"
 if [[ "$INSTALL_MODE" == "local" ]]; then
   TLS_LINE=$'\n\ttls internal'
+elif [[ "$INSTALL_MODE" == "cloudflare" ]]; then
+  # Cloudflare terminates TLS and talks plain HTTP to this port. The real client
+  # comes in CF-Connecting-IP, trusted only when the connection itself comes from
+  # a Cloudflare range; the application receives it as X-Forwarded-For.
+  fetch_cloudflare_ips
+  printf '%s\n' "$CF_IPV4" > "${APP_DIR}/etc/cloudflare-ips-v4.txt"
+  printf '%s\n' "$CF_IPV6" > "${APP_DIR}/etc/cloudflare-ips-v6.txt"
+  printf 'trusted_proxies static %s\n' "$(printf '%s\n%s\n' "$CF_IPV4" "$CF_IPV6" | tr '\n' ' ')" > "$CF_TRUSTED"
+  chmod 600 "$CF_TRUSTED" "${APP_DIR}/etc/cloudflare-ips-v4.txt" "${APP_DIR}/etc/cloudflare-ips-v6.txt"
+  ok "Cloudflare ranges: $(wc -l <<<"$CF_IPV4" | tr -d ' ') IPv4, $(wc -l <<<"$CF_IPV6" | tr -d ' ') IPv6"
+
+  ACME_BLOCK="{
+	servers {
+		import /etc/caddy/cloudflare-trusted.caddy
+		client_ip_headers CF-Connecting-IP
+	}
+}
+"
+  SITE_ADDRESS="http://${PUBLIC_HOST}"
+  PROXY_HEADERS=$'\n\t\t\theader_up X-Forwarded-For {client_ip}\n\t\t\theader_up X-Forwarded-Proto https'
 else
   ACME_BLOCK="{
 	email ${CERTBOT_EMAIL}
@@ -446,17 +563,21 @@ if [[ -n "$SMTP_HOST" ]]; then
 fi
 
 cat > "${APP_DIR}/etc/Caddyfile" <<EOF
-${ACME_BLOCK}${PUBLIC_HOST} {${TLS_LINE}
+${ACME_BLOCK}${SITE_ADDRESS} {${TLS_LINE}
 	encode zstd gzip
 
 	handle_path /vod/* {
 		forward_auth app:8080 {
 			uri /_authz
 			copy_headers Cookie
-			header_up X-Forwarded-Uri {http.request.orig_uri}
+			header_up X-Forwarded-Uri {http.request.orig_uri}${PROXY_HEADERS}
 		}
 		rewrite * /vod{uri}
-		reverse_proxy minio:9000
+		reverse_proxy minio:9000 {
+			# Segments are authorized per request: no shared cache (a CDN in
+			# front, for instance) may keep a copy and serve it to someone else.
+			header_down Cache-Control "private, max-age=3600"
+		}
 	}
 
 	handle /originals/* {
@@ -466,7 +587,8 @@ ${ACME_BLOCK}${PUBLIC_HOST} {${TLS_LINE}
 	}
 
 	handle {
-		reverse_proxy app:8080
+		reverse_proxy app:8080 {${PROXY_HEADERS}
+		}
 	}
 
 	header {
@@ -477,6 +599,28 @@ ${ACME_BLOCK}${PUBLIC_HOST} {${TLS_LINE}
 	}
 }
 EOF
+
+# Published in host mode: the ingress routing mesh replaces the client address
+# with an internal one, and the application would see everyone as the same
+# origin (rate limits, simultaneous playbacks, Cloudflare ranges).
+CADDY_EXTRA_VOLUMES=""
+if [[ "$INSTALL_MODE" == "cloudflare" ]]; then
+  CADDY_PORTS="      - target: 80
+        published: ${APP_PORT}
+        protocol: tcp
+        mode: host"
+  CADDY_EXTRA_VOLUMES="
+      - ${CF_TRUSTED}:/etc/caddy/cloudflare-trusted.caddy:ro"
+else
+  CADDY_PORTS="      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: host"
+fi
 
 # Secrets mounted under the name KeyPerFile turns into a configuration key
 # (__ becomes ':'). The file is readable only by uid 1001, the process user.
@@ -652,17 +796,10 @@ ${APP_MOUNTS}
   caddy:
     image: caddy:2-alpine
     ports:
-      - target: 80
-        published: 80
-        protocol: tcp
-        mode: ingress
-      - target: 443
-        published: 443
-        protocol: tcp
-        mode: ingress
+${CADDY_PORTS}
     volumes:
       - ${APP_DIR}/etc/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ${APP_DIR}/data/caddy:/data
+      - ${APP_DIR}/data/caddy:/data${CADDY_EXTRA_VOLUMES}
     networks:
       - internal
     deploy:
@@ -719,6 +856,7 @@ SMTP_PORT='${SMTP_PORT}'
 SMTP_USER='${SMTP_USER}'
 SMTP_FROM='${SMTP_FROM}'
 CERTBOT_EMAIL='${CERTBOT_EMAIL}'
+APP_PORT='${APP_PORT}'
 EOF
 chmod 600 "$INSTALL_CONF"
 
@@ -762,9 +900,42 @@ ok "Stack ${STACK_NAME} published"
 phase "PHASE 10 — Firewall"
 # ==============================================================================
 
+CF_UNIT="docker-user-rules-${STACK_NAME}.service"
+CF_RULES_SCRIPT="${APP_DIR}/scripts/docker-user-rules.sh"
+CF_UPDATE_SCRIPT="${APP_DIR}/scripts/update-cloudflare-ips.sh"
+CF_CRON="/etc/cron.d/${STACK_NAME}-cloudflare"
+
+# Undo the Cloudflare lock-down: used when a re-run switches to another mode.
+remove_cloudflare_lockdown() {
+  if systemctl list-unit-files "$CF_UNIT" >/dev/null 2>&1 && systemctl cat "$CF_UNIT" >/dev/null 2>&1; then
+    systemctl disable --now "$CF_UNIT" >/dev/null 2>&1 || true
+    rm -f "/etc/systemd/system/${CF_UNIT}"
+    systemctl daemon-reload || true
+  fi
+  for cmd in iptables ip6tables; do
+    command -v "$cmd" >/dev/null 2>&1 || continue
+    for tag in "CF-${STACK_NAME}" "BLOCK-${STACK_NAME}" "ESTAB-${STACK_NAME}"; do
+      docker_user_delete_tagged "$cmd" "$tag"
+    done
+  done
+  rm -f "$CF_RULES_SCRIPT" "$CF_UPDATE_SCRIPT" "$CF_CRON"
+  command -v ufw >/dev/null 2>&1 && ufw_delete_tagged "Cloudflare-${APP_NAME}"
+  return 0
+}
+
 if command -v ufw >/dev/null 2>&1; then
   ufw allow 22/tcp comment "SSH-${APP_NAME}" >/dev/null || true
-  if [[ "$INSTALL_MODE" == "local" ]]; then
+  # A re-run may switch modes: drop what the previous mode opened or closed.
+  for tag in "Web-${APP_NAME}" "LAN-${APP_NAME}" "Cloudflare-${APP_NAME}" "Block-direct-${APP_NAME}"; do
+    ufw_delete_tagged "$tag"
+  done
+  if [[ "$INSTALL_MODE" == "cloudflare" ]]; then
+    while IFS= read -r ip; do
+      [[ -z "$ip" ]] && continue
+      ufw allow from "$ip" to any port "$APP_PORT" proto tcp comment "Cloudflare-${APP_NAME}" >/dev/null || true
+    done < <(cat "${APP_DIR}/etc/cloudflare-ips-v4.txt" "${APP_DIR}/etc/cloudflare-ips-v6.txt")
+    ufw deny "${APP_PORT}/tcp" comment "Block-direct-${APP_NAME}" >/dev/null || true
+  elif [[ "$INSTALL_MODE" == "local" ]]; then
     for cidr in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
       ufw allow from "$cidr" to any port 80 proto tcp comment "LAN-${APP_NAME}" >/dev/null || true
       ufw allow from "$cidr" to any port 443 proto tcp comment "LAN-${APP_NAME}" >/dev/null || true
@@ -777,9 +948,151 @@ if command -v ufw >/dev/null 2>&1; then
   fi
   ufw --force enable >/dev/null || true
   ok "UFW updated (22 and web access)"
-  warn "Docker publishes the port on its own chain. UFW covers the host; it does not replace a DOCKER-USER rule if this machine is exposed."
 else
   warn "ufw not found — the firewall was not changed."
+fi
+
+if [[ "$INSTALL_MODE" == "cloudflare" ]]; then
+  # A port published by Docker skips UFW: the packets go through FORWARD, and
+  # DOCKER-USER is the chain Docker leaves for rules like these. Without them the
+  # origin would answer anyone who finds its address, bypassing Cloudflare.
+  command -v iptables >/dev/null 2>&1 || die "iptables not found — the origin port cannot be restricted to Cloudflare."
+
+  cat > "$CF_RULES_SCRIPT" <<RULES
+#!/usr/bin/env bash
+# Restrict port ${APP_PORT} (Caddy) to Cloudflare in DOCKER-USER. Run by
+# ${CF_UNIT} after docker.service, and by update-cloudflare-ips.sh.
+set -euo pipefail
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+APP_PORT="${APP_PORT}"
+STACK_NAME="${STACK_NAME}"
+CF_V4="${APP_DIR}/etc/cloudflare-ips-v4.txt"
+CF_V6="${APP_DIR}/etc/cloudflare-ips-v6.txt"
+RULES
+  cat >> "$CF_RULES_SCRIPT" <<'RULES'
+
+# "iptables -D" only matches a full rule specification: read each tagged rule
+# back with -S and delete it as it is.
+delete_tagged() {
+  local cmd="$1" tag="$2" rule
+  local -a args
+  while IFS= read -r rule; do
+    read -ra args <<< "${rule/#-A /-D }"
+    "$cmd" "${args[@]}"
+  done < <("$cmd" -S DOCKER-USER | grep -E -- "--comment \"?${tag}\"?( |$)" || true)
+}
+
+apply() {
+  local cmd="$1" list="$2"
+  # IPv6 filtering only exists when Docker manages ip6tables.
+  "$cmd" -n -L DOCKER-USER >/dev/null 2>&1 || { [[ "$cmd" == ip6tables ]] && return 0; exit 1; }
+
+  for tag in "CF-${STACK_NAME}" "BLOCK-${STACK_NAME}" "ESTAB-${STACK_NAME}"; do
+    delete_tagged "$cmd" "$tag"
+  done
+
+  # Everything goes in at the top, in reverse, so the order ends up as
+  # established -> Cloudflare -> drop, ahead of any RETURN Docker keeps in the chain.
+  "$cmd" -I DOCKER-USER 1 -p tcp -m conntrack --ctorigdstport "$APP_PORT" \
+    -m comment --comment "BLOCK-${STACK_NAME}" -j DROP
+
+  while IFS= read -r ip; do
+    [[ -z "$ip" ]] && continue
+    "$cmd" -I DOCKER-USER 1 -p tcp -m conntrack --ctorigdstport "$APP_PORT" \
+      -s "$ip" -m comment --comment "CF-${STACK_NAME}" -j RETURN
+  done < "$list"
+
+  "$cmd" -I DOCKER-USER 1 -m conntrack --ctstate RELATED,ESTABLISHED \
+    -m comment --comment "ESTAB-${STACK_NAME}" -j RETURN
+}
+
+apply iptables "$CF_V4"
+if command -v ip6tables >/dev/null 2>&1; then apply ip6tables "$CF_V6"; fi
+echo "[${STACK_NAME}] DOCKER-USER: port ${APP_PORT} restricted to Cloudflare"
+RULES
+  chmod 750 "$CF_RULES_SCRIPT"
+
+  cat > "/etc/systemd/system/${CF_UNIT}" <<UNIT
+[Unit]
+Description=DOCKER-USER rules restricting ${STACK_NAME} to Cloudflare
+After=docker.service
+BindsTo=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=${CF_RULES_SCRIPT}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload || die "systemctl daemon-reload failed"
+  systemctl enable "$CF_UNIT" >/dev/null 2>&1 || die "Could not enable ${CF_UNIT}"
+  # restart, not start: on a re-run the oneshot is already "active" and would not run again.
+  systemctl restart "$CF_UNIT" \
+    || die "Could not apply the DOCKER-USER rules — port ${APP_PORT} would be open to anyone. Fix iptables and run again."
+  ok "DOCKER-USER: port ${APP_PORT} open only to Cloudflare (${CF_UNIT})"
+
+  # Cloudflare adds ranges now and then. Once a month: fetch, and only if the
+  # list looks valid, rewrite the files, UFW, DOCKER-USER, and Caddy's trust.
+  cat > "$CF_UPDATE_SCRIPT" <<UPDCF
+#!/usr/bin/env bash
+# Refresh the Cloudflare ranges for ${STACK_NAME} (UFW, DOCKER-USER, Caddy).
+set -euo pipefail
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+APP_DIR="${APP_DIR}"
+APP_NAME="${APP_NAME}"
+STACK_NAME="${STACK_NAME}"
+APP_PORT="${APP_PORT}"
+UPDCF
+  cat >> "$CF_UPDATE_SCRIPT" <<'UPDCF'
+LOG="${APP_DIR}/logs/cloudflare-ips.log"
+exec >>"$LOG" 2>&1
+echo "$(date -u '+%Y-%m-%d %H:%M:%S') refreshing Cloudflare ranges"
+
+V4="$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v4 | grep -E '^[0-9.]+/[0-9]+$' || true)"
+V6="$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v6 | grep -E '^[0-9a-fA-F:]+/[0-9]+$' || true)"
+[[ -n "$V4" && -n "$V6" ]] || { echo "fetch failed; rules left as they were"; exit 1; }
+
+printf '%s
+' "$V4" > "${APP_DIR}/etc/cloudflare-ips-v4.txt"
+printf '%s
+' "$V6" > "${APP_DIR}/etc/cloudflare-ips-v6.txt"
+printf 'trusted_proxies static %s
+' "$(printf '%s
+%s
+' "$V4" "$V6" | tr '
+' ' ')"   > "${APP_DIR}/etc/cloudflare-trusted.caddy"
+
+if command -v ufw >/dev/null 2>&1; then
+  while true; do
+    num="$(ufw status numbered | grep -F "Cloudflare-${APP_NAME}" | head -1 | sed -n 's/.*\[\s*\([0-9][0-9]*\)\].*//p' || true)"
+    [[ -n "$num" ]] || break
+    echo y | ufw delete "$num" >/dev/null 2>&1 || break
+  done
+  while IFS= read -r ip; do
+    [[ -z "$ip" ]] && continue
+    ufw allow from "$ip" to any port "$APP_PORT" proto tcp comment "Cloudflare-${APP_NAME}" >/dev/null || true
+  done < <(printf '%s
+%s
+' "$V4" "$V6")
+fi
+
+"${APP_DIR}/scripts/docker-user-rules.sh"
+docker service update --force --quiet "${STACK_NAME}_caddy" >/dev/null
+echo "done"
+UPDCF
+  chmod 750 "$CF_UPDATE_SCRIPT"
+
+  cat > "$CF_CRON" <<CRON
+# Refresh the Cloudflare ranges for ${STACK_NAME} — day 1 of each month, 03:00
+0 3 1 * * root ${CF_UPDATE_SCRIPT}
+CRON
+  chmod 644 "$CF_CRON"
+  ok "Monthly refresh of the Cloudflare ranges: ${CF_CRON}"
+else
+  remove_cloudflare_lockdown
+  warn "Docker publishes the port on its own chain. UFW covers the host; it does not replace a DOCKER-USER rule if this machine is exposed."
 fi
 
 # ==============================================================================
@@ -826,6 +1139,22 @@ if [[ "$SECRETS_EXIST" == "n" ]]; then
   echo -e "  IP pepper          : ${DIM}${IP_HASH_PEPPER}${NC}"
 else
   echo -e "  Secrets   : ${DIM}kept from the previous installation${NC}"
+fi
+if [[ "$INSTALL_MODE" == "cloudflare" ]]; then
+  echo ""
+  echo -e "  ${BOLD}Cloudflare${NC} (dashboard, zone of ${PUBLIC_HOST})"
+  echo -e "  - DNS: record for ${PUBLIC_HOST} pointing at this server, ${BOLD}proxied${NC} (orange cloud)."
+  echo -e "  - SSL/TLS: ${BOLD}Flexible${NC} (for the zone, or a Configuration Rule for this hostname) —"
+  echo -e "    the origin answers plain HTTP."
+  echo -e "    Turn on ${BOLD}Always Use HTTPS${NC}: the application builds its links with https."
+  case "$APP_PORT" in
+    80|8080|8880|2052|2082|2086|2095)
+      echo -e "  - Port ${APP_PORT} is one Cloudflare proxies as is; no Origin Rule needed." ;;
+    *)
+      echo -e "  - ${YELLOW}Origin Rule${NC}: hostname ${PUBLIC_HOST} → destination port ${APP_PORT}." ;;
+  esac
+  echo -e "  - Origin port ${APP_PORT} only answers Cloudflare (UFW + DOCKER-USER); ranges refreshed monthly."
+  echo -e "  ${DIM}Serving video through Cloudflare's CDN is subject to their plan terms; check them for your volume.${NC}"
 fi
 sep
 echo ""

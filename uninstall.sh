@@ -5,8 +5,9 @@
 #  Usage: sudo bash uninstall.sh
 #
 #  Removes the stack, its Swarm secrets, the local images, the /opt/<name>
-#  directory (including the database), and the MinIO disk if it lives outside
-#  that directory. Does not remove Docker, Swarm, or other stacks.
+#  directory (including the database), the MinIO disk if it lives outside
+#  that directory, and, in Cloudflare mode, the DOCKER-USER rules, their systemd
+#  unit, and the monthly refresh. Does not remove Docker, Swarm, or other stacks.
 # ==============================================================================
 set -euo pipefail
 IFS=$'\n\t'
@@ -105,7 +106,38 @@ do
   done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep "^${image}:" || true)
 done
 
-phase "PHASE 4 — Files"
+phase "PHASE 4 — Cloudflare lock-down"
+
+# Present only when the installation used the Cloudflare mode. The unit and the
+# DOCKER-USER rules go first: the unit runs a script that lives in the directory
+# removed next.
+CF_UNIT="docker-user-rules-${STACK_NAME}.service"
+if systemctl cat "$CF_UNIT" >/dev/null 2>&1; then
+  systemctl disable --now "$CF_UNIT" >/dev/null 2>&1 || true
+  rm -f "/etc/systemd/system/${CF_UNIT}"
+  systemctl daemon-reload || true
+  ok "Unit ${CF_UNIT} removed"
+fi
+
+# "iptables -D" only matches a full rule specification: read each tagged rule
+# back with -S and delete it as it is.
+for cmd in iptables ip6tables; do
+  command -v "$cmd" >/dev/null 2>&1 || continue
+  "$cmd" -n -L DOCKER-USER >/dev/null 2>&1 || continue
+  for tag in "CF-${STACK_NAME}" "BLOCK-${STACK_NAME}" "ESTAB-${STACK_NAME}"; do
+    while IFS= read -r rule; do
+      read -ra args <<< "${rule/#-A /-D }"
+      "$cmd" "${args[@]}" 2>/dev/null || true
+    done < <("$cmd" -S DOCKER-USER | grep -E -- "--comment \"?${tag}\"?( |$)" || true)
+  done
+done
+
+if [[ -f "/etc/cron.d/${STACK_NAME}-cloudflare" ]]; then
+  rm -f "/etc/cron.d/${STACK_NAME}-cloudflare"
+  ok "Cron /etc/cron.d/${STACK_NAME}-cloudflare removed"
+fi
+
+phase "PHASE 5 — Files"
 
 if [[ -d "$APP_DIR" ]]; then
   rm -rf "$APP_DIR"
@@ -119,11 +151,11 @@ if [[ -n "$MINIO_DATA_DIR" && "$MINIO_DATA_DIR" != "$APP_DIR" && "$MINIO_DATA_DI
   ok "Removed ${MINIO_DATA_DIR}"
 fi
 
-phase "PHASE 5 — Firewall"
+phase "PHASE 6 — Firewall"
 
 if command -v ufw >/dev/null 2>&1; then
   # Delete by comment, from the top each time, so the rule numbers stay valid.
-  for tag in "SSH-${APP_NAME}" "Web-${APP_NAME}" "LAN-${APP_NAME}" "Block-direct-${APP_NAME}"; do
+  for tag in "SSH-${APP_NAME}" "Web-${APP_NAME}" "LAN-${APP_NAME}" "Cloudflare-${APP_NAME}" "Block-direct-${APP_NAME}"; do
     while true; do
       num="$(ufw status numbered | grep -F "$tag" | head -1 | sed -n 's/.*\[\s*\([0-9][0-9]*\)\].*/\1/p' || true)"
       [[ -n "$num" ]] || break
