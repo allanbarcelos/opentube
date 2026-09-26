@@ -9,6 +9,7 @@ window.openTubeMarcaDagua = (function () {
     const MOSAICO = 'marca-dagua-mosaico';
     const INTERVALO = 12000;
 
+    // Mesma ordem das posições da marca do acervo (WatermarkPosition), para poder pular a dela.
     const cantos = [
         { top: '8%', left: '6%', right: 'auto', bottom: 'auto' },
         { top: '8%', left: 'auto', right: '6%', bottom: 'auto' },
@@ -63,7 +64,13 @@ window.openTubeMarcaDagua = (function () {
         marca.dataset.iniciada = '1';
 
         const texto = marca.dataset.texto || marca.textContent;
-        let posicao = Math.floor(Math.random() * cantos.length);
+
+        // A etiqueta não passa pelo lugar da imagem do acervo, onde ficaria por baixo dela.
+        const shell = marca.closest('.player-shell');
+        const ocupado = shell ? shell.dataset.logoCanto : undefined;
+        const livres = cantos.filter(function (_, indice) { return String(indice) !== ocupado; });
+
+        let posicao = Math.floor(Math.random() * livres.length);
         let temporizador = null;
 
         function mover() {
@@ -73,7 +80,7 @@ window.openTubeMarcaDagua = (function () {
                 return;
             }
 
-            const canto = cantos[posicao % cantos.length];
+            const canto = livres[posicao % livres.length];
 
             marca.style.top = canto.top;
             marca.style.left = canto.left;

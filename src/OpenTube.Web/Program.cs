@@ -123,6 +123,7 @@ app.MapExportEndpoints();
 app.MapSupportEndpoints();
 app.MapCaptionEndpoints();
 app.MapSegmentAuthorization();
+app.MapWatermarkEndpoints();
 app.MapHealthChecks("/health");
 
 await PrepararAsync(app);

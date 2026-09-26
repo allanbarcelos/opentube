@@ -81,6 +81,12 @@
     opacity: 1;
 }
 
+/* Com a marca do acervo no canto superior direito, o botão vai para o outro lado. */
+.player-shell[data-logo-canto="1"] .player-tela-cheia {
+    right: auto;
+    left: 8px;
+}
+
 .codigo-acesso {
     letter-spacing: 0.5rem;
     font-size: 1.5rem;
@@ -182,3 +188,62 @@
     user-select: none;
     background-repeat: repeat;
 }
+
+/* Marca d'água do acervo ---------------------------------------------------- */
+
+/* Área do logotipo sobre o vídeo. Tamanho, margem e opacidade vêm do componente
+   MarcaDoAcervo (PosicaoDaMarca.cs), num lugar só; aqui fica só o encaixe da imagem. */
+.marca-logo {
+    position: absolute;
+    z-index: 2;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* A imagem ocupa a área sem distorcer, encostada no canto escolhido. */
+.marca-logo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    -webkit-user-drag: none;
+}
+
+.marca-logo-top-left img { object-position: left top; }
+.marca-logo-top-right img { object-position: right top; }
+.marca-logo-bottom-left img { object-position: left bottom; }
+.marca-logo-bottom-right img { object-position: right bottom; }
+.marca-logo-center img { object-position: center; }
+
+.marca-previa {
+    background: linear-gradient(135deg, #2b3035 0%, #495057 100%);
+}
+
+.marca-previa-vazia {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* As opções de posição ficam na grade no lugar que representam. */
+.marca-posicoes {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-areas:
+        "tl . tr"
+        ". c ."
+        "bl . br";
+    gap: 0.25rem 0.5rem;
+    padding: 0.5rem;
+    border: 1px dashed var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+}
+
+.marca-opcao-top-left { grid-area: tl; }
+.marca-opcao-top-right { grid-area: tr; justify-self: end; }
+.marca-opcao-center { grid-area: c; justify-self: center; }
+.marca-opcao-bottom-left { grid-area: bl; }
+.marca-opcao-bottom-right { grid-area: br; justify-self: end; }

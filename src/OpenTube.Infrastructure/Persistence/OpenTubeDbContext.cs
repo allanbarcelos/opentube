@@ -25,6 +25,7 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<SupportThread> SupportThreads => Set<SupportThread>();
     public DbSet<SupportMessage> SupportMessages => Set<SupportMessage>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<PlayerWatermark> PlayerWatermarks => Set<PlayerWatermark>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

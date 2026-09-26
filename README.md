@@ -158,6 +158,15 @@ What the player does against casual copying:
   iPhone) and in Picture-in-Picture the browser draws only the video, so the watermark goes as a
   caption, shown only in those modes and turned back on if someone switches it off. Chromium's
   Picture-in-Picture does not draw captions: there the window has no watermark.
+- Library watermark: a PNG image (up to 5 MB) set in Administration → Watermark, shown over every
+  video in the chosen position (a corner or the center), in the page and in the player's full
+  screen. The file is checked as a real PNG by its signature, not by its name. The server brings it
+  to the standard size — it fits in 640 × 320 pixels, keeping the aspect ratio — with step-by-step
+  high-quality downscaling that keeps transparency and edges clean; what is stored and served is
+  that version, without the original's metadata. Smaller images are not enlarged, and the longest
+  side must have at least 160 pixels. The moving viewer
+  label skips that corner. Native full screen and Picture-in-Picture draw only the video, so the
+  image does not appear there; the viewer's email still does, as a caption.
 
 ---
 

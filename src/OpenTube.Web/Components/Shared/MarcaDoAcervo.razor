@@ -1,0 +1,18 @@
+@using OpenTube.Infrastructure.Branding
+@using OpenTube.Web.Endpoints
+
+@* Marca d'água do acervo sobre o vídeo: uma área de tamanho padrão, na posição escolhida, com a
+   imagem ajustada a ela sem distorcer. A mesma no player e na prévia da administração. *@
+<div class="marca-logo @PosicaoDaMarca.Classe(Marca.Position)" style="@PosicaoDaMarca.Estilo(Marca.Position)"
+     aria-hidden="@(Descricao is null ? "true" : null)">
+    <img src="@WatermarkEndpoints.ImagePath?v=@Marca.Version" alt="@(Descricao ?? "")" draggable="false" />
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public WatermarkInfo Marca { get; set; } = default!;
+
+    /// <summary>Texto alternativo; sem ele, a marca é decorativa e fica fora da leitura de tela.</summary>
+    [Parameter]
+    public string? Descricao { get; set; }
+}

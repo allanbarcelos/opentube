@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
+using OpenTube.Infrastructure.Branding;
 using OpenTube.Infrastructure.Playback;
 using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Access;
@@ -73,6 +74,7 @@ public static class DependencyInjection
         services.AddScoped<AnalyticsQueries>();
         services.AddScoped<SupportService>();
         services.AddScoped<VideoCatalog>();
+        services.AddScoped<WatermarkService>();
 
         return services;
     }

@@ -23,6 +23,9 @@ public static class AuditActions
     public const string DominioCadastrado = "dominio.cadastrado";
     public const string DominioVerificado = "dominio.verificado";
     public const string DominioAlterado = "dominio.alterado";
+    public const string MarcaDefinida = "marca.definida";
+    public const string MarcaReposicionada = "marca.reposicionada";
+    public const string MarcaRemovida = "marca.removida";
 }
 
 /// <summary>Tipos de entidade sobre os quais uma ação recai.</summary>
@@ -33,6 +36,7 @@ public static class AuditEntities
     public const string Concessao = "concessao";
     public const string Dominio = "dominio";
     public const string Pessoa = "pessoa";
+    public const string MarcaDagua = "marca";
 }
 
 /// <summary>

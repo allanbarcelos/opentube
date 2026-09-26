@@ -9,6 +9,8 @@
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="Dapper" />
     <PackageReference Include="DnsClient" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
     <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="MailKit" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />

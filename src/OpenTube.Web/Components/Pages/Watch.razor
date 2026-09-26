@@ -3,6 +3,7 @@
 @using OpenTube.Infrastructure.Playback
 @inject VideoCatalog Catalogo
 @inject CurrentViewer Espectadores
+@inject OpenTube.Infrastructure.Branding.WatermarkService Marcas
 @inject OpenTube.Infrastructure.Services.CaptionService Legendas
 @inject Microsoft.Extensions.Options.IOptions<OpenTube.Infrastructure.Options.SecurityOptions> Seguranca
 @inject NavigationManager Navegacao
@@ -30,7 +31,7 @@
                    página e na tela cheia do contêiner, como legenda na tela cheia nativa e no
                    Picture-in-Picture. Quem grava a tela grava junto quem estava vendo. *@
                 <div class="player-shell rounded overflow-hidden shadow-sm position-relative"
-                     data-fullscreen-label="@T["Full screen"]">
+                     data-fullscreen-label="@T["Full screen"]" data-logo-canto="@((int?)Logo?.Position)">
                     <video id="player-video" controls playsinline preload="metadata"
                            controlslist="nodownload nofullscreen noremoteplayback"
                            disableremoteplayback x-webkit-airplay="deny"
@@ -43,6 +44,12 @@
                                    srclang="@legenda.Language" label="@(legenda.Label ?? legenda.Language)" />
                         }
                     </video>
+
+                    @* Marca do acervo, definida na administração: a mesma imagem sobre todos os vídeos. *@
+                    @if (Logo is not null)
+                    {
+                        <MarcaDoAcervo Marca="Logo" />
+                    }
 
                     @if (!string.IsNullOrWhiteSpace(MarcaDagua))
                     {
@@ -118,6 +125,8 @@
 
     private IReadOnlyList<OpenTube.Domain.Entities.VideoAsset> ListaDeLegendas = [];
 
+    private OpenTube.Infrastructure.Branding.WatermarkInfo? Logo;
+
     private string DuracaoTexto
     {
         get
@@ -139,7 +148,10 @@
         Video = await Catalogo.FindBySlugAsync(Espectador.StartingNewView(), Slug, Http.RequestAborted);
 
         if (Video is not null)
+        {
             ListaDeLegendas = await Legendas.ListAsync(Video.Id, Http.RequestAborted);
+            Logo = await Marcas.GetInfoAsync(Http.RequestAborted);
+        }
 
         // Quem entrou pelo link secreto não tem email: a marca leva o começo do identificador
         // da concessão, que a administração encontra na lista de acessos do vídeo. Vídeo

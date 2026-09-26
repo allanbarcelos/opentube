@@ -1,0 +1,133 @@
+@page "/admin/watermark"
+@using OpenTube.Domain.Entities
+@using OpenTube.Infrastructure.Branding
+@using OpenTube.Web.Endpoints
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject WatermarkService Marcas
+
+<PageTitle>@T["Watermark — Administration"]</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="@T["Breadcrumb"]">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
+            <li class="breadcrumb-item active" aria-current="page">@T["Watermark"]</li>
+        </ol>
+    </nav>
+
+    @if (!string.IsNullOrWhiteSpace(Erro))
+    {
+        <div class="alert alert-danger" role="alert">@Erro</div>
+    }
+    else if (Salvo is not null)
+    {
+        <div class="alert alert-success" role="status">@T["Watermark saved. It already appears over every video."]</div>
+    }
+    else if (Removido is not null)
+    {
+        <div class="alert alert-success" role="status">@T["Watermark removed."]</div>
+    }
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header">@T["Preview"]</div>
+                <div class="card-body">
+                    <div class="player-shell rounded position-relative marca-previa">
+                        @if (Marca is not null)
+                        {
+                            <MarcaDoAcervo Marca="Marca" Descricao="@T["Current watermark"]" />
+                        }
+                        else
+                        {
+                            <div class="marca-previa-vazia">@T["No watermark image yet."]</div>
+                        }
+                    </div>
+
+                    @if (Marca is not null)
+                    {
+                        <p class="small text-body-secondary mt-2 mb-0">
+                            @T.Format("{0} × {1} pixels, {2}.", Marca.Width, Marca.Height, PosicaoDaMarca.Rotulo(Marca.Position))
+                        </p>
+                    }
+                </div>
+            </div>
+
+            <div class="alert alert-light border mt-3 small mb-0">
+                @T["The image appears over every video, in the page and in the player's full screen. In the video's native full screen and in Picture-in-Picture the browser draws only the video, so the image does not appear there; the viewer's email still does."]
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card">
+                <div class="card-header">@(Marca is null ? T["Set the watermark"] : T["Change the watermark"])</div>
+                <div class="card-body">
+                    <form method="post" action="/admin/watermark/save" enctype="multipart/form-data">
+                        <AntiforgeryToken />
+
+                        <div class="mb-3">
+                            <label class="form-label" for="arquivo">@T["PNG image"]</label>
+                            <input class="form-control" type="file" id="arquivo" name="arquivo"
+                                   accept="image/png,.png" required="@(Marca is null)" />
+                            <div class="form-text">
+                                @T.Format("Up to 5 MB. It is resized to fit {0} × {1} pixels without distortion; smaller images are kept as they are, and the longest side needs at least {2} pixels. A transparent background works best.",
+                                    PlayerWatermark.StandardWidth, PlayerWatermark.StandardHeight, PlayerWatermark.MinLongestSide)
+                                @if (Marca is not null)
+                                {
+                                    @(" " + T["Leave it empty to change only the position."])
+                                }
+                            </div>
+                        </div>
+
+                        <fieldset class="mb-3">
+                            <legend class="form-label fs-6">@T["Position"]</legend>
+                            <div class="marca-posicoes">
+                                @foreach (var posicao in PosicaoDaMarca.Todas)
+                                {
+                                    var id = "posicao-" + (int)posicao;
+                                    <div class="form-check @PosicaoDaMarca.Opcao(posicao)">
+                                        <input class="form-check-input" type="radio" name="posicao" id="@id"
+                                               value="@((int)posicao)" checked="@(posicao == PosicaoAtual)" />
+                                        <label class="form-check-label" for="@id">@PosicaoDaMarca.Rotulo(posicao)</label>
+                                    </div>
+                                }
+                            </div>
+                        </fieldset>
+
+                        <button class="btn btn-primary w-100" type="submit">@T["Save"]</button>
+                    </form>
+
+                    @if (Marca is not null)
+                    {
+                        <form method="post" action="/admin/watermark/remove" class="mt-3">
+                            <AntiforgeryToken />
+                            <button class="btn btn-outline-danger w-100" type="submit">@T["Remove the watermark"]</button>
+                        </form>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "erro")]
+    private string? Erro { get; set; }
+
+    // Texto, como nas outras páginas: o endereço traz "salvo=1", que não vira bool.
+    [SupplyParameterFromQuery(Name = "salvo")]
+    private string? Salvo { get; set; }
+
+    [SupplyParameterFromQuery(Name = "removido")]
+    private string? Removido { get; set; }
+
+    private WatermarkInfo? Marca;
+
+    private WatermarkPosition PosicaoAtual => Marca?.Position ?? PosicaoDaMarca.Padrao;
+
+    protected override async Task OnInitializedAsync() =>
+        Marca = await Marcas.GetInfoAsync(Http.RequestAborted);
+}

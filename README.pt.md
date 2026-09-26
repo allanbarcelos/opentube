@@ -156,6 +156,16 @@ O que o player faz contra a cópia casual:
   Picture-in-Picture o navegador desenha só o vídeo, então a marca vai como legenda, exibida só
   nesses modos e religada se alguém a desligar. O Picture-in-Picture do Chromium não desenha
   legendas: ali a janela fica sem marca.
+- Marca do acervo: uma imagem PNG (até 5 MB) definida em Administração → Marca d'água, exibida
+  sobre todos os vídeos na posição escolhida (um canto ou o centro), na página e na tela cheia
+  do player. O arquivo é conferido como PNG de verdade pela assinatura, não pelo nome. O servidor
+  a leva ao tamanho padrão — cabe em 640 × 320 pixels, mantendo a proporção — com redução em
+  etapas de alta qualidade, que preserva a transparência e as bordas; o que fica guardado e é
+  servido é essa versão, sem os metadados do original. Imagens menores não são ampliadas, e o
+  lado maior precisa ter pelo menos 160 pixels. A
+  etiqueta de identificação não passa por esse canto. Na tela cheia nativa e no
+  Picture-in-Picture o navegador desenha só o vídeo, então a imagem não aparece ali; o email de
+  quem assiste continua, como legenda.
 
 ---
 
