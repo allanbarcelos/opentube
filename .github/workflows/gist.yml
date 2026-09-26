@@ -7,6 +7,14 @@ on:
       - "install.sh"
       - "uninstall.sh"
       - ".github/workflows/gist.yml"
+  # Lets the gist be (re)published without touching the scripts — for the first
+  # run after GIST_TOKEN is configured, or to restore a gist edited by hand.
+  workflow_dispatch:
+
+# Two quick pushes must not race: the older run could overwrite the newer content.
+concurrency:
+  group: gist
+  cancel-in-progress: false
 
 jobs:
   publish-gist:
@@ -28,6 +36,15 @@ jobs:
           GIST_ID:    ${{ vars.GIST_ID }}
         run: |
           set -euo pipefail
+
+          if [[ -z "${GIST_TOKEN:-}" ]]; then
+            echo "::error::Secret GIST_TOKEN is not set (personal access token with the gist scope)."
+            exit 1
+          fi
+
+          for file in install.sh uninstall.sh; do
+            [[ -s "$file" ]] || { echo "::error::${file} is missing or empty."; exit 1; }
+          done
 
           DESCRIPTION="Production installer — OpenTube (.NET + PostgreSQL + MinIO)"
 
