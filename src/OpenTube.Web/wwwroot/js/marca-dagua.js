@@ -1,6 +1,7 @@
 // Identificação de quem assiste, sobre o vídeo. Muda de canto de tempos em tempos: parada
 // num lugar só, ela seria recortada da gravação sem esforço.
 window.openTubeMarcaDagua = (function () {
+    const ID = 'marca-dagua';
     const INTERVALO = 20000;
 
     const cantos = [
@@ -12,13 +13,22 @@ window.openTubeMarcaDagua = (function () {
 
     function iniciar(elementId) {
         const marca = document.getElementById(elementId);
-        if (!marca) {
+        if (!marca || marca.dataset.iniciada) {
             return;
         }
 
+        marca.dataset.iniciada = '1';
+
         let posicao = Math.floor(Math.random() * cantos.length);
+        let temporizador = null;
 
         function mover() {
+            // A navegação aprimorada tira a marca da página sem recarregar: o relógio para junto.
+            if (!marca.isConnected) {
+                clearInterval(temporizador);
+                return;
+            }
+
             const canto = cantos[posicao % cantos.length];
 
             marca.style.top = canto.top;
@@ -30,8 +40,13 @@ window.openTubeMarcaDagua = (function () {
         }
 
         mover();
-        setInterval(mover, INTERVALO);
+        temporizador = setInterval(mover, INTERVALO);
     }
 
-    return { iniciar: iniciar };
+    // Chamado pelo player a cada página montada.
+    function montar() {
+        iniciar(ID);
+    }
+
+    return { iniciar: iniciar, montar: montar };
 })();

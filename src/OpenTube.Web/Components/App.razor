@@ -19,6 +19,11 @@
     <Routes />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    @* Carregados uma vez para todas as páginas: o player se monta sozinho na carga inicial e
+       a cada navegação aprimorada, que não executaria scripts colocados na própria página. *@
+    <script src="js/marca-dagua.js"></script>
+    <script src="js/analytics.js"></script>
+    <script src="js/player.js"></script>
 </body>
 
 </html>

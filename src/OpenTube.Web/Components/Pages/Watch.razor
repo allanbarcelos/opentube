@@ -27,7 +27,9 @@
             <div class="col-lg-8">
                 <div class="player-shell rounded overflow-hidden shadow-sm position-relative">
                     <video id="player-video" controls playsinline preload="metadata"
-                           poster="/api/videos/@Video.Id/thumbnail" crossorigin="use-credentials">
+                           poster="/api/videos/@Video.Id/thumbnail" crossorigin="use-credentials"
+                           data-manifest="/api/videos/@Video.Id/master.m3u8" data-video-id="@Video.Id"
+                           data-unsupported="@T["This browser cannot play the video."]">
                         @foreach (var legenda in ListaDeLegendas)
                         {
                             <track kind="subtitles" src="/api/videos/@Video.Id/captions/@(legenda.Id).vtt"
@@ -82,14 +84,8 @@
             </div>
         </div>
 
-        <script src="js/marca-dagua.js"></script>
-        <script src="lib/hlsjs/hls.min.js"></script>
-        <script src="js/analytics.js"></script>
-        <script src="js/player.js"></script>
-        <script>
-            window.openTubePlayer.iniciar('player-video', '/api/videos/@Video.Id/master.m3u8', '@Video.Id', @System.Text.Json.JsonSerializer.Serialize(T["This browser cannot play the video."]));
-            window.openTubeMarcaDagua && window.openTubeMarcaDagua.iniciar('marca-dagua');
-        </script>
+        @* Sem <script> aqui: a navegação aprimorada do Blazor não executa scripts da página
+           nova. O player.js, carregado no layout, monta o vídeo a partir dos atributos data-. *@
     }
 </div>
 
