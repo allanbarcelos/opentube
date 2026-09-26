@@ -229,7 +229,7 @@ switches the language and remembers the choice in a cookie.
 | --- | --- | --- | --- |
 | `make watch` | Database, MinIO, and Mailpit in containers; app and worker on the host | `Development` | `dotnet watch`, reloads on save |
 | `make up` / `make up-d` | Full stack in containers, with Caddy | `Development` | Prebuilt image, no hot reload |
-| `sudo bash install.sh` | Single-node Swarm | `Production` | Images built on the server |
+| `curl … \| sudo bash` | Single-node Swarm | `Production` | Images published to GHCR |
 
 `make` on its own lists the targets.
 
@@ -284,16 +284,27 @@ the password on first initialization. `make clean` deletes that volume so the da
 ### Production
 
 ```bash
-sudo bash install.sh
+curl -fsSL https://raw.githubusercontent.com/allanbarcelos/opentube/main/install.sh | sudo bash
 ```
 
-The installer brings up a single-node Docker Swarm, generates the user, password, and keys, and
-stores them only as Swarm secrets. None of it goes to disk or to the repository. The first time, a
-summary is printed to the terminal; copy it and keep it safe. Running it again does not replace
-secrets that already exist.
+The published images are `ghcr.io/allanbarcelos/opentube/app` and
+`ghcr.io/allanbarcelos/opentube/worker` (`latest`, the commit SHA, and `app-vA.B.C.D` /
+`worker-vA.B.C.D`). The installer asks for a GitHub username and a token with the `read:packages`
+scope, then pulls those images. It does not build on the server.
 
-The environment inside the containers is `Production`. To deploy new code, update the checkout and
-run `/opt/<name>/scripts/update.sh`. To remove what the installer created: `sudo bash uninstall.sh`.
+It brings up a single-node Docker Swarm, generates the user, password, and keys, and stores them
+only as Swarm secrets. None of it goes to disk or to the repository. The first time, a summary is
+printed to the terminal; copy it and keep it safe. Running it again does not replace secrets that
+already exist.
+
+The environment inside the containers is `Production`. To pick up newly published images, run
+`/opt/<name>/scripts/update.sh`. To remove what the installer created: `sudo bash uninstall.sh`
+(or the `opentube-uninstall.sh` copy published to the install gist).
+
+Pushing `main` builds `ghcr.io/allanbarcelos/opentube/app` and `worker` after the tests, and
+publishes `install.sh` and `uninstall.sh` to the gist named by the `GIST_ID` repository
+variable. That job needs a `GIST_TOKEN` secret with the `gist` scope. The first run without
+`GIST_ID` creates the gist and prints the id to save as that variable.
 
 Automatic transcription reads `Transcription__Executable` and `Transcription__ModelPath` in the
 worker. Leaving both empty turns the feature off, which is the default: it is the most expensive

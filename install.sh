@@ -11,11 +11,11 @@
 #    4. User, password, and keys generated here — none of that lives in the repo
 #    5. Directory /opt/<name>
 #    6. Swarm secrets (not environment variables, and not written to disk)
-#    7. Images built from this repository
+#    7. Images pulled from ghcr.io/allanbarcelos/opentube/{app,worker}
 #    8. Stack file + Caddyfile
 #    9. docker stack deploy
 #   10. UFW (22, and 80/443 according to the mode)
-#   11. scripts/update.sh to rebuild and republish
+#   11. scripts/update.sh to pull the published images and republish
 #   12. Wait for the services
 #   13. Summary. The password is shown only this first time: Swarm does not return it.
 #
@@ -27,9 +27,29 @@ IFS=$'\n\t'
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-[[ -f "${ROOT}/src/OpenTube.Web/Dockerfile" ]] \
-  || { echo "Run this from the OpenTube repository (Dockerfile not found)." >&2; exit 1; }
+APP_IMAGE="ghcr.io/allanbarcelos/opentube/app:latest"
+WORKER_IMAGE="ghcr.io/allanbarcelos/opentube/worker:latest"
+
+# Re-exec from a real file when the script is piped (`curl … | sudo bash`).
+# Otherwise bash reads the script from the pipe while a later prompt blocks,
+# and curl dies with "Failure writing output to destination".
+OPENTUBE_INSTALL_URL="${OPENTUBE_INSTALL_URL:-https://raw.githubusercontent.com/allanbarcelos/opentube/main/install.sh}"
+if [ -z "${OPENTUBE_FROMFILE:-}" ] && [ -p /dev/stdin ]; then
+  _self="$(mktemp "${TMPDIR:-/tmp}/opentube-install.XXXXXX")" || _self=""
+  if [ -n "$_self" ] \
+     && command -v curl >/dev/null 2>&1 \
+     && curl -fsSL "$OPENTUBE_INSTALL_URL" -o "$_self" \
+     && [ -s "$_self" ]; then
+    cat >/dev/null 2>&1 || true
+    export OPENTUBE_FROMFILE=1
+    if { : </dev/tty; } 2>/dev/null; then
+      exec bash "$_self" "$@" </dev/tty
+    else
+      exec bash "$_self" "$@"
+    fi
+  fi
+  [ -n "$_self" ] && rm -f "$_self"
+fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
@@ -137,6 +157,16 @@ echo ""
 _admin_default="$(read_conf "$INSTALL_CONF" ADMIN_EMAIL)"
 ask "Administrator email (signs in with a code, no password)" "$_admin_default" ADMIN_EMAIL
 [[ "$ADMIN_EMAIL" == *@*.* ]] || die "Invalid email: ${ADMIN_EMAIL}"
+echo ""
+
+sep
+echo -e "  ${BOLD}GitHub Container Registry (GHCR)${NC}"
+echo -e "  ${DIM}Images: ${APP_IMAGE} and ${WORKER_IMAGE}${NC}"
+echo ""
+_ghcr_default="$(read_conf "$INSTALL_CONF" GHCR_USER)"
+[[ -z "$_ghcr_default" ]] && _ghcr_default="allanbarcelos"
+ask "GitHub username" "$_ghcr_default" GHCR_USER
+ask_secret "GitHub personal access token (read:packages scope)" GHCR_TOKEN
 echo ""
 
 _mode_default="$(read_conf "$INSTALL_CONF" INSTALL_MODE)"
@@ -363,13 +393,21 @@ fi
 phase "PHASE 7 — Images"
 # ==============================================================================
 
-IMAGE_TAG="initial"
-info "Building the application and the worker (the first time takes a while)..."
-docker build -t "${STACK_NAME}_app:${IMAGE_TAG}" -f "${ROOT}/src/OpenTube.Web/Dockerfile" "$ROOT"
-docker build -t "${STACK_NAME}_worker:${IMAGE_TAG}" -f "${ROOT}/src/OpenTube.Worker/Dockerfile" "$ROOT"
-ok "Images ${STACK_NAME}_{app,worker}:${IMAGE_TAG}"
+GHCR_CREDS="${APP_DIR}/etc/.ghcr-credentials"
+cat > "$GHCR_CREDS" <<EOF
+GHCR_USER='${GHCR_USER}'
+GHCR_TOKEN='${GHCR_TOKEN}'
+EOF
+chmod 600 "$GHCR_CREDS"
 
-install -m 0755 "${ROOT}/scripts/swarm-entrypoint.sh" "${APP_DIR}/scripts/entrypoint.sh"
+info "Logging in to ghcr.io..."
+echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+ok "Authenticated with ghcr.io"
+
+info "Pulling images..."
+docker pull "$APP_IMAGE"
+docker pull "$WORKER_IMAGE"
+ok "Images pulled"
 
 # ==============================================================================
 phase "PHASE 8 — Stack and Caddy"
@@ -531,9 +569,7 @@ services:
         delay: 5s
 
   app:
-    image: ${STACK_NAME}_app:${IMAGE_TAG}
-    entrypoint: ["/bin/sh", "/entrypoint.sh"]
-    command: ["dotnet", "OpenTube.Web.dll"]
+    image: ${APP_IMAGE}
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
@@ -548,8 +584,6 @@ services:
 ${SMTP_ENV}
     secrets:
 ${APP_MOUNTS}
-    volumes:
-      - ${APP_DIR}/scripts/entrypoint.sh:/entrypoint.sh:ro
     networks:
       - internal
     healthcheck:
@@ -570,9 +604,7 @@ ${APP_MOUNTS}
         delay: 5s
 
   worker:
-    image: ${STACK_NAME}_worker:${IMAGE_TAG}
-    entrypoint: ["/bin/sh", "/entrypoint.sh"]
-    command: ["dotnet", "OpenTube.Worker.dll"]
+    image: ${WORKER_IMAGE}
     environment:
       DOTNET_ENVIRONMENT: Production
       Storage__Endpoint: http://minio:9000
@@ -604,8 +636,6 @@ ${APP_MOUNTS}
         uid: "1001"
         gid: "1001"
         mode: 0400
-    volumes:
-      - ${APP_DIR}/scripts/entrypoint.sh:/entrypoint.sh:ro
     networks:
       - internal
     deploy:
@@ -676,11 +706,11 @@ chmod 600 "$STACK_FILE" "${APP_DIR}/etc/Caddyfile"
 cat > "$INSTALL_CONF" <<EOF
 APP_NAME='${APP_NAME}'
 STACK_NAME='${STACK_NAME}'
-SOURCE_DIR='${ROOT}'
 INSTALL_MODE='${INSTALL_MODE}'
 PUBLIC_HOST='${PUBLIC_HOST}'
 PUBLIC_URL='${PUBLIC_URL}'
 ADMIN_EMAIL='${ADMIN_EMAIL}'
+GHCR_USER='${GHCR_USER}'
 POSTGRES_DB='${POSTGRES_DB}'
 POSTGRES_USER='${POSTGRES_USER}'
 MINIO_DATA_DIR='${MINIO_DATA_DIR}'
@@ -694,24 +724,29 @@ chmod 600 "$INSTALL_CONF"
 
 cat > "${APP_DIR}/scripts/update.sh" <<'UPD'
 #!/usr/bin/env bash
-# Rebuild the images from SOURCE_DIR in install.conf and republish the stack.
-# Does not regenerate the password. Pull the new code into SOURCE_DIR first.
+# Pull the published images and republish the stack.
+# Does not regenerate the password.
 set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CONF="${APP_DIR}/etc/install.conf"
+CREDS="${APP_DIR}/etc/.ghcr-credentials"
 read_conf() { grep -m1 "^${1}=" "$CONF" | cut -d= -f2- | sed "s/^'//;s/'\$//" || true; }
-SOURCE="$(read_conf SOURCE_DIR)"
 STACK="$(read_conf STACK_NAME)"
-[[ -n "$SOURCE" && -d "$SOURCE" ]] || { echo "Invalid SOURCE_DIR in ${CONF}" >&2; exit 1; }
 [[ -n "$STACK" ]] || { echo "Missing STACK_NAME in ${CONF}" >&2; exit 1; }
-TAG="$(date -u +%Y%m%d%H%M%S)"
-docker build -t "${STACK}_app:${TAG}" -f "${SOURCE}/src/OpenTube.Web/Dockerfile" "$SOURCE"
-docker build -t "${STACK}_worker:${TAG}" -f "${SOURCE}/src/OpenTube.Worker/Dockerfile" "$SOURCE"
-install -m 0755 "${SOURCE}/scripts/swarm-entrypoint.sh" "${APP_DIR}/scripts/entrypoint.sh"
-STACK_FILE="${APP_DIR}/docker-compose.prod.yml"
-sed -i "s|${STACK}_app:[^[:space:]]*|${STACK}_app:${TAG}|" "$STACK_FILE"
-sed -i "s|${STACK}_worker:[^[:space:]]*|${STACK}_worker:${TAG}|" "$STACK_FILE"
-docker stack deploy --compose-file "$STACK_FILE" --resolve-image never --prune "$STACK"
+[[ -f "$CREDS" ]] || { echo "Missing ${CREDS}. Run install.sh again." >&2; exit 1; }
+set -a
+# shellcheck disable=SC1090
+. "$CREDS"
+set +a
+echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+docker pull ghcr.io/allanbarcelos/opentube/app:latest
+docker pull ghcr.io/allanbarcelos/opentube/worker:latest
+docker stack deploy \
+  --compose-file "${APP_DIR}/docker-compose.prod.yml" \
+  --with-registry-auth \
+  --resolve-image always \
+  --prune \
+  "$STACK"
 UPD
 chmod 755 "${APP_DIR}/scripts/update.sh"
 ok "Stack, Caddy, and update.sh"
@@ -720,7 +755,7 @@ ok "Stack, Caddy, and update.sh"
 phase "PHASE 9 — Deploy"
 # ==============================================================================
 
-docker stack deploy --compose-file "$STACK_FILE" --resolve-image never --prune "$STACK_NAME"
+docker stack deploy --compose-file "$STACK_FILE" --with-registry-auth --resolve-image always --prune "$STACK_NAME"
 ok "Stack ${STACK_NAME} published"
 
 # ==============================================================================

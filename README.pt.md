@@ -225,7 +225,7 @@ a escolha num cookie.
 | --- | --- | --- | --- |
 | `make watch` | Banco, MinIO e Mailpit em container; aplicação e worker no host | `Development` | `dotnet watch`, recarrega ao salvar |
 | `make up` / `make up-d` | Pilha inteira em container, com Caddy | `Development` | Imagem já compilada, sem hot-reload |
-| `sudo bash install.sh` | Swarm de um nó | `Production` | Imagens construídas no servidor |
+| `curl … \| sudo bash` | Swarm de um nó | `Production` | Imagens publicadas no GHCR |
 
 `make` sozinho lista os alvos.
 
@@ -278,16 +278,26 @@ senha na primeira inicialização. `make clean` apaga esse volume para o banco n
 ### Produção
 
 ```bash
-sudo bash install.sh
+curl -fsSL https://raw.githubusercontent.com/allanbarcelos/opentube/main/install.sh | sudo bash
 ```
 
-O instalador sobe um Docker Swarm de um nó, gera usuário, senha e chaves e grava isso só
-como segredo do Swarm. Nada disso vai para o disco nem para o repositório. Na primeira vez o
-resumo é impresso no terminal; copie e guarde. Rodar de novo não troca segredo que já existe.
+As imagens publicadas são `ghcr.io/allanbarcelos/opentube/app` e
+`ghcr.io/allanbarcelos/opentube/worker` (`latest`, o SHA do commit e `app-vA.B.C.D` /
+`worker-vA.B.C.D`). O instalador pede um usuário do GitHub e um token com o escopo
+`read:packages` e baixa essas imagens. Nada é compilado no servidor.
 
-O ambiente dentro dos containers é `Production`. Para publicar um código novo, atualize o
-checkout e rode `/opt/<nome>/scripts/update.sh`. Para remover o que o instalador criou:
-`sudo bash uninstall.sh`.
+Ele sobe um Docker Swarm de um nó, gera usuário, senha e chaves e grava isso só como segredo
+do Swarm. Nada disso vai para o disco nem para o repositório. Na primeira vez o resumo é
+impresso no terminal; copie e guarde. Rodar de novo não troca segredo que já existe.
+
+O ambiente dentro dos containers é `Production`. Para receber imagens recém-publicadas, rode
+`/opt/<nome>/scripts/update.sh`. Para remover o que o instalador criou: `sudo bash uninstall.sh`
+(ou a cópia `opentube-uninstall.sh` publicada no gist de instalação).
+
+Um push no `main` compila `ghcr.io/allanbarcelos/opentube/app` e `worker` depois dos testes e
+publica `install.sh` e `uninstall.sh` no gist indicado pela variável de repositório `GIST_ID`.
+Esse job precisa do segredo `GIST_TOKEN`, com o escopo `gist`. A primeira execução sem
+`GIST_ID` cria o gist e imprime o id para ser salvo nessa variável.
 
 A transcrição automática lê `Transcription__Executable` e `Transcription__ModelPath` no
 worker. Os dois vazios desligam o recurso, que é o padrão: é a etapa mais cara do pipeline.

@@ -1,0 +1,93 @@
+name: Gist (install.sh)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "uninstall.sh"
+      - ".github/workflows/gist.yml"
+
+jobs:
+  publish-gist:
+    name: Publish install.sh to Gist
+    runs-on: ubuntu-latest
+
+    # Requires:
+    #   Secret  GIST_TOKEN — personal access token with the `gist` scope
+    #   Variable GIST_ID   — id of the gist to update. Optional on the first run:
+    #                        when absent, a new public gist is created and the id
+    #                        is printed so it can be saved as a repository variable.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish / update Gist
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID:    ${{ vars.GIST_ID }}
+        run: |
+          set -euo pipefail
+
+          DESCRIPTION="Production installer — OpenTube (.NET + PostgreSQL + MinIO)"
+
+          PAYLOAD_FILE=$(mktemp)
+          jq -n \
+            --arg desc "$DESCRIPTION" \
+            --rawfile install install.sh \
+            --rawfile uninstall uninstall.sh \
+            '{
+              description: $desc,
+              public: true,
+              files: {
+                "opentube-install.sh":   {content: $install},
+                "opentube-uninstall.sh": {content: $uninstall}
+              }
+            }' > "$PAYLOAD_FILE"
+
+          if [[ -n "${GIST_ID:-}" ]]; then
+            echo "Updating Gist ${GIST_ID}..."
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH \
+              -H "Authorization: token ${GIST_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/gists/${GIST_ID}" \
+              --data-binary "@${PAYLOAD_FILE}")
+          else
+            echo "No GIST_ID set — creating new Gist..."
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+              -H "Authorization: token ${GIST_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/gists" \
+              --data-binary "@${PAYLOAD_FILE}")
+          fi
+
+          rm -f "$PAYLOAD_FILE"
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "201" ]]; then
+            echo "::error::GitHub API returned HTTP ${HTTP_CODE}"
+            echo "$BODY" | jq '.message // .' 2>/dev/null || echo "$BODY"
+            exit 1
+          fi
+
+          GIST_URL=$(echo "$BODY" | jq -r '.html_url')
+          NEW_ID=$(echo "$BODY"   | jq -r '.id')
+
+          echo "::notice::Gist published: ${GIST_URL}"
+
+          if [[ -z "${GIST_ID:-}" ]]; then
+            echo ""
+            echo "==========================================================="
+            echo "  New Gist created. Add the following repository variable"
+            echo "  so future runs update this Gist instead of creating new:"
+            echo ""
+            echo "  Name : GIST_ID"
+            echo "  Value: ${NEW_ID}"
+            echo ""
+            echo "  Settings → Secrets and variables → Actions → Variables"
+            echo "==========================================================="
+          fi

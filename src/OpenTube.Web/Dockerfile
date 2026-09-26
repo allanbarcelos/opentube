@@ -23,6 +23,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 1001 --create-home opentube
 
+COPY scripts/swarm-entrypoint.sh /entrypoint.sh
+RUN chmod 755 /entrypoint.sh
+
 # Não roda como administrador: se algo der errado no processo, o estrago fica contido.
 USER 1001
 
@@ -31,4 +34,5 @@ COPY --from=build /app .
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 
-ENTRYPOINT ["dotnet", "OpenTube.Web.dll"]
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["dotnet", "OpenTube.Web.dll"]

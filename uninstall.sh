@@ -95,6 +95,16 @@ if docker image ls --format '{{.Repository}}:{{.Tag}}' >/dev/null 2>&1; then
   done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E "^${STACK_NAME}_(app|worker):" || true)
 fi
 
+for image in \
+  ghcr.io/allanbarcelos/opentube/app \
+  ghcr.io/allanbarcelos/opentube/worker
+do
+  while read -r ref; do
+    [[ -z "$ref" ]] && continue
+    docker rmi "$ref" >/dev/null 2>&1 && ok "Image ${ref}" || warn "Did not remove ${ref}"
+  done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep "^${image}:" || true)
+done
+
 phase "PHASE 4 — Files"
 
 if [[ -d "$APP_DIR" ]]; then

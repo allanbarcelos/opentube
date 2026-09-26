@@ -21,8 +21,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 1001 --create-home opentube
 
+COPY scripts/swarm-entrypoint.sh /entrypoint.sh
+RUN chmod 755 /entrypoint.sh
+
 USER 1001
 
 COPY --from=build /app .
 
-ENTRYPOINT ["dotnet", "OpenTube.Worker.dll"]
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["dotnet", "OpenTube.Worker.dll"]
