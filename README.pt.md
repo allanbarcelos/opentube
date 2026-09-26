@@ -144,6 +144,17 @@ funciona na prática é token curto, limite de sessões simultâneas por usuári
 com o email de quem assiste e registro completo de acesso. O empacotamento em CMAF mantém a porta
 aberta para adicionar DRM depois sem reescrever nada.
 
+O que o player faz contra a cópia casual:
+
+- Sem download, Picture-in-Picture ou transmissão (AirPlay, Chromecast) nos controles nativos, e
+  sem menu de contexto ou arrasto sobre o vídeo.
+- Marca d'água em duas camadas: um mosaico fraco e inclinado sobre o quadro inteiro, que não sai
+  num recorte, e uma etiqueta legível com email, data e hora que muda de canto. Quem entrou por
+  link secreto recebe o começo do identificador da concessão.
+- A tela cheia é do contêiner do player, não do `<video>` (que esconderia a marca). Tela cheia
+  pedida direto no `<video>` é desviada para o contêiner ou apenas desfeita, nunca mantida sem a
+  marca. No iPhone, que só permite a tela cheia do próprio vídeo, ele continua na página.
+
 ---
 
 ## Analytics

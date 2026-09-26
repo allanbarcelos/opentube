@@ -25,8 +25,14 @@
     {
         <div class="row g-4">
             <div class="col-lg-8">
-                <div class="player-shell rounded overflow-hidden shadow-sm position-relative">
+                @* Proteção básica: não impede gravação de tela (nada no navegador impede), mas tira
+                   os atalhos de download e de janela avulsa, e mantém a marca d'água visível em
+                   qualquer modo de exibição — quem grava a tela grava junto quem estava vendo. *@
+                <div class="player-shell rounded overflow-hidden shadow-sm position-relative"
+                     data-fullscreen-label="@T["Full screen"]">
                     <video id="player-video" controls playsinline preload="metadata"
+                           controlslist="nodownload nofullscreen noremoteplayback"
+                           disablepictureinpicture disableremoteplayback x-webkit-airplay="deny"
                            poster="/api/videos/@Video.Id/thumbnail" crossorigin="use-credentials"
                            data-manifest="/api/videos/@Video.Id/master.m3u8" data-video-id="@Video.Id"
                            data-unsupported="@T["This browser cannot play the video."]">
@@ -39,7 +45,10 @@
 
                     @if (!string.IsNullOrWhiteSpace(MarcaDagua))
                     {
-                        <span class="marca-dagua" id="marca-dagua">@MarcaDagua</span>
+                        @* O mosaico cobre o quadro inteiro, então recortar a borda não o remove;
+                           a etiqueta que muda de canto leva também a data e a hora. *@
+                        <div class="marca-dagua-mosaico" id="marca-dagua-mosaico" data-texto="@MarcaDagua" aria-hidden="true"></div>
+                        <span class="marca-dagua" id="marca-dagua" data-texto="@MarcaDagua">@MarcaDagua</span>
                     }
                 </div>
 
@@ -131,8 +140,15 @@
         if (Video is not null)
             ListaDeLegendas = await Legendas.ListAsync(Video.Id, Http.RequestAborted);
 
-        if (Seguranca.Value.WatermarkEnabled && Espectador.IsAuthenticated)
-            MarcaDagua = Espectador.Email;
+        // Quem entrou pelo link secreto não tem email: a marca leva o começo do identificador
+        // da concessão, que a administração encontra na lista de acessos do vídeo. Vídeo
+        // público visto por anônimo fica sem marca: não há de quem seria o vazamento.
+        if (Seguranca.Value.WatermarkEnabled)
+        {
+            MarcaDagua = Espectador.IsAuthenticated
+                ? Espectador.Email
+                : Espectador.LinkGrantId is { } link ? $"link {link.ToString("n")[..8]}" : null;
+        }
 
         // Vídeo inexistente e vídeo sem acesso respondem exatamente igual. A diferença entre
         // "não existe" e "existe mas não é para você" já seria informação sobre o acervo.

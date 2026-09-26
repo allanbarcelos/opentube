@@ -146,6 +146,18 @@ in practice is short-lived tokens, a limit on simultaneous sessions per user, a 
 with the viewer's email, and a complete access log. CMAF packaging keeps the door open to add DRM
 later without rewriting anything.
 
+What the player does against casual copying:
+
+- No download, Picture-in-Picture, or casting (AirPlay, Chromecast) in the native controls, and no
+  context menu or dragging over the video.
+- Watermark in two layers: a faint diagonal pattern over the whole frame, so cropping does not
+  remove it, and a readable label with the viewer's email, date, and time that moves between
+  corners. Visitors who came through a secret link get the start of the grant id instead.
+- Full screen belongs to the player container, not to the `<video>` (which would hide the
+  watermark). A full-screen request on the `<video>` itself is redirected to the container, or
+  simply left, never kept without the watermark. On the iPhone, which only allows the video's own
+  full screen, the video stays in the page.
+
 ---
 
 ## Analytics

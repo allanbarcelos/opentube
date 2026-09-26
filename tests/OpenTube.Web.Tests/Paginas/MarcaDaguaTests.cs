@@ -1,4 +1,6 @@
+using Microsoft.Extensions.DependencyInjection;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Access;
 using OpenTube.TestSupport;
 using OpenTube.Web.Tests.Support;
 
@@ -67,5 +69,40 @@ public class MarcaDaguaTests(PostgresFixture postgres, MinioFixture minio) : IAs
 
         // Sem identidade não há o que marcar; um rótulo genérico só atrapalharia a leitura.
         Assert.DoesNotContain("id=\"marca-dagua\"", html);
+    }
+
+    [Fact]
+    public async Task Quem_entrou_pelo_link_secreto_ve_a_identificacao_do_link()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Plano", VideoVisibility.Restricted);
+
+        using var escopo = _app.Services.CreateScope();
+        var link = await escopo.ServiceProvider.GetRequiredService<GrantService>().CreateShareLinkAsync(
+            GrantTargetType.Video, video.Id, GrantValidity.Forever, Guid.CreateVersion7());
+
+        using var cliente = _app.CreateBrowser();
+        await cliente.GetAsync(new Uri(link.Url).PathAndQuery);
+
+        var html = await cliente.GetStringAsync($"/watch/{video.Slug}");
+
+        // Sem email, a marca leva o começo do identificador da concessão: é o que liga uma
+        // gravação vazada ao link que a originou.
+        Assert.Contains($">link {link.GrantId:n}"[..14], html);
+        Assert.Contains("id=\"marca-dagua-mosaico\"", html);
+    }
+
+    [Fact]
+    public async Task O_player_sai_sem_os_atalhos_de_download_e_de_janela_avulsa()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        var html = await cliente.GetStringAsync($"/watch/{video.Slug}");
+
+        Assert.Contains("controlslist=\"nodownload nofullscreen noremoteplayback\"", html);
+        Assert.Contains("disablepictureinpicture", html);
+        Assert.Contains("disableremoteplayback", html);
     }
 }
