@@ -10,7 +10,19 @@ de email inteiro, com validade opcional e registro detalhado de quem assistiu o 
 
 ## Índice
 
+**Começar**
+
 - [Requisitos do servidor](#requisitos-do-servidor)
+- [Instalação em produção](#instalação-em-produção) — [antes de começar](#antes-de-começar) ·
+  [instalar](#instalar) · [modos de acesso](#modos-de-acesso) · [o que é montado](#o-que-o-instalador-monta) ·
+  [legendas automáticas](#legendas-automáticas-em-produção) · [operação](#operação) ·
+  [desinstalar](#desinstalar)
+- [Desenvolvimento](#desenvolvimento) — [pré-requisitos](#pré-requisitos) · [início rápido](#início-rápido) ·
+  [`make watch`](#make-watch--hot-reload) · [`make up`](#make-up--pilha-inteira-em-container) ·
+  [legendas](#legendas-automáticas-no-desenvolvimento) · [testes](#testes) · [alvos do make](#alvos-do-make)
+
+**Como funciona**
+
 - [Visão geral](#visão-geral)
 - [Modelo de acesso](#modelo-de-acesso)
 - [Arquitetura](#arquitetura)
@@ -18,13 +30,16 @@ de email inteiro, com validade opcional e registro detalhado de quem assistiu o 
 - [Analytics](#analytics)
 - [Legendas](#legendas)
 - [Suporte por vídeo](#suporte-por-vídeo)
+
+**Projeto**
+
 - [Stack](#stack)
 - [Estrutura do repositório](#estrutura-do-repositório)
-- [Como rodar](#como-rodar)
-- [Testes](#testes)
+- [Integração contínua e versões](#integração-contínua-e-versões)
 - [Segurança e privacidade](#segurança-e-privacidade)
 - [Roadmap](#roadmap)
 - [Uso de IA no desenvolvimento](#uso-de-ia-no-desenvolvimento)
+- [Licença](#licença)
 
 ---
 
@@ -74,6 +89,292 @@ resolução do original.
 
 ---
 
+## Instalação em produção
+
+Um comando num servidor x86-64 limpo sobe a plataforma inteira num Docker Swarm de um nó, usando
+as imagens já publicadas no GHCR — nada é compilado no servidor.
+
+### Antes de começar
+
+- Um servidor que atenda aos [requisitos](#requisitos-do-servidor), com acesso de root por SSH.
+- Um nome para ele: um domínio apontando para o servidor (modo público), um domínio com proxy da
+  Cloudflare (modo Cloudflare) ou um nome que resolva na rede local.
+- Uma conta SMTP para enviar os códigos de entrada. Dá para configurar depois, mas sem ela ninguém
+  recebe código.
+- Para transcrever na GPU: o driver da NVIDIA instalado no host (`nvidia-smi` funcionando). O
+  instalador cuida do resto.
+
+### Instalar
+
+```bash
+curl -fsSL https://gist.githubusercontent.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a/raw/opentube-install.sh | sudo bash
+```
+
+O script vem do [gist de instalação](https://gist.github.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a), mantido em sincronia com o `install.sh` a cada
+push no `main` (ou rode `sudo bash install.sh` a partir de um checkout). As perguntas são feitas no
+terminal mesmo quando o script chega pelo pipe:
+
+| Pergunta | Observação |
+| --- | --- |
+| Nome da aplicação | Padrão `opentube`. Dá nome ao diretório `/opt/<nome>` e à pilha |
+| Email do administrador | Entra com um código enviado por email — não há senha |
+| Modo de acesso | Domínio público, rede local ou Cloudflare — veja [modos de acesso](#modos-de-acesso) |
+| Domínio, porta, email do Let's Encrypt | Conforme o modo |
+| SMTP | Servidor, porta, usuário e remetente; a senha vira segredo do Swarm |
+| Legendas automáticas | Whisper ligado ou não; com GPU NVIDIA, se deve usá-la |
+| Disco do MinIO | Onde ficam os arquivos de vídeo — pode ser um disco separado |
+
+Depois de uma confirmação, ele segue sozinho e termina com um resumo. **Na primeira vez, o resumo
+mostra a senha do banco e as chaves: copie e guarde** — elas só existem como segredos do Swarm, que
+não podem ser lidos de volta.
+
+Rodar o instalador de novo também é o jeito de mudar configurações (ligar o SMTP, trocar o modo de
+acesso, ligar as legendas): as respostas anteriores voltam como padrão, e os segredos e o usuário
+do banco que já existem são mantidos.
+
+### Modos de acesso
+
+| Modo | TLS | Portas expostas |
+| --- | --- | --- |
+| Domínio público | Caddy obtém certificado do Let's Encrypt | 80 e 443 |
+| Rede local | Certificado interno | 80 e 443, só redes privadas |
+| Cloudflare | A Cloudflare termina o HTTPS; a origem responde em HTTP | Uma porta (padrão 8080), só faixas da Cloudflare |
+
+No modo Cloudflare, a porta da origem fica restrita às faixas da Cloudflare no UFW e no
+`DOCKER-USER` (porta publicada pelo Docker não passa pelo UFW), com uma unidade systemd que
+reaplica as regras depois que o Docker sobe. Um cron mensal atualiza as faixas. O Caddy só aceita
+o `CF-Connecting-IP` em conexões vindas dessas faixas, então a aplicação vê o endereço real de
+quem acessa. No painel da Cloudflare: registro DNS com proxy, SSL/TLS em Flexible, Always Use
+HTTPS e uma Origin Rule quando a porta não é uma das que a Cloudflare repassa direto (80, 8080,
+8880, 2052, 2082, 2086, 2095). Servir vídeo pela CDN da Cloudflare está sujeito aos termos do plano.
+
+O Caddy é publicado em modo host: a malha de ingress do Swarm trocaria o endereço de quem acessa
+por um interno, e os limites por origem passariam a valer para todo mundo de uma vez.
+
+### O que o instalador monta
+
+1. **Pacotes** — Docker, curl, OpenSSL, UFW e cron (e, com GPU, o NVIDIA Container Toolkit).
+2. **Swarm** — um Docker Swarm de um nó.
+3. **Credenciais** — usuário e senha do banco, chaves do storage e peppers, gerados no servidor e
+   guardados só como segredos do Swarm. Nada disso vai para o disco nem para o repositório.
+4. **Imagens** — `app`, `worker` e `whisper`, baixadas do GHCR. São públicas: não é preciso conta
+   nem token do GitHub.
+5. **Pilha** — PostgreSQL, MinIO, a aplicação, o worker, o Whisper e o Caddy, com `Production`
+   como ambiente dentro dos containers.
+6. **Firewall** — SSH mais o acesso web que o modo pede.
+7. **Início** — espera os serviços subirem e imprime o resumo.
+
+| Caminho | Conteúdo |
+| --- | --- |
+| `/opt/<nome>/docker-compose.prod.yml` | A pilha (só referências a segredos, nenhum valor) |
+| `/opt/<nome>/etc/` | Caddyfile e `install.conf` (as respostas, sem segredos) |
+| `/opt/<nome>/data/` | PostgreSQL, certificados do Caddy e modelos do Whisper |
+| Disco do MinIO (escolhido) | Originais e vídeos publicados |
+| `/opt/<nome>/scripts/update.sh` | Atualiza para as imagens mais recentes |
+| `/opt/<nome>/logs/` | Logs dos scripts de manutenção |
+
+### Legendas automáticas em produção
+
+O instalador pergunta se as legendas automáticas devem ser ligadas. Ligadas, o Whisper
+([whisper.cpp](https://github.com/ggml-org/whisper.cpp)) roda como o serviço `whisper` da pilha, e
+o worker fala com ele por HTTP dentro da rede privada.
+
+- **GPU ou CPU.** O instalador procura uma GPU NVIDIA (`nvidia-smi`). Havendo, oferece a imagem
+  `whisper:cuda`; como o Swarm não entrega GPU a um serviço diretamente, ele instala o NVIDIA
+  Container Toolkit se preciso e, depois de perguntar (o Docker reinicia), torna o `nvidia` o
+  runtime padrão do Docker. Sem GPU, ou sem o runtime, usa `whisper:cpu`. A imagem CUDA também
+  cai para a CPU sozinha se a GPU sumir.
+- **Otimizado para a máquina.** Ao subir, o container lê a memória da GPU, os núcleos e a memória
+  que pode usar (inclusive os limites do Swarm) e escolhe:
+
+  ```mermaid
+  flowchart TD
+      inicio(["Container sobe"]) --> gpu{"GPU NVIDIA respondendo<br/>dentro do container?"}
+      gpu -->|"sim, ≥ 3 GB"| large["large-v3-turbo-q5_0 · 4 threads"]
+      gpu -->|"sim, menos"| smallq["small-q5_1 · 4 threads"]
+      gpu -->|não| cpu{"Núcleos e memória<br/>(limites do cgroup)"}
+      cpu -->|"≥ 8 e ≥ 4 GB"| small["small · até 8 threads"]
+      cpu -->|"≥ 4 e ≥ 2 GB"| smallq2["small-q5_1 · núcleos"]
+      cpu -->|menor| base["base-q5_1 · núcleos"]
+      large & smallq & small & smallq2 & base --> tem{"Modelo já<br/>no volume?"}
+      tem -->|não| baixa["Baixa e confere o SHA-256"]
+      tem -->|sim| roda
+      baixa --> roda(["whisper-server -l auto<br/>publica /info.json"])
+  ```
+
+  | Hardware | Modelo | Threads |
+  | --- | --- | --- |
+  | GPU NVIDIA com ≥ 3 GB | `large-v3-turbo-q5_0` (574 MB), o mais preciso | 4 |
+  | GPU NVIDIA com menos | `small-q5_1` | 4 |
+  | CPU com ≥ 8 núcleos e ≥ 4 GB | `small` (488 MB) | até 8 |
+  | CPU com ≥ 4 núcleos e ≥ 2 GB | `small-q5_1` (190 MB) | núcleos |
+  | menor que isso | `base-q5_1` (60 MB) | núcleos |
+
+  A imagem de CPU traz código para várias gerações de processador x86-64 (de SSE a AVX2 e
+  AVX-512) e carrega a melhor ao iniciar. A escolha aparece na aba Legendas e em
+  `docker service logs <pilha>_whisper`.
+- **Modelos sob demanda.** O modelo é baixado no primeiro início para `/opt/<nome>/data/whisper`,
+  conferido pelo SHA-256 publicado, e fica lá. Todo modelo é multilíngue: reconhece e detecta os
+  99 idiomas do Whisper, sem nada a baixar por idioma. Trocar de modelo baixa só o novo. Para
+  forçar um modelo, rode o instalador com `WHISPER_MODEL=medium-q5_0` (lista em
+  `docker/whisper/modelos.txt`).
+- O botão de legenda aparece quando o modelo termina de carregar; até lá, e sempre que o container
+  estiver fora do ar, a aba oferece só envio e editor.
+
+As imagens são `ghcr.io/allanbarcelos/opentube/whisper:cpu` e `:cuda` (também
+`cpu-v1.9.4`/`cuda-v1.9.4`, a versão do whisper.cpp), geradas pelo workflow `Whisper` quando
+`docker/whisper/` muda. O `update.sh` baixa a que estiver em uso.
+
+### Operação
+
+A pilha leva o nome da aplicação (`opentube` por padrão; hífens viram sublinhados).
+
+| Tarefa | Como |
+| --- | --- |
+| Atualizar para as imagens mais recentes | `sudo /opt/<nome>/scripts/update.sh` |
+| Ver os serviços | `docker stack services <pilha>` |
+| Acompanhar os logs de um serviço | `docker service logs -f <pilha>_app` (também `_worker`, `_whisper`, `_caddy`) |
+| Mudar uma configuração | Rodar o instalador de novo |
+| Backup | `/opt/<nome>/data` e o disco do MinIO, mais o resumo da primeira instalação |
+
+### Desinstalar
+
+```bash
+curl -fsSL https://gist.githubusercontent.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a/raw/opentube-uninstall.sh | sudo bash
+```
+
+Remove a pilha, os segredos do Swarm, as imagens locais, `/opt/<nome>` (**inclusive o banco**), o
+disco do MinIO se ele estiver fora desse diretório e as regras de firewall do modo Cloudflare.
+Docker, Swarm e outras pilhas ficam intactos. Ele pede confirmação, e não há como desfazer.
+
+> **Sobre a imagem do MinIO:** as imagens públicas do MinIO deixaram de ser distribuídas pelo Docker
+> Hub e pelo quay.io. O `docker-compose.yml` usa a última versão comunitária publicada, suficiente
+> para desenvolvimento. Em produção, use o registro oficial com credenciais ou troque por qualquer
+> outro servidor compatível com S3 (SeaweedFS, Garage, Amazon S3): a aplicação conversa apenas pela
+> API S3, atrás da interface `IVideoStorage`.
+
+---
+
+## Desenvolvimento
+
+O desenvolvimento local é feito pelo `make`; `make` sozinho lista os alvos. Não há usuário de
+banco, senha nem chave no repositório: na primeira vez o `make` gera o `.env` (modo 600) e depois
+o reutiliza.
+
+### Pré-requisitos
+
+| Ferramenta | Para quê |
+| --- | --- |
+| Docker (Docker Desktop ou Colima) | Dependências e testes de integração. O `make` inicia o Colima se ele estiver instalado e parado |
+| .NET SDK 10 | A aplicação e o worker |
+| FFmpeg | Transcodificação pelo worker no `make watch`; os testes que o usam são pulados sem ele |
+| Homebrew (opcional) | `make whisper`, para ligar as legendas automáticas |
+
+### Início rápido
+
+```bash
+git clone https://github.com/allanbarcelos/opentube.git
+cd opentube
+make watch
+```
+
+Abra http://localhost:5080 e entre com o email de administrador de
+`src/OpenTube.Web/appsettings.Development.json`; o código chega no Mailpit, em
+http://localhost:8025.
+
+| Comando | O que sobe | Ambiente | Código |
+| --- | --- | --- | --- |
+| `make watch` | Banco, MinIO e Mailpit em container; aplicação e worker no host | `Development` | `dotnet watch`, recarrega ao salvar |
+| `make up` / `make up-d` | Pilha inteira em container, com Caddy | `Development` | Imagem compilada, sem hot-reload |
+
+### `make watch` — hot-reload
+
+O modo do dia a dia. Só as dependências ficam em container; a aplicação e o worker rodam na
+máquina, com `ASPNETCORE_ENVIRONMENT=Development`.
+
+| Serviço | Endereço |
+| --- | --- |
+| Aplicação | http://localhost:5080 |
+| Worker | processo local |
+| MinIO (console) | http://localhost:9001 |
+| Mailpit | http://localhost:8025 |
+| PostgreSQL | `localhost:5432` |
+
+O navegador envia o arquivo direto ao MinIO em `localhost:9000`. Usuário e senha estão no `.env`.
+Ctrl+C encerra aplicação e worker; os containers continuam até `make deps-down`.
+`make watch-web` e `make watch-worker` sobem cada processo sozinho, com as dependências já no ar.
+
+### `make up` — pilha inteira em container
+
+Tudo em container, também com `ASPNETCORE_ENVIRONMENT=Development`, mas sem recarregar quando o
+código muda. Serve para ver a aplicação atrás do Caddy, com autorização por segmento, como em
+produção.
+
+```bash
+make up-d
+```
+
+| Serviço | Endereço |
+| --- | --- |
+| Aplicação | https://localhost |
+| Mailpit | http://localhost:8025 |
+| Credenciais | `.env` |
+
+O certificado de `localhost` é interno; o navegador avisa uma vez. Aqui o administrador é
+`OPENTUBE_ADMIN_EMAIL` do `.env` (o gerador sugere `admin@localhost`). O Whisper fica de fora por
+padrão, porque a compilação demora; para incluí-lo:
+`docker compose --profile whisper up -d --build`.
+
+Um volume criado com o usuário fixo antigo não aceita a senha nova: o PostgreSQL só aplica a senha
+na primeira inicialização. `make clean` apaga esse volume para o banco nascer de novo.
+
+### Legendas automáticas no desenvolvimento
+
+`make whisper` instala o whisper.cpp (`whisper-cli`,
+pelo Homebrew) e baixa um modelo para `.whisper/`, conferindo o SHA-256 publicado. A partir daí o
+`make watch` liga a transcrição sozinho e avisa na abertura. O modelo padrão é o `small-q5_1`
+(190 MB), bom para português e rápido no Apple Silicon (Metal); dá para escolher outro com
+`make whisper m=base` (mais rápido) ou `m=large-v3-turbo-q5_0` (o mais preciso). Reinicie o
+`make watch` depois de instalar. O idioma é detectado do mesmo jeito que em produção.
+
+### Testes
+
+```bash
+make test            # todas as suítes
+make test p=Web      # um projeto: Domain, Infrastructure, Worker ou Web
+```
+
+Os testes de integração sobem PostgreSQL e MinIO próprios (Testcontainers): precisam do Docker,
+mas não do `.env` nem das dependências do `make watch`. Os que usam FFmpeg são pulados quando ele
+não está instalado, e os que transcrevem fala de verdade são pulados sem o Whisper (`make whisper`)
+e o `say` do macOS. `OPENTUBE_WHISPER_URL=http://…` os aponta para um servidor do Whisper já no ar —
+o container da imagem, por exemplo. Compilam em `.artifacts/test`, e não no `bin`/`obj` dos projetos, para poderem
+rodar enquanto o `make watch` recompila os mesmos projetos.
+
+Cada fase do roadmap só é considerada concluída com sua suíte verde. A lógica sensível vive em
+classes puras (regras de acesso, fusão de intervalos, cálculo do ladder de transcodificação,
+limitador de taxa), testável sem banco nem rede; o restante usa containers efêmeros.
+
+### Alvos do make
+
+| Alvo | O que faz |
+| --- | --- |
+| `make watch` | Dependências em container, aplicação e worker no host com hot-reload |
+| `make watch-web` / `make watch-worker` | Só a aplicação, ou só o worker (dependências já no ar) |
+| `make deps-up` / `make deps-down` | Sobe ou para só o banco, o MinIO e o Mailpit |
+| `make whisper` | Instala o whisper.cpp e um modelo para as legendas (`m=base`, `m=large-v3-turbo-q5_0`…) |
+| `make up` / `make up-d` | Compila e sobe a pilha inteira (em primeiro plano / em segundo plano) |
+| `make down` | Para e remove os containers |
+| `make restart s=app` | Reinicia um serviço sem recompilar |
+| `make logs` / `make logs s=app` | Acompanha os logs de todos os serviços ou de um |
+| `make ps` | Lista os containers e a situação deles |
+| `make build` | Recompila as imagens sem subir |
+| `make shell s=app` | Abre um shell num container em execução |
+| `make test` / `make test p=Web` | Roda todas as suítes, ou uma (`Domain`, `Infrastructure`, `Worker`, `Web`) |
+| `make clean` | Remove containers, volumes e órfãos — reset completo |
+
+---
+
 ## Visão geral
 
 | Recurso | Descrição |
@@ -91,6 +392,10 @@ resolução do original.
 | Proteção | Marca d'água móvel com o email de quem assiste, marca d'água do acervo em PNG, sem download nem transmissão, limite de reproduções simultâneas |
 | Auditoria | Toda ação administrativa fica registrada: concessão, revogação, publicação, exclusão |
 | Idiomas | Interface em inglês, português e francês |
+
+A interface é em inglês, português e francês. O inglês é a base: é o que aparece quando o
+navegador não pede outro idioma e quando falta uma tradução. O menu troca o idioma e guarda a
+escolha num cookie.
 
 ---
 
@@ -440,219 +745,28 @@ tests/
 
 ---
 
-## Como rodar
+## Integração contínua e versões
 
-**Requisitos:** Docker e .NET SDK 10.
+Cada imagem tem o seu workflow, e um push no `main` roda só o que a mudança exige:
 
-Não há usuário de banco, senha nem chave no repositório. Na primeira vez o `make` gera o
-`.env` (modo 600) e nas seguintes reutiliza o arquivo. Não existe o alvo `make dev`.
-
-A interface é em inglês, português e francês. O inglês é a base: é o que aparece quando o
-navegador não pede outro idioma e quando falta uma tradução. O menu troca o idioma e guarda
-a escolha num cookie.
-
-| Comando | O que sobe | Ambiente | Código |
+| Workflow | Imagem | Testes | Tags |
 | --- | --- | --- | --- |
-| `make watch` | Banco, MinIO e Mailpit em container; aplicação e worker no host | `Development` | `dotnet watch`, recarrega ao salvar |
-| `make up` / `make up-d` | Pilha inteira em container, com Caddy | `Development` | Imagem já compilada, sem hot-reload |
-| `curl … \| sudo bash` | Swarm de um nó | `Production` | Imagens publicadas no GHCR |
+| `app.yml` | `ghcr.io/allanbarcelos/opentube/app` | Domain, Infrastructure, Web | `latest`, SHA do commit, `app-vA.B.C.D` |
+| `worker.yml` | `ghcr.io/allanbarcelos/opentube/worker` | Worker | `latest`, SHA do commit, `worker-vA.B.C.D` |
+| `whisper.yml` | `ghcr.io/allanbarcelos/opentube/whisper` | ShellCheck, teste de fumaça | `cpu`, `cuda`, `cpu-v1.9.4`, `cuda-v1.9.4` |
+| `gist.yml` | — | — | Publica o `install.sh` e o `uninstall.sh` no gist |
 
-`make` sozinho lista os alvos.
+Os testes rodam quando muda código que eles compilam, mas uma imagem só é compilada e publicada
+quando algo que vai para dentro dela mudou desde o push anterior: README, teste, instalador ou o
+próprio workflow não disparam build, e uma mudança só na web não recompila o worker (nem o
+contrário). Código compartilhado pelos dois (Domain, Infrastructure, Shared, os
+`Directory.*.props`) recompila os dois. Quem decide é o `.github/scripts/changed.sh`, e o resumo do
+job diz por que o build rodou ou foi pulado.
 
-### Desenvolvimento (`make watch`)
-
-Este é o modo de desenvolver. Só as dependências ficam em container; a aplicação e o worker
-rodam na máquina, com `ASPNETCORE_ENVIRONMENT=Development`.
-
-```bash
-make watch
-```
-
-| Serviço | Endereço |
-| --- | --- |
-| Aplicação | http://localhost:5080 |
-| Worker | processo local |
-| MinIO (console) | http://localhost:9001 |
-| Mailpit | http://localhost:8025 |
-| PostgreSQL | `localhost:5432` |
-
-O navegador envia o arquivo direto ao MinIO em `localhost:9000`. Usuário e senha estão no
-`.env`. O administrador é o email de `src/OpenTube.Web/appsettings.Development.json`; o código
-de entrada cai no Mailpit. Ctrl+C encerra aplicação e worker. Os containers continuam até
-`make deps-down`.
-
-`make watch-web` e `make watch-worker` sobem cada processo sozinho, com as dependências já no ar.
-
-**Legendas automáticas no desenvolvimento.** `make whisper` instala o whisper.cpp (`whisper-cli`,
-pelo Homebrew) e baixa um modelo para `.whisper/`, conferindo o SHA-256 publicado. A partir daí o
-`make watch` liga a transcrição sozinho e avisa na abertura. O modelo padrão é o `small-q5_1`
-(190 MB), bom para português e rápido no Apple Silicon; dá para escolher outro com
-`make whisper m=base` (mais rápido) ou `m=large-v3-turbo-q5_0` (o mais preciso). Reinicie o
-`make watch` depois de instalar.
-
-### Pilha local (`make up`)
-
-Sobe tudo em container, também com `ASPNETCORE_ENVIRONMENT=Development`, mas sem recarregar
-quando o código muda. Serve para ver a aplicação atrás do Caddy, com autorização por segmento.
-
-```bash
-make up-d
-```
-
-| Serviço | Endereço |
-| --- | --- |
-| Aplicação | https://localhost |
-| Mailpit | http://localhost:8025 |
-| Credenciais | `.env` |
-
-O Whisper fica de fora por padrão, porque a compilação demora. Para incluí-lo:
-`docker compose --profile whisper up -d --build`.
-
-O certificado de `localhost` é interno. O navegador avisa uma vez — é esperado. Aqui o
-administrador é `OPENTUBE_ADMIN_EMAIL` do `.env` (o gerador sugere `admin@localhost`), não o
-email do `appsettings.Development.json`.
-
-Um volume criado com o usuário fixo antigo não aceita a senha nova: o PostgreSQL só aplica a
-senha na primeira inicialização. `make clean` apaga esse volume para o banco nascer de novo.
-
-### Produção
-
-Instalar:
-
-```bash
-curl -fsSL https://gist.githubusercontent.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a/raw/opentube-install.sh | sudo bash
-```
-
-Desinstalar:
-
-```bash
-curl -fsSL https://gist.githubusercontent.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a/raw/opentube-uninstall.sh | sudo bash
-```
-
-Os dois scripts vêm do [gist de instalação](https://gist.github.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a),
-mantido em sincronia com o `install.sh` e o `uninstall.sh` a cada push no `main`. As perguntas
-são feitas no terminal mesmo quando o script chega pelo pipe.
-
-As imagens publicadas são `ghcr.io/allanbarcelos/opentube/app` e
-`ghcr.io/allanbarcelos/opentube/worker` (`latest`, o SHA do commit e `app-vA.B.C.D` /
-`worker-vA.B.C.D`), além da `whisper`, das legendas automáticas. São públicas: o instalador as
-baixa sem conta nem token do GitHub, e nada é compilado no servidor.
-
-O instalador oferece três modos de acesso:
-
-| Modo | TLS | Portas expostas |
-| --- | --- | --- |
-| Domínio público | Caddy obtém certificado do Let's Encrypt | 80 e 443 |
-| Rede local | Certificado interno | 80 e 443, só redes privadas |
-| Cloudflare | A Cloudflare termina o HTTPS; a origem responde em HTTP | Uma porta (padrão 8080), só faixas da Cloudflare |
-
-No modo Cloudflare, a porta da origem fica restrita às faixas da Cloudflare no UFW e no
-`DOCKER-USER` (porta publicada pelo Docker não passa pelo UFW), com uma unidade systemd que
-reaplica as regras depois que o Docker sobe. Um cron mensal atualiza as faixas. O Caddy só aceita
-o `CF-Connecting-IP` em conexões vindas dessas faixas, então a aplicação vê o endereço real de
-quem acessa. No painel da Cloudflare: registro DNS com proxy, SSL/TLS em Flexible, Always Use
-HTTPS e uma Origin Rule quando a porta não é uma das que a Cloudflare repassa direto (80, 8080,
-8880, 2052, 2082, 2086, 2095). Servir vídeo pela CDN da Cloudflare está sujeito aos termos do plano.
-
-O Caddy é publicado em modo host: a malha de ingress do Swarm trocaria o endereço de quem acessa
-por um interno, e os limites por origem passariam a valer para todo mundo de uma vez.
-
-Ele sobe um Docker Swarm de um nó, gera usuário, senha e chaves e grava isso só como segredo
-do Swarm. Nada disso vai para o disco nem para o repositório. Na primeira vez o resumo é
-impresso no terminal; copie e guarde. Rodar de novo não troca segredo que já existe.
-
-O ambiente dentro dos containers é `Production`. Para receber imagens recém-publicadas, rode
-`/opt/<nome>/scripts/update.sh`. Para remover o que o instalador criou, use o comando de
-desinstalação acima (ou `sudo bash uninstall.sh` a partir de um checkout).
-
-Um push no `main` roda só o que a mudança exige. Cada imagem (`app`, `worker`, `whisper`) tem o
-seu workflow: os testes rodam quando muda código que eles compilam, mas a imagem só é compilada e
-publicada quando algo que vai para dentro dela mudou desde o push anterior — README, teste,
-instalador ou o próprio workflow não disparam build, e uma mudança só na web não recompila o
-worker (nem o contrário). Código compartilhado pelos dois (Domain, Infrastructure, Shared, os
-`Directory.*.props`) recompila os dois. Quem decide é o `.github/scripts/changed.sh`, e o resumo
-do job diz por que o build rodou ou foi pulado. Mudanças no `install.sh` e no `uninstall.sh` só os
-publicam no gist indicado pela variável de repositório `GIST_ID`.
-Esse job precisa do segredo `GIST_TOKEN`, com o escopo `gist`. A primeira execução sem
-`GIST_ID` cria o gist e imprime o id para ser salvo nessa variável.
-
-#### Legendas automáticas em produção
-
-O instalador pergunta se as legendas automáticas devem ser ligadas. Ligadas, o Whisper
-([whisper.cpp](https://github.com/ggml-org/whisper.cpp)) roda como o serviço `whisper` da pilha, e
-o worker fala com ele por HTTP dentro da rede privada.
-
-- **GPU ou CPU.** O instalador procura uma GPU NVIDIA (`nvidia-smi`). Havendo, oferece a imagem
-  `whisper:cuda`; como o Swarm não entrega GPU a um serviço diretamente, ele instala o NVIDIA
-  Container Toolkit se preciso e, depois de perguntar (o Docker reinicia), torna o `nvidia` o
-  runtime padrão do Docker. Sem GPU, ou sem o runtime, usa `whisper:cpu`. A imagem CUDA também
-  cai para a CPU sozinha se a GPU sumir.
-- **Otimizado para a máquina.** Ao subir, o container lê a memória da GPU, os núcleos e a memória
-  que pode usar (inclusive os limites do Swarm) e escolhe:
-
-  ```mermaid
-  flowchart TD
-      inicio(["Container sobe"]) --> gpu{"GPU NVIDIA respondendo<br/>dentro do container?"}
-      gpu -->|"sim, ≥ 3 GB"| large["large-v3-turbo-q5_0 · 4 threads"]
-      gpu -->|"sim, menos"| smallq["small-q5_1 · 4 threads"]
-      gpu -->|não| cpu{"Núcleos e memória<br/>(limites do cgroup)"}
-      cpu -->|"≥ 8 e ≥ 4 GB"| small["small · até 8 threads"]
-      cpu -->|"≥ 4 e ≥ 2 GB"| smallq2["small-q5_1 · núcleos"]
-      cpu -->|menor| base["base-q5_1 · núcleos"]
-      large & smallq & small & smallq2 & base --> tem{"Modelo já<br/>no volume?"}
-      tem -->|não| baixa["Baixa e confere o SHA-256"]
-      tem -->|sim| roda
-      baixa --> roda(["whisper-server -l auto<br/>publica /info.json"])
-  ```
-
-  | Hardware | Modelo | Threads |
-  | --- | --- | --- |
-  | GPU NVIDIA com ≥ 3 GB | `large-v3-turbo-q5_0` (574 MB), o mais preciso | 4 |
-  | GPU NVIDIA com menos | `small-q5_1` | 4 |
-  | CPU com ≥ 8 núcleos e ≥ 4 GB | `small` (488 MB) | até 8 |
-  | CPU com ≥ 4 núcleos e ≥ 2 GB | `small-q5_1` (190 MB) | núcleos |
-  | menor que isso | `base-q5_1` (60 MB) | núcleos |
-
-  A imagem de CPU traz código para várias gerações de processador x86-64 (de SSE a AVX2 e
-  AVX-512) e carrega a melhor ao iniciar. A escolha aparece na aba Legendas e em
-  `docker service logs <pilha>_whisper`.
-- **Modelos sob demanda.** O modelo é baixado no primeiro início para `/opt/<nome>/data/whisper`,
-  conferido pelo SHA-256 publicado, e fica lá. Todo modelo é multilíngue: reconhece e detecta os
-  99 idiomas do Whisper, sem nada a baixar por idioma. Trocar de modelo baixa só o novo. Para
-  forçar um modelo, rode o instalador com `WHISPER_MODEL=medium-q5_0` (lista em
-  `docker/whisper/modelos.txt`).
-- O botão de legenda aparece quando o modelo termina de carregar; até lá, e sempre que o container
-  estiver fora do ar, a aba oferece só envio e editor.
-
-As imagens são `ghcr.io/allanbarcelos/opentube/whisper:cpu` e `:cuda` (também
-`cpu-v1.9.4`/`cuda-v1.9.4`, a versão do whisper.cpp), geradas pelo workflow `Whisper` quando
-`docker/whisper/` muda. O `update.sh` baixa a que estiver em uso.
-
-> **Sobre a imagem do MinIO:** as imagens públicas do MinIO deixaram de ser distribuídas pelo Docker
-> Hub e pelo quay.io. O `docker-compose.yml` usa a última versão comunitária publicada, suficiente
-> para desenvolvimento. Em produção, use o registro oficial com credenciais ou troque por qualquer
-> outro servidor compatível com S3 (SeaweedFS, Garage, Amazon S3): a aplicação conversa apenas pela
-> API S3, atrás da interface `IVideoStorage`.
-
----
-
-## Testes
-
-```bash
-make test            # todas as suítes
-make test p=Web      # um projeto: Domain, Infrastructure, Worker ou Web
-```
-
-Os testes de integração sobem PostgreSQL e MinIO próprios (Testcontainers): precisam do Docker,
-mas não do `.env` nem das dependências do `make watch`. Os que usam FFmpeg são pulados quando ele
-não está instalado, e os que transcrevem fala de verdade são pulados sem o Whisper (`make whisper`)
-e o `say` do macOS. `OPENTUBE_WHISPER_URL=http://…` os aponta para um servidor do Whisper já no ar —
-o container da imagem, por exemplo. Compilam em `.artifacts/test`, e não no `bin`/`obj` dos projetos, para poderem
-rodar enquanto o `make watch` recompila os mesmos projetos.
-
-Cada fase do roadmap só é considerada concluída com sua suíte verde. A lógica sensível vive em
-classes puras (regras de acesso, fusão de intervalos, cálculo do ladder de transcodificação,
-limitador de taxa), testável sem banco nem rede; o restante usa containers efêmeros.
+Cada imagem de `app` ou `worker` publicada recebe a próxima versão `A.B.C.D` e uma GitHub Release
+com a lista dos commits que entraram nela. O job do gist precisa do segredo `GIST_TOKEN`, com o
+escopo `gist`, e da variável de repositório `GIST_ID`; a primeira execução sem `GIST_ID` cria o
+gist e imprime o id para ser salvo.
 
 ---
 
