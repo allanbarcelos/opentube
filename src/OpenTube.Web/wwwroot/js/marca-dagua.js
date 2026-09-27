@@ -125,6 +125,8 @@ window.openTubeMarcaDagua = (function () {
         const texto = marca.dataset.texto || marca.textContent;
         const trilha = video.addTextTrack('subtitles', texto, '');
         trilha.mode = 'hidden';
+        // Fica fora do menu de legendas dos controles próprios (controles.js).
+        trilha.openTubeMarca = true;
 
         let legenda = null;
         let posicao = Math.floor(Math.random() * POSICOES_DA_LEGENDA.length);

@@ -410,7 +410,7 @@ testable without a database or network; the rest uses ephemeral containers.
 | Support | Private comments per video, visible only to the author and the administrator |
 | Collections | Videos grouped into collections; access can be granted per video, collection, or the whole library |
 | Usefulness | Viewers rate from 1 to 5 how useful a video was; only the administration sees the ratings |
-| Chapters | Summary built in the video settings, shown next to the video and as a chapter bar under the player |
+| Chapters | Summary built in the video settings, shown next to the video and as marks on the player's progress bar |
 | Captions | Per-language tab: automatic with Whisper (language detected on its own), upload, and an in-app editor |
 | Protection | Moving watermark with the viewer's email, library PNG watermark, no download or casting, limit on simultaneous playbacks |
 | Audit | Every administrative action is recorded: grant, revoke, publish, delete |
@@ -750,11 +750,17 @@ The administration builds each video's summary in its settings: rows of start ti
 and no chapter can start past the end of the video. Each chapter goes from its start to the start
 of the next one.
 
-Viewers see the summary next to the video, with the current chapter highlighted as it plays, and a
-chapter bar right under the player — one segment per chapter, sized by its length and filled as the
-video advances. Clicking a chapter, or a point in the bar, takes the player there. The player keeps
-the browser's native controls, which do not accept marks on their own progress bar; the chapter
-bar sits just below it instead.
+Viewers see the summary next to the video, with the current chapter highlighted as it plays. The
+watch page has its own player controls, and their progress bar is split into the chapters, as on
+YouTube: one piece per chapter with a small gap between them. The piece under the pointer grows,
+and the tooltip shows the chapter title and the time. The current chapter's title sits next to the
+clock. Clicking a chapter in the list, or a point in the bar, moves the player there without
+leaving the page.
+
+The controls also cover play and pause, volume, captions, playback speed, quality (when the video
+has more than one rendition), picture-in-picture and full screen. They support YouTube's keyboard
+shortcuts: `k` plays or pauses, `j` and `l` skip 10 seconds, `m` mutes, `f` toggles full screen and
+`c` toggles captions. Without JavaScript the browser's native controls stay in place.
 
 ---
 

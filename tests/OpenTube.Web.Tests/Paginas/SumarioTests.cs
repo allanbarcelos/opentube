@@ -95,11 +95,12 @@ public class SumarioTests(PostgresFixture postgres, MinioFixture minio) : IAsync
         Assert.Contains($"href=\"/watch/{video.Slug}?t=40\" data-instante=\"40\"", pagina);
         Assert.Contains("Resultados", pagina);
 
-        // Barra: um segmento por capítulo, proporcional à duração (0:40, 0:50 e 0:35 de 2:05).
-        Assert.Contains("data-sumario-barra", pagina);
-        Assert.Contains("style=\"flex-grow: 40\" data-inicio=\"0\" data-fim=\"40\"", pagina);
-        Assert.Contains("style=\"flex-grow: 50\" data-inicio=\"40\" data-fim=\"90\"", pagina);
-        Assert.Contains("style=\"flex-grow: 35\" data-inicio=\"90\" data-fim=\"125\"", pagina);
+        // Barra de progresso dos controles do player: um pedaço por capítulo, até o início do
+        // seguinte, e o último até o fim do vídeo (2:05).
+        Assert.Contains("data-controles", pagina);
+        Assert.Equal(
+            [(0, 40, "Abertura"), (40, 90, "Resultados"), (90, 125, "Perguntas")],
+            CapitulosDaBarra(pagina));
 
         await using var db = postgres.CreateContext();
         Assert.True(await db.AuditEntries.AnyAsync(a => a.EntityId == video.Id && a.Summary!.Contains("3 chapter")));
@@ -136,8 +137,7 @@ public class SumarioTests(PostgresFixture postgres, MinioFixture minio) : IAsync
 
         var pagina = await cliente.GetStringAsync($"/watch/{video.Slug}");
 
-        Assert.Contains("data-inicio=\"0\" data-fim=\"30\" data-titulo=\"\"", pagina);
-        Assert.Contains("data-inicio=\"30\" data-fim=\"125\" data-titulo=\"Depois da vinheta\"", pagina);
+        Assert.Equal([(0, 30, ""), (30, 125, "Depois da vinheta")], CapitulosDaBarra(pagina));
     }
 
     [Fact]
@@ -149,8 +149,20 @@ public class SumarioTests(PostgresFixture postgres, MinioFixture minio) : IAsync
 
         var pagina = await cliente.GetStringAsync($"/watch/{video.Slug}");
 
-        Assert.DoesNotContain("data-sumario-barra", pagina);
+        Assert.Empty(CapitulosDaBarra(pagina));
         Assert.DoesNotContain("data-sumario-lista", pagina);
+    }
+
+    /// <summary>Capítulos que a página entrega aos controles do player (data-capitulos).</summary>
+    private static List<(int Inicio, int Fim, string Titulo)> CapitulosDaBarra(string pagina)
+    {
+        var atributo = System.Text.RegularExpressions.Regex.Match(pagina, "data-capitulos=\"([^\"]*)\"");
+        Assert.True(atributo.Success, "a página não entrega os capítulos ao player");
+
+        using var json = System.Text.Json.JsonDocument.Parse(WebUtility.HtmlDecode(atributo.Groups[1].Value));
+        return json.RootElement.EnumerateArray()
+            .Select(c => (c.GetProperty("inicio").GetInt32(), c.GetProperty("fim").GetInt32(), c.GetProperty("titulo").GetString()!))
+            .ToList();
     }
 
     [Fact]

@@ -410,7 +410,7 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | Suporte | Comentários privados por vídeo, visíveis apenas ao autor e ao administrador |
 | Coleções | Vídeos agrupados em coleções; o acesso pode ser dado por vídeo, por coleção ou ao acervo inteiro |
 | Utilidade | Quem assiste avalia de 1 a 5 o quanto o vídeo foi útil; só a administração vê as notas |
-| Capítulos | Sumário montado nas configurações do vídeo, mostrado ao lado dele e numa barra de capítulos sob o player |
+| Capítulos | Sumário montado nas configurações do vídeo, mostrado ao lado dele e como marcas na barra de progresso do player |
 | Legendas | Aba por idioma: automáticas com o Whisper (idioma detectado sozinho), envio de arquivo e editor no próprio sistema |
 | Proteção | Marca d'água móvel com o email de quem assiste, marca d'água do acervo em PNG, sem download nem transmissão, limite de reproduções simultâneas |
 | Auditoria | Toda ação administrativa fica registrada: concessão, revogação, publicação, exclusão |
@@ -747,11 +747,17 @@ A administração monta o sumário de cada vídeo nas configurações dele: linh
 tempo ao salvar, e nenhum capítulo começa depois do fim do vídeo. Cada capítulo vai do seu início
 até o início do próximo.
 
-Quem assiste vê o sumário ao lado do vídeo, com o capítulo atual destacado conforme ele toca, e uma
-barra de capítulos logo abaixo do player — um segmento por capítulo, do tamanho da duração dele,
-que se enche conforme o vídeo avança. Clicar num capítulo, ou num ponto da barra, leva o player até
-lá. O player mantém os controles nativos do navegador, que não aceitam marcas na própria barra de
-progresso; por isso a barra de capítulos fica logo abaixo.
+Quem assiste vê o sumário ao lado do vídeo, com o capítulo atual destacado conforme ele toca. A
+página do vídeo tem controles próprios, e a barra de progresso deles é dividida nos capítulos, como
+no YouTube: um pedaço por capítulo, com um pequeno vão entre eles. O pedaço sob o ponteiro engrossa,
+e a dica mostra o título do capítulo e o instante. O título do capítulo atual fica ao lado do
+relógio. Clicar num capítulo da lista, ou num ponto da barra, leva o player até lá sem sair da
+página.
+
+Os controles também cobrem tocar e pausar, volume, legendas, velocidade, qualidade (quando o vídeo
+tem mais de uma versão), Picture-in-Picture e tela cheia. Eles aceitam os atalhos de teclado do
+YouTube: `k` toca ou pausa, `j` e `l` pulam 10 segundos, `m` tira o som, `f` alterna a tela cheia e
+`c` liga ou desliga as legendas. Sem JavaScript, ficam os controles nativos do navegador.
 
 ---
 

@@ -29,15 +29,18 @@
     <script src="@Assets["lib/bootstrap/dist/js/bootstrap.bundle.min.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     @* Carregados uma vez para todas as páginas: o player se monta sozinho na carga inicial e
-       a cada navegação aprimorada, que não executaria scripts colocados na própria página. *@
-    <script src="js/marca-dagua.js"></script>
-    <script src="js/analytics.js"></script>
-    <script src="js/player.js"></script>
-    <script src="js/legendas.js"></script>
-    <script src="js/editor-de-legendas.js"></script>
-    <script src="js/upload.js"></script>
-    <script src="js/sumario.js"></script>
-    <script src="js/avaliacao.js"></script>
+       a cada navegação aprimorada, que não executaria scripts colocados na própria página.
+       Pelo @Assets o endereço leva a impressão do conteúdo: o navegador não fica com uma
+       versão antiga guardada depois de uma atualização. *@
+    <script src="@Assets["js/marca-dagua.js"]"></script>
+    <script src="@Assets["js/analytics.js"]"></script>
+    <script src="@Assets["js/controles.js"]"></script>
+    <script src="@Assets["js/player.js"]"></script>
+    <script src="@Assets["js/legendas.js"]"></script>
+    <script src="@Assets["js/editor-de-legendas.js"]"></script>
+    <script src="@Assets["js/upload.js"]"></script>
+    <script src="@Assets["js/sumario.js"]"></script>
+    <script src="@Assets["js/avaliacao.js"]"></script>
 </body>
 
 </html>

@@ -159,9 +159,17 @@ window.openTubePlayer = (function () {
         shell.addEventListener('contextmenu', function (e) { e.preventDefault(); });
         shell.addEventListener('dragstart', function (e) { e.preventDefault(); });
 
-        const suportaTelaCheia = shell.requestFullscreen || shell.webkitRequestFullscreen;
-
-        if (suportaTelaCheia) {
+        // Na página do vídeo, controles próprios (controles.js) no lugar dos nativos, com os
+        // capítulos na barra de progresso e a tela cheia do contêiner no botão deles.
+        if (window.openTubeControles && window.openTubeControles.montar(video)) {
+            video.addEventListener('dblclick', function (e) {
+                e.preventDefault();
+                const botao = shell.querySelector('.ctl-tela-cheia');
+                if (botao) {
+                    botao.click();
+                }
+            });
+        } else if (shell.requestFullscreen || shell.webkitRequestFullscreen) {
             const botao = document.createElement('button');
             botao.type = 'button';
             botao.className = 'player-tela-cheia';
@@ -190,6 +198,17 @@ window.openTubePlayer = (function () {
         if (window.openTubeMarcaDagua) {
             window.openTubeMarcaDagua.acompanharModosNativos(video);
         }
+    }
+
+    // Instância da hls.js que toca o vídeo (para o menu de qualidade), se houver uma.
+    function hlsDe(video) {
+        let achada = null;
+        instancias.forEach(function (instancia) {
+            if (instancia.video === video) {
+                achada = instancia.hls;
+            }
+        });
+        return achada;
     }
 
     // O vídeo da página, se houver um montado.
@@ -295,5 +314,5 @@ window.openTubePlayer = (function () {
         window.Blazor.addEventListener('enhancedload', montar);
     }
 
-    return { iniciar: iniciar, encerrar: encerrar, montar: montar, irPara: irPara };
+    return { iniciar: iniciar, encerrar: encerrar, montar: montar, irPara: irPara, hlsDe: hlsDe };
 })();

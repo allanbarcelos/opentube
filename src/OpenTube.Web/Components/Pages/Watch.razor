@@ -39,7 +39,8 @@
                    página e na tela cheia do contêiner, como legenda na tela cheia nativa e no
                    Picture-in-Picture. Quem grava a tela grava junto quem estava vendo. *@
                 <div class="player-shell rounded overflow-hidden shadow-sm position-relative"
-                     data-fullscreen-label="@T["Full screen"]" data-logo-canto="@((int?)Logo?.Position)">
+                     data-fullscreen-label="@T["Full screen"]" data-logo-canto="@((int?)Logo?.Position)"
+                     data-controles data-rotulos="@Rotulos" data-capitulos="@CapitulosDoPlayer">
                     <video id="player-video" controls playsinline preload="metadata"
                            controlslist="nodownload nofullscreen noremoteplayback"
                            disableremoteplayback x-webkit-airplay="deny"
@@ -67,26 +68,6 @@
                         <span class="marca-dagua" id="marca-dagua" data-texto="@MarcaDagua">@MarcaDagua</span>
                     }
                 </div>
-
-                @* Barra de capítulos: o player usa os controles nativos, que não aceitam marcas na
-                   barra de progresso; esta fica logo abaixo, com um segmento por capítulo que se
-                   enche conforme o vídeo avança (sumario.js). *@
-                @if (Segmentos.Count > 0)
-                {
-                    <div class="sumario-barra mt-2" data-sumario-barra role="group" aria-label="@T["Chapters"]">
-                        @foreach (var segmento in Segmentos)
-                        {
-                            <button type="button" class="sumario-segmento" style="flex-grow: @segmento.Duracao"
-                                    data-inicio="@segmento.Inicio" data-fim="@segmento.Fim"
-                                    data-titulo="@segmento.Titulo"
-                                    title="@($"{VideoTimestamps.Format(TimeSpan.FromSeconds(segmento.Inicio))} · {segmento.Titulo}")"
-                                    aria-label="@($"{VideoTimestamps.Format(TimeSpan.FromSeconds(segmento.Inicio))} {segmento.Titulo}")">
-                                <span class="sumario-preenchido"></span>
-                            </button>
-                        }
-                    </div>
-                    <p class="small text-body-secondary mt-1 mb-0" data-sumario-atual aria-live="polite"></p>
-                }
 
                 <h1 class="h4 mt-3 mb-1">@Video.Title</h1>
                 <p class="text-body-secondary small mb-3">
@@ -180,8 +161,34 @@
 
     private int? MinhaNota;
 
-    /// <summary>Pedaços da barra de capítulos; um trecho antes do primeiro capítulo fica sem título.</summary>
-    private readonly List<(int Inicio, int Fim, int Duracao, string Titulo)> Segmentos = [];
+    /// <summary>Pedaços da barra de progresso; um trecho antes do primeiro capítulo fica sem título.</summary>
+    private readonly List<(int Inicio, int Fim, string Titulo)> Segmentos = [];
+
+    /// <summary>Capítulos para os controles do player (controles.js), em JSON.</summary>
+    private string CapitulosDoPlayer => System.Text.Json.JsonSerializer.Serialize(
+        Segmentos.Select(s => new { inicio = s.Inicio, fim = s.Fim, titulo = s.Titulo }));
+
+    /// <summary>Textos dos controles do player, na língua da página.</summary>
+    private string Rotulos => System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string>
+    {
+        ["play"] = T["Play"],
+        ["pause"] = T["Pause"],
+        ["mute"] = T["Mute"],
+        ["unmute"] = T["Unmute"],
+        ["volume"] = T["Volume"],
+        ["progress"] = T["Video progress"],
+        ["chapters"] = T["Chapters"],
+        ["captions"] = T["Captions"],
+        ["off"] = T["Off"],
+        ["settings"] = T["Settings"],
+        ["speed"] = T["Playback speed"],
+        ["normal"] = T["Normal"],
+        ["quality"] = T["Quality"],
+        ["auto"] = T["Auto"],
+        ["pip"] = T["Picture in picture"],
+        ["fullscreen"] = T["Full screen"],
+        ["exitFullscreen"] = T["Exit full screen"],
+    });
 
     private OpenTube.Infrastructure.Branding.WatermarkInfo? Logo;
 
@@ -238,12 +245,12 @@
             return;
 
         if (Capitulos[0].StartSeconds > 0)
-            Segmentos.Add((0, Capitulos[0].StartSeconds, Capitulos[0].StartSeconds, string.Empty));
+            Segmentos.Add((0, Capitulos[0].StartSeconds, string.Empty));
 
         for (var i = 0; i < Capitulos.Count; i++)
         {
             var fim = VideoChapters.EndOf(Capitulos, i, duracao);
-            Segmentos.Add((Capitulos[i].StartSeconds, fim, Math.Max(1, fim - Capitulos[i].StartSeconds), Capitulos[i].Title));
+            Segmentos.Add((Capitulos[i].StartSeconds, fim, Capitulos[i].Title));
         }
     }
 }
