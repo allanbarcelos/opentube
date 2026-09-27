@@ -130,17 +130,28 @@ of the system, because a mistake there leaks confidential content.
 
 ```mermaid
 flowchart TD
-    start(["CanWatch(viewer, video)"]) --> admin{"Administrator?"}
-    admin -->|yes| allow(["Allow"])
-    admin -->|no| state{"Deleted or<br/>not Ready?"}
-    state -->|yes| deny(["Deny"])
-    state -->|no| vis{"Visibility"}
-    vis -->|Public| allow
-    vis -->|Private| deny
-    vis -->|Restricted| grant{"Some grant that<br/>matches the viewer<br/>(email · domain · link · public),<br/>covers the video<br/>(video · collection · library),<br/>and is active<br/>(window · view limit · not revoked)?"}
-    grant -->|yes| allow
-    grant -->|no| reason(["Deny with the closest reason<br/>(expired, limit reached, revoked…)"])
+    start(["CanWatch"]) --> admin{"Admin?"}
+    admin -->|yes| a1(["✅ Allow"])
+    admin -->|no| ready{"Ready?"}
+    ready -->|no| d1(["⛔ Deny"])
+    ready -->|yes| vis{"Visibility"}
+    vis -->|Public| a2(["✅ Allow"])
+    vis -->|Private| d2(["⛔ Deny"])
+    vis -->|Restricted| grant{"Valid grant?"}
+    grant -->|yes| a3(["✅ Allow"])
+    grant -->|no| d3(["⛔ Deny + reason"])
+
+    classDef allow fill:#d1e7dd,stroke:#198754,color:#0f5132
+    classDef deny fill:#f8d7da,stroke:#dc3545,color:#842029
+    class a1,a2,a3 allow
+    class d1,d2,d3 deny
 ```
+
+- **Ready** — processed and not deleted.
+- **Valid grant** — one that reaches the viewer (email, domain, link, or public), covers the video
+  (directly, through a collection, or the whole library), and is active (inside its window, under
+  the view limit, not revoked).
+- **Reason** — the closest one: "your access expired" helps more than a generic "not found".
 
 ### Passwordless authentication
 

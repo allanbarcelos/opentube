@@ -131,17 +131,28 @@ de testes, porque um erro ali vaza conteúdo confidencial.
 
 ```mermaid
 flowchart TD
-    inicio(["CanWatch(espectador, vídeo)"]) --> admin{"Administrador?"}
-    admin -->|sim| libera(["Libera"])
-    admin -->|não| estado{"Excluído ou<br/>não Ready?"}
-    estado -->|sim| nega(["Nega"])
-    estado -->|não| vis{"Visibilidade"}
-    vis -->|Public| libera
-    vis -->|Private| nega
-    vis -->|Restricted| concessao{"Alguma concessão que<br/>alcança o espectador<br/>(email · domínio · link · pública),<br/>cobre o vídeo<br/>(vídeo · coleção · acervo)<br/>e está ativa<br/>(período · limite · não revogada)?"}
-    concessao -->|sim| libera
-    concessao -->|não| motivo(["Nega com o motivo mais próximo<br/>(expirou, limite atingido, revogada…)"])
+    inicio(["CanWatch"]) --> admin{"Admin?"}
+    admin -->|sim| a1(["✅ Libera"])
+    admin -->|não| pronto{"Pronto?"}
+    pronto -->|não| d1(["⛔ Nega"])
+    pronto -->|sim| vis{"Visibilidade"}
+    vis -->|Public| a2(["✅ Libera"])
+    vis -->|Private| d2(["⛔ Nega"])
+    vis -->|Restricted| concessao{"Concessão válida?"}
+    concessao -->|sim| a3(["✅ Libera"])
+    concessao -->|não| d3(["⛔ Nega + motivo"])
+
+    classDef allow fill:#d1e7dd,stroke:#198754,color:#0f5132
+    classDef deny fill:#f8d7da,stroke:#dc3545,color:#842029
+    class a1,a2,a3 allow
+    class d1,d2,d3 deny
 ```
+
+- **Pronto** — processado e não excluído.
+- **Concessão válida** — alcança quem assiste (email, domínio, link ou pública), cobre o vídeo
+  (direto, por coleção ou o acervo inteiro) e está ativa (dentro do período, abaixo do limite de
+  visualizações, não revogada).
+- **Motivo** — o mais próximo: "seu acesso expirou" ajuda mais que um "não encontrado" genérico.
 
 ### Autenticação sem senha
 
