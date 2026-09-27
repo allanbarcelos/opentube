@@ -1,5 +1,9 @@
 name: App
 
+# Tests run whenever something the app's tests compile changes. The image is built
+# only when something that goes into it changes — see IMAGE_PATHS. Markdown never
+# counts, and neither do install.sh or the worker's own code.
+
 on:
   push:
     branches: [main]
@@ -8,8 +12,11 @@ on:
       - "src/OpenTube.Domain/**"
       - "src/OpenTube.Infrastructure/**"
       - "src/OpenTube.Shared/**"
+      # TestSupport references the worker: a worker change can break the app's tests.
+      - "src/OpenTube.Worker/**"
       - "Directory.Build.props"
       - "Directory.Packages.props"
+      - ".dockerignore"
       - "scripts/swarm-entrypoint.sh"
       - "tests/OpenTube.Domain.Tests/**"
       - "tests/OpenTube.Infrastructure.Tests/**"
@@ -17,6 +24,8 @@ on:
       - "tests/OpenTube.TestSupport/**"
       - ".github/workflows/app.yml"
       - ".github/scripts/bump-version.sh"
+      - ".github/scripts/changed.sh"
+      - "!**/*.md"
   pull_request:
     branches: [main]
     paths:
@@ -24,15 +33,25 @@ on:
       - "src/OpenTube.Domain/**"
       - "src/OpenTube.Infrastructure/**"
       - "src/OpenTube.Shared/**"
+      - "src/OpenTube.Worker/**"
       - "Directory.Build.props"
       - "Directory.Packages.props"
+      - ".dockerignore"
       - "scripts/swarm-entrypoint.sh"
       - "tests/OpenTube.Domain.Tests/**"
-      - "tests/OpenTube.Web.Tests/**"
       - "tests/OpenTube.Infrastructure.Tests/**"
+      - "tests/OpenTube.Web.Tests/**"
       - "tests/OpenTube.TestSupport/**"
       - ".github/workflows/app.yml"
       - ".github/scripts/bump-version.sh"
+      - ".github/scripts/changed.sh"
+      - "!**/*.md"
+
+env:
+  # What the app image is built from. Also used to compute the version and the release notes.
+  IMAGE_PATHS: >-
+    src/OpenTube.Web src/OpenTube.Domain src/OpenTube.Infrastructure src/OpenTube.Shared
+    Directory.Build.props Directory.Packages.props .dockerignore scripts/swarm-entrypoint.sh
 
 jobs:
   test:
@@ -53,11 +72,35 @@ jobs:
           dotnet test tests/OpenTube.Infrastructure.Tests/OpenTube.Infrastructure.Tests.csproj --configuration Release
           dotnet test tests/OpenTube.Web.Tests/OpenTube.Web.Tests.csproj --configuration Release
 
+  changes:
+    name: Image inputs changed?
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      image: ${{ steps.filter.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare with the previous push
+        id: filter
+        run: |
+          # shellcheck disable=SC2086
+          IMAGE=$(bash .github/scripts/changed.sh "${{ github.event.before }}" $IMAGE_PATHS)
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          if [ "$IMAGE" = "true" ]; then
+            echo "App image inputs changed: building." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No app image input changed (only tests, docs, or CI): image build skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   publish:
     name: Build & push image
     runs-on: ubuntu-latest
-    needs: [test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, changes]
+    if: needs.changes.outputs.image == 'true'
 
     permissions:
       contents: write
@@ -73,9 +116,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          NEW_TAG=$(bash .github/scripts/bump-version.sh app \
-            src/OpenTube.Web src/OpenTube.Domain src/OpenTube.Infrastructure src/OpenTube.Shared \
-            Directory.Build.props Directory.Packages.props scripts/swarm-entrypoint.sh)
+          # shellcheck disable=SC2086
+          NEW_TAG=$(bash .github/scripts/bump-version.sh app $IMAGE_PATHS)
           echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
           if [ -z "$NEW_TAG" ]; then
             CURRENT_TAG=$(git tag -l "app-v*" --sort=-v:refname | head -1)
@@ -124,8 +166,7 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           PREV=$(git tag -l "app-v*" --sort=-v:refname | grep -vx "$TAG" | head -1)
           if [ -n "$PREV" ]; then RANGE="$PREV..$TAG"; else RANGE="$TAG"; fi
-          NOTES=$(git log "$RANGE" --no-merges --format='- %s' -- \
-            src/OpenTube.Web src/OpenTube.Domain src/OpenTube.Infrastructure src/OpenTube.Shared \
-            Directory.Build.props Directory.Packages.props scripts/swarm-entrypoint.sh)
+          # shellcheck disable=SC2086
+          NOTES=$(git log "$RANGE" --no-merges --format='- %s' -- $IMAGE_PATHS)
           [ -z "$NOTES" ] && NOTES="- Maintenance."
           printf '%s\n' "$NOTES" | gh release create "$TAG" --title "App $TAG" --notes-file -

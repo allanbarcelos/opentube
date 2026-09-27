@@ -565,8 +565,14 @@ O ambiente dentro dos containers é `Production`. Para receber imagens recém-pu
 `/opt/<nome>/scripts/update.sh`. Para remover o que o instalador criou, use o comando de
 desinstalação acima (ou `sudo bash uninstall.sh` a partir de um checkout).
 
-Um push no `main` compila `ghcr.io/allanbarcelos/opentube/app` e `worker` depois dos testes e
-publica `install.sh` e `uninstall.sh` no gist indicado pela variável de repositório `GIST_ID`.
+Um push no `main` roda só o que a mudança exige. Cada imagem (`app`, `worker`, `whisper`) tem o
+seu workflow: os testes rodam quando muda código que eles compilam, mas a imagem só é compilada e
+publicada quando algo que vai para dentro dela mudou desde o push anterior — README, teste,
+instalador ou o próprio workflow não disparam build, e uma mudança só na web não recompila o
+worker (nem o contrário). Código compartilhado pelos dois (Domain, Infrastructure, Shared, os
+`Directory.*.props`) recompila os dois. Quem decide é o `.github/scripts/changed.sh`, e o resumo
+do job diz por que o build rodou ou foi pulado. Mudanças no `install.sh` e no `uninstall.sh` só os
+publicam no gist indicado pela variável de repositório `GIST_ID`.
 Esse job precisa do segredo `GIST_TOKEN`, com o escopo `gist`. A primeira execução sem
 `GIST_ID` cria o gist e imprime o id para ser salvo nessa variável.
 

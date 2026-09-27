@@ -571,9 +571,14 @@ The environment inside the containers is `Production`. To pick up newly publishe
 `/opt/<name>/scripts/update.sh`. To remove what the installer created, use the uninstall
 command above (or `sudo bash uninstall.sh` from a checkout).
 
-Pushing `main` builds `ghcr.io/allanbarcelos/opentube/app` and `worker` after the tests, and
-publishes `install.sh` and `uninstall.sh` to the gist named by the `GIST_ID` repository
-variable. That job needs a `GIST_TOKEN` secret with the `gist` scope. The first run without
+Pushing `main` runs only what the change calls for. Each image (`app`, `worker`, `whisper`) has its
+own workflow: its tests run when code they compile changes, but the image is built and published
+only when something that goes into it changed since the previous push — a README, a test, the
+installer, or the workflow itself does not start a build, and a web-only change does not rebuild
+the worker (nor the other way round). Code shared by both (Domain, Infrastructure, Shared, the
+`Directory.*.props`) rebuilds both. The decision is `.github/scripts/changed.sh`, and the job
+summary says why a build ran or was skipped. Changes to `install.sh` and `uninstall.sh` only
+publish them to the gist named by the `GIST_ID` repository variable. That job needs a `GIST_TOKEN` secret with the `gist` scope. The first run without
 `GIST_ID` creates the gist and prints the id to save as that variable.
 
 #### Automatic captions in production
