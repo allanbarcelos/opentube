@@ -1,67 +1,129 @@
 @page "/admin/upload"
 @using Microsoft.AspNetCore.Antiforgery
+@using OpenTube.Domain.Media
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject IAntiforgery Antifalsificacao
 
-<PageTitle>@T["Upload video — OpenTube"]</PageTitle>
+<PageTitle>@T["Upload videos — OpenTube"]</PageTitle>
 
+@* O envio é todo feito pelo upload.js, carregado para todas as páginas no App.razor: um script
+   colocado aqui não rodaria quando se chega pela navegação aprimorada. *@
 <div class="container py-4">
     <div class="row justify-content-center">
-        <div class="col-lg-7">
-            <h1 class="h4 mb-3">@T["Upload video"]</h1>
+        <div class="col-xl-9">
+            <h1 class="h4 mb-3">@T["Upload videos"]</h1>
 
-            <div class="card">
-                <div class="card-body">
-                    <form id="formulario-envio" data-token="@Token"
-                          data-preparando="@T["Preparing the upload…"]"
-                          data-enviando="@T["Uploading… {0} of {1}"]"
-                          data-finalizando="@T["Finishing…"]"
-                          data-falha-servidor="@T["Could not reach the server."]"
-                          data-falha-pedaco="@T["A part of the file failed to upload."]"
-                          data-falha-storage="@T["Storage did not confirm the part."]">
-                        <div class="mb-3">
-                            <label class="form-label" for="titulo">@T["Title"]</label>
-                            <input class="form-control" id="titulo" maxlength="300" required autofocus />
-                        </div>
+            <form id="formulario-envio" novalidate
+                  data-token="@Token"
+                  data-max-titulo="@UploadNames.MaxTitleLength"
+                  data-max-colecao="@UploadNames.MaxCollectionNameLength"
+                  data-preparando="@T["Preparing…"]"
+                  data-enviando="@T["Uploading… {0}%"]"
+                  data-finalizando="@T["Finishing…"]"
+                  data-aguardando="@T["Waiting"]"
+                  data-concluido="@T["Sent"]"
+                  data-falhou="@T["Failed"]"
+                  data-abrir="@T["Open"]"
+                  data-remover="@T["Remove from the list"]"
+                  data-resumo-fila="@T["{0} video(s) · {1}"]"
+                  data-progresso-geral="@T["{0} of {1} sent"]"
+                  data-conclusao="@T["{0} of {1} video(s) sent."]"
+                  data-com-falhas="@T["{0} failed. Press Send again to retry only those."]"
+                  data-abrir-colecao="@T["Open the collection"]"
+                  data-ver-videos="@T["Go to the videos"]"
+                  data-ignorados="@T["{0} file(s) skipped, not videos: {1}"]"
+                  data-sem-arquivos="@T["Choose at least one video."]"
+                  data-pasta-vazia="@T["The folder has no videos."]"
+                  data-sem-colecao="@T["Enter a name for the collection."]"
+                  data-sair="@T["Uploads in progress will be lost."]"
+                  data-falha-servidor="@T["Could not reach the server."]"
+                  data-falha-pedaco="@T["A part of the file failed to upload."]"
+                  data-falha-storage="@T["Storage did not confirm the part."]">
 
-                        <div class="mb-3">
-                            <label class="form-label" for="descricao">@T["Description"]</label>
-                            <textarea class="form-control" id="descricao" rows="3" maxlength="10000"></textarea>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label" for="arquivo">@T["Video file"]</label>
-                            <input class="form-control" id="arquivo" type="file" accept="video/*" required />
-                            <div class="form-text">
-                                O arquivo vai direto do seu navegador para o storage, sem passar pelo servidor.
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label" for="arquivos">@T["Video files"]</label>
+                                <input class="form-control" id="arquivos" type="file" accept="video/*" multiple />
+                                <div class="form-text">@T["One or more videos. The title of each one is its file name, and can be changed below."]</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="pasta">@T["Or a whole folder"]</label>
+                                <input class="form-control" id="pasta" type="file" webkitdirectory multiple />
+                                <div class="form-text">@T["The folder becomes a collection with its name, and its videos (subfolders included) go into it."]</div>
                             </div>
                         </div>
-
-                        <div class="progress d-none mb-2" role="progressbar" aria-label="@T["Upload progress"]"
-                             aria-valuemin="0" aria-valuemax="100">
-                            <div class="progress-bar" id="barra-progresso" style="width: 0%"></div>
-                        </div>
-
-                        <p class="small text-body-secondary" id="situacao-envio"></p>
-
-                        <div class="alert alert-danger d-none" id="erro-envio" role="alert"></div>
-
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-primary" id="botao-enviar" type="submit">@T["Send"]</button>
-                            <a class="btn btn-outline-secondary" href="/admin">@T["Cancel"]</a>
-                        </div>
-                    </form>
+                    </div>
                 </div>
-            </div>
+
+                <div class="card mb-3 d-none" id="bloco-colecao">
+                    <div class="card-body">
+                        <label class="form-label" for="nome-colecao">@T["Collection"]</label>
+                        <input class="form-control" id="nome-colecao" maxlength="@UploadNames.MaxCollectionNameLength" />
+                        <div class="form-text">@T["A new collection is created with this name when the upload starts."]</div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="descricao">@T["Description"]</label>
+                    <textarea class="form-control" id="descricao" rows="2" maxlength="10000"></textarea>
+                    <div class="form-text">@T["Optional, applied to every video in this upload."]</div>
+                </div>
+
+                <div class="card mb-3 d-none" id="bloco-fila">
+                    <div class="card-header d-flex flex-wrap justify-content-between gap-2">
+                        <span id="resumo-fila"></span>
+                        <span class="small text-body-secondary" id="progresso-geral"></span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead>
+                                <tr class="small text-body-secondary">
+                                    <th scope="col" class="text-end">#</th>
+                                    <th scope="col">@T["Title"]</th>
+                                    <th scope="col">@T["Size"]</th>
+                                    <th scope="col">@T["Status"]</th>
+                                    <th scope="col"><span class="visually-hidden">@T["Actions"]</span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="fila-envio"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <p class="small text-body-secondary d-none" id="arquivos-ignorados"></p>
+
+                <div class="alert alert-danger d-none" id="erro-envio" role="alert"></div>
+                <div class="alert alert-success d-none" id="conclusao-envio" role="status"></div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" id="botao-enviar" type="submit">@T["Send"]</button>
+                    <a class="btn btn-outline-secondary" href="/admin">@T["Cancel"]</a>
+                </div>
+            </form>
+
+            <template id="modelo-linha-envio">
+                <tr>
+                    <td class="small text-body-secondary text-end" data-campo="numero"></td>
+                    <td class="w-50">
+                        <input class="form-control form-control-sm" data-campo="titulo" maxlength="@UploadNames.MaxTitleLength" aria-label="@T["Title"]" />
+                        <div class="small text-body-secondary text-truncate mt-1" data-campo="caminho"></div>
+                    </td>
+                    <td class="small text-nowrap" data-campo="tamanho"></td>
+                    <td class="small" style="min-width: 10rem" data-campo="situacao"></td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-campo="remover">✕</button>
+                    </td>
+                </tr>
+            </template>
 
             <div class="alert alert-light border mt-3 small mb-0">
-                @T["Every uploaded video starts private. Access is granted later, on the video page."]
+                @T["Every uploaded video starts private. Files go straight from your browser to storage, one at a time. Access is granted later, on the video or collection page."]
             </div>
         </div>
     </div>
 </div>
-
-<script src="js/upload.js"></script>
 
 @code {
     [CascadingParameter]

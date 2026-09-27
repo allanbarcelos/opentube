@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Queue;
@@ -128,7 +129,6 @@ public class VideoUploadServiceTests(PostgresFixture postgres, MinioFixture mini
     }
 
     [Theory]
-    [InlineData("", "a.mp4", 1024)]
     [InlineData("Título", "", 1024)]
     [InlineData("Título", "a.mp4", 0)]
     public async Task Recusa_parametros_invalidos(string titulo, string arquivo, long tamanho)
@@ -208,5 +208,106 @@ public class VideoUploadServiceTests(PostgresFixture postgres, MinioFixture mini
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             servico.CompleteAsync(Guid.CreateVersion7(), "upload", []));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Sem_titulo_usa_o_nome_do_arquivo_sem_a_extensao(string? titulo)
+    {
+        var (servico, db, storage, _) = Criar();
+        using var _1 = storage;
+        await using var _2 = db;
+
+        var bilhete = await servico.StartAsync(titulo, null, "Reunião de março.mp4", "video/mp4", 1024, Admin);
+
+        var video = await db.Videos.SingleAsync(v => v.Id == bilhete.VideoId);
+        Assert.Equal("Reunião de março", video.Title);
+        Assert.Equal("reuniao-de-marco", video.Slug);
+    }
+
+    private async Task<Collection> ColecaoAsync(string nome = "Treinamentos")
+    {
+        await using var db = postgres.CreateContext();
+        var colecao = Collection.Create(nome, nome.ToLowerInvariant(), Admin, Agora);
+        db.Collections.Add(colecao);
+        await db.SaveChangesAsync();
+
+        return colecao;
+    }
+
+    private async Task<Guid> EnviarParaAColecaoAsync(VideoUploadService servico, string arquivo, Guid colecaoId)
+    {
+        var dados = new byte[256];
+        var bilhete = await servico.StartAsync(null, null, arquivo, "video/mp4", dados.Length, Admin, colecaoId);
+        var enviado = await EnviarPedacoAsync(bilhete.Parts[0], dados);
+        await servico.CompleteAsync(bilhete.VideoId, bilhete.UploadId, [enviado], colecaoId);
+
+        return bilhete.VideoId;
+    }
+
+    [Fact]
+    public async Task Envio_de_pasta_poe_os_videos_na_colecao_na_ordem_do_envio()
+    {
+        var colecao = await ColecaoAsync();
+        var (servico, db, storage, _) = Criar();
+        using var _1 = storage;
+        await using var _2 = db;
+
+        var primeiro = await EnviarParaAColecaoAsync(servico, "Treinamentos/01-abertura.mp4", colecao.Id);
+        var segundo = await EnviarParaAColecaoAsync(servico, "Treinamentos/02-seguranca.mov", colecao.Id);
+
+        await using var leitura = postgres.CreateContext();
+        var videos = await leitura.Collections
+            .Where(c => c.Id == colecao.Id)
+            .SelectMany(c => c.Videos)
+            .OrderBy(v => v.Position)
+            .Select(v => v.VideoId)
+            .ToListAsync();
+
+        Assert.Equal([primeiro, segundo], videos);
+        Assert.Equal(["01-abertura", "02-seguranca"],
+            await leitura.Videos.OrderBy(v => v.CreatedAt).ThenBy(v => v.Title).Select(v => v.Title).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Envio_cancelado_nao_entra_na_colecao()
+    {
+        var colecao = await ColecaoAsync();
+        var (servico, db, storage, _) = Criar();
+        using var _1 = storage;
+        await using var _2 = db;
+
+        var bilhete = await servico.StartAsync(null, null, "Treinamentos/a.mp4", "video/mp4", 1024, Admin, colecao.Id);
+        await servico.AbortAsync(bilhete.VideoId, bilhete.UploadId);
+
+        await using var leitura = postgres.CreateContext();
+        Assert.Empty(await leitura.Collections.Where(c => c.Id == colecao.Id).SelectMany(c => c.Videos).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Colecao_inexistente_ou_excluida_e_recusada_antes_do_envio()
+    {
+        var excluida = await ColecaoAsync("Antiga");
+        await using (var db0 = postgres.CreateContext())
+        {
+            var c = await db0.Collections.SingleAsync(x => x.Id == excluida.Id);
+            c.SoftDelete(Agora);
+            await db0.SaveChangesAsync();
+        }
+
+        var (servico, db, storage, _) = Criar();
+        using var _1 = storage;
+        await using var _2 = db;
+
+        var inexistente = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servico.StartAsync(null, null, "a.mp4", "video/mp4", 1024, Admin, Guid.CreateVersion7()));
+        Assert.Equal("The collection was not found.", inexistente.Message);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servico.StartAsync(null, null, "a.mp4", "video/mp4", 1024, Admin, excluida.Id));
+
+        Assert.Empty(await db.Videos.ToListAsync());
     }
 }

@@ -380,7 +380,7 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | Recurso | Descrição |
 | --- | --- |
 | Home | Lista de vídeos visíveis para quem está acessando, com busca |
-| Upload | Envio direto do navegador para o storage, sem passar pelo servidor da aplicação |
+| Envio | Vários vídeos de uma vez, ou uma pasta inteira que vira coleção; direto do navegador para o storage, sem passar pelo servidor da aplicação |
 | Visibilidade | Todo vídeo nasce **privado**; o administrador promove para público ou restrito |
 | Convites | Email com link de acesso e código de 6 dígitos — sem senha |
 | Domínios | Porta de entrada própria por domínio verificado por DNS |
@@ -521,8 +521,13 @@ próprio, e é opcional (veja [Legendas automáticas em produção](#legendas-au
 
 ## Pipeline de vídeo
 
-1. **Upload** — a aplicação cria o registro do vídeo em `Draft` e devolve URLs assinadas; o navegador
+1. **Envio** — a aplicação cria o registro do vídeo em `Draft` e devolve URLs assinadas; o navegador
    envia os pedaços direto ao bucket `originals`; ao concluir, enfileira o job de transcodificação.
+   Dá para escolher vários arquivos de uma vez, e o título de cada vídeo começa como o nome do
+   arquivo sem a extensão (editável antes de enviar). Escolher uma pasta cria uma coleção com o
+   nome dela, e cada vídeo da pasta (inclusive de subpastas) entra na coleção quando termina de
+   subir; o que não é vídeo fica de fora. Os arquivos sobem um de cada vez, e um que falhou pode ser
+   enviado de novo sem reenviar os outros.
 2. **Análise** — `ffprobe` extrai duração, resolução e codecs, e rejeita arquivo inválido cedo.
 3. **Transcodificação** — FFmpeg gera um ladder adaptativo (360p a 1080p, nunca acima da resolução
    original) em CMAF/fMP4, segmentos de 4 s com keyframes alinhados entre as versões.

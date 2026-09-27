@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
+using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
+using OpenTube.Domain.Media;
 using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
@@ -15,7 +17,7 @@ namespace OpenTube.Web.Endpoints;
 /// <param name="Arquivo">Nome do arquivo escolhido no navegador.</param>
 /// <param name="Tipo">Tipo de mídia informado pelo navegador.</param>
 /// <param name="Tamanho">Tamanho em bytes.</param>
-public sealed record IniciarEnvio(string Titulo, string? Descricao, string Arquivo, string? Tipo, long Tamanho);
+public sealed record IniciarEnvio(string? Titulo, string? Descricao, string Arquivo, string? Tipo, long Tamanho, Guid? ColecaoId = null);
 
 /// <summary>Pedido de mais URLs de pedaço.</summary>
 /// <param name="UploadId">Envio em andamento.</param>
@@ -31,7 +33,12 @@ public sealed record ParteEnviada(int Numero, string ETag);
 /// <summary>Conclusão do envio.</summary>
 /// <param name="UploadId">Envio em andamento.</param>
 /// <param name="Partes">Pedaços enviados.</param>
-public sealed record ConcluirEnvio(string UploadId, ParteEnviada[] Partes);
+public sealed record ConcluirEnvio(string UploadId, ParteEnviada[] Partes, Guid? ColecaoId = null);
+
+/// <summary>Coleção criada para receber os vídeos de uma pasta.</summary>
+/// <param name="Nome">Nome da coleção (por padrão, o da pasta).</param>
+/// <param name="Descricao">Descrição opcional.</param>
+public sealed record CriarColecaoDoEnvio(string Nome, string? Descricao);
 
 /// <summary>Cancelamento de um envio abandonado.</summary>
 /// <param name="UploadId">Envio em andamento.</param>
@@ -68,7 +75,7 @@ public static class AdminEndpoints
             {
                 bilhete = await envios.StartAsync(
                     pedido.Titulo, pedido.Descricao, pedido.Arquivo, pedido.Tipo, pedido.Tamanho,
-                    admin.UserId!.Value, cancellationToken);
+                    admin.UserId!.Value, pedido.ColecaoId, cancellationToken);
             }
             catch (Exception e) when (e is InvalidOperationException or ArgumentException)
             {
@@ -104,17 +111,56 @@ public static class AdminEndpoints
             HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
-            var video = await envios.CompleteAsync(
-                videoId,
-                pedido.UploadId,
-                pedido.Partes.Select(p => new CompletedPart(p.Numero, p.ETag)),
-                cancellationToken);
+            Video video;
+            try
+            {
+                video = await envios.CompleteAsync(
+                    videoId,
+                    pedido.UploadId,
+                    pedido.Partes.Select(p => new CompletedPart(p.Numero, p.ETag)),
+                    pedido.ColecaoId,
+                    cancellationToken);
+            }
+            catch (InvalidOperationException e)
+            {
+                return Results.BadRequest(new { erro = LocalText.Get(e.Message) });
+            }
 
             await contexto.RegistrarAsync(
                 AuditActions.VideoEnviado, AuditEntities.Video, video.Id,
                 LocalText.Format("Video '{0}' uploaded", video.Title), cancellationToken);
 
             return Results.Ok(new { destino = $"/admin/videos/{video.Id}" });
+        });
+
+        // Envio de uma pasta: a coleção nasce antes do primeiro arquivo, e cada vídeo entra
+        // nela ao terminar de subir.
+        grupo.MapPost("/collection", async (
+            [FromBody] CriarColecaoDoEnvio pedido,
+            CollectionService colecoes,
+            HttpContext contexto,
+            CancellationToken cancellationToken) =>
+        {
+            var admin = ViewerContext.From(contexto.User);
+
+            try
+            {
+                var nome = (pedido.Nome ?? string.Empty).Trim();
+                if (nome.Length > UploadNames.MaxCollectionNameLength)
+                    nome = nome[..UploadNames.MaxCollectionNameLength].TrimEnd();
+
+                var colecao = await colecoes.CreateAsync(nome, pedido.Descricao, admin.UserId!.Value, cancellationToken);
+
+                await contexto.RegistrarAsync(
+                    AuditActions.ColecaoCriada, AuditEntities.Colecao, colecao.Id,
+                    LocalText.Format("Collection '{0}' created", colecao.Name), cancellationToken);
+
+                return Results.Ok(new { colecaoId = colecao.Id, nome = colecao.Name, destino = $"/admin/collections/{colecao.Id}" });
+            }
+            catch (ArgumentException)
+            {
+                return Results.BadRequest(new { erro = LocalText.Get("Enter a name for the collection.") });
+            }
         });
 
         grupo.MapPost("/{videoId:guid}/cancel", async (

@@ -381,7 +381,7 @@ testable without a database or network; the rest uses ephemeral containers.
 | Feature | Description |
 | --- | --- |
 | Home | List of videos visible to the current viewer, with search |
-| Upload | Direct upload from the browser to storage, bypassing the application server |
+| Upload | Several videos at once, or a whole folder that becomes a collection; straight from the browser to storage, bypassing the application server |
 | Visibility | Every video starts **private**; the administrator promotes it to public or restricted |
 | Invitations | Email with an access link and a 6-digit code — no password |
 | Domains | Dedicated entry page per DNS-verified domain |
@@ -524,7 +524,11 @@ container of its own too, and is optional (see [Automatic captions in production
 
 1. **Upload** — the application creates the video record in `Draft` and returns signed URLs; the
    browser sends the parts straight to the `originals` bucket; on completion, the transcoding job
-   is queued.
+   is queued. Several files can be chosen at once, and each video's title starts as its file name
+   without the extension (editable before sending). Choosing a folder creates a collection named
+   after it, and each video of the folder (subfolders included) joins the collection when its
+   upload completes; files that are not videos are skipped. Files go up one at a time, and a
+   failed one can be retried without resending the others.
 2. **Probe** — `ffprobe` extracts duration, resolution, and codecs, and rejects invalid files early.
 3. **Transcode** — FFmpeg produces an adaptive ladder (360p to 1080p, never above the source
    resolution) in CMAF/fMP4, with 4 s segments and keyframes aligned across renditions.

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
+using OpenTube.Domain.Media;
 using OpenTube.Domain.ValueObjects;
 using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Options;
@@ -54,17 +55,24 @@ public class VideoUploadService(
 
     private readonly StorageOptions _options = options.Value;
 
+    /// <param name="title">Título; vazio usa o nome do arquivo sem a extensão.</param>
+    /// <param name="collectionId">
+    /// Coleção que recebe o vídeo quando o envio terminar (o envio de uma pasta). Conferida já
+    /// aqui, para não gastar o envio inteiro e só então descobrir que ela não existe.
+    /// </param>
     public async Task<UploadTicket> StartAsync(
-        string title,
+        string? title,
         string? description,
         string fileName,
         string? contentType,
         long fileSizeBytes,
         Guid adminId,
+        Guid? collectionId = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+
+        title = string.IsNullOrWhiteSpace(title) ? UploadNames.TitleFromFileName(fileName) : title.Trim();
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(fileSizeBytes, 0);
 
         if (fileSizeBytes > _options.MaxUploadBytes)
@@ -73,6 +81,9 @@ public class VideoUploadService(
 
         if (!MediaTypes.LooksLikeVideo(fileName, contentType))
             throw new InvalidOperationException("The file does not look like a video.");
+
+        if (collectionId is { } colecaoId)
+            await CarregarColecaoAsync(colecaoId, cancellationToken);
 
         var slug = await GerarSlugUnicoAsync(title, cancellationToken);
         var videoId = Guid.CreateVersion7();
@@ -113,17 +124,25 @@ public class VideoUploadService(
         return storage.SignUploadParts(video.OriginalKey, uploadId, firstPart, Math.Min(partCount, PartUrlBatchSize));
     }
 
+    /// <param name="collectionId">
+    /// Coleção que recebe o vídeo. Só um envio concluído entra nela: um cancelado some junto
+    /// com o rascunho, sem deixar vínculo para trás. Como a pasta é enviada um arquivo por vez,
+    /// a ordem na coleção é a ordem do envio.
+    /// </param>
     public async Task<Video> CompleteAsync(
         Guid videoId,
         string uploadId,
         IEnumerable<CompletedPart> parts,
+        Guid? collectionId = null,
         CancellationToken cancellationToken = default)
     {
         var video = await CarregarRascunhoAsync(videoId, cancellationToken);
+        var colecao = collectionId is { } colecaoId ? await CarregarColecaoAsync(colecaoId, cancellationToken) : null;
 
         var tamanho = await storage.CompleteUploadAsync(video.OriginalKey, uploadId, parts, cancellationToken);
 
         video.MarkUploaded(tamanho);
+        colecao?.Add(video.Id);
         await db.SaveChangesAsync(cancellationToken);
 
         await queue.EnqueueAsync(
@@ -157,6 +176,16 @@ public class VideoUploadService(
             throw new InvalidOperationException(LocalText.Format("Video {0} is no longer a draft.", videoId));
 
         return video;
+    }
+
+    private async Task<Collection> CarregarColecaoAsync(Guid collectionId, CancellationToken cancellationToken)
+    {
+        var colecao = await db.Collections.Include(c => c.Videos).FirstOrDefaultAsync(c => c.Id == collectionId, cancellationToken);
+
+        if (colecao is null || colecao.IsDeleted)
+            throw new InvalidOperationException("The collection was not found.");
+
+        return colecao;
     }
 
     private async Task<string> GerarSlugUnicoAsync(string title, CancellationToken cancellationToken)
