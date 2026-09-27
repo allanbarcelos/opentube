@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net.Sockets;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,15 @@ namespace OpenTube.Worker.Media;
 /// </summary>
 public sealed class WhisperHttp : IDisposable
 {
-    public WhisperHttp() : this(new HttpClientHandler())
+    /// <summary>
+    /// Intervalo do keepalive de TCP. Enquanto o Whisper transcreve, a conexão fica calada — e o
+    /// balanceador do Docker Swarm (IPVS) esquece em silêncio conexões paradas há 15 minutos: a
+    /// resposta de uma transcrição mais longa que isso nunca chegaria. Um pacote de keepalive a
+    /// cada 30 segundos mantém a conexão viva durante horas, se preciso.
+    /// </summary>
+    public static readonly TimeSpan KeepAlive = TimeSpan.FromSeconds(30);
+
+    public WhisperHttp() : this(CriarTratador())
     {
     }
 
@@ -24,6 +33,40 @@ public sealed class WhisperHttp : IDisposable
     public HttpClient Client { get; }
 
     public void Dispose() => Client.Dispose();
+
+    public static SocketsHttpHandler CriarTratador() => new()
+    {
+        ConnectCallback = async (contexto, cancellationToken) =>
+        {
+            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+
+            try
+            {
+                LigarKeepAlive(socket);
+                await socket.ConnectAsync(contexto.DnsEndPoint, cancellationToken);
+
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
+        }
+    };
+
+    /// <summary>Liga o keepalive com o intervalo de <see cref="KeepAlive"/>, em vez das 2 horas do sistema.</summary>
+    public static void LigarKeepAlive(Socket socket)
+    {
+        ArgumentNullException.ThrowIfNull(socket);
+
+        var segundos = (int)KeepAlive.TotalSeconds;
+
+        socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+        socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, segundos);
+        socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, segundos);
+        socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 5);
+    }
 }
 
 /// <summary>
@@ -84,8 +127,15 @@ public class WhisperServerTranscriber(
         var idioma = string.IsNullOrWhiteSpace(language) ? "auto" : language.Trim();
         var audio = await AudioForTranscription.ExtractAsync(runner, _media.FfmpegPath, mediaPath, workDirectory, cancellationToken);
 
+        var duracao = AudioForTranscription.Duration(audio);
+        var prazo = _options.LimitFor(duracao);
+
         using var limite = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        limite.CancelAfter(_options.Timeout);
+        limite.CancelAfter(prazo);
+
+        logger.LogInformation(
+            "Enviando {Duracao} de áudio ao Whisper (idioma {Idioma}); prazo de {Prazo}",
+            duracao, idioma, prazo);
 
         await using var arquivo = File.OpenRead(audio);
         using var formulario = new MultipartFormDataContent
@@ -143,6 +193,8 @@ public class WhisperServerTranscriber(
             {
                 "whisper.cpp",
                 info.Aceleracao?.ToUpperInvariant(),
+                // Na CPU, as instruções explicam a velocidade: SSE4.2 é várias vezes mais lento que AVX2.
+                string.Equals(info.Aceleracao, "cpu", StringComparison.OrdinalIgnoreCase) ? info.Simd?.ToUpperInvariant() : null,
                 info.Modelo,
                 info.Threads is { } t ? string.Create(CultureInfo.InvariantCulture, $"{t} threads") : null
             };
@@ -170,6 +222,7 @@ public class WhisperServerTranscriber(
 
     private sealed record InfoDoWhisper(
         [property: JsonPropertyName("acceleration")] string? Aceleracao,
+        [property: JsonPropertyName("simd")] string? Simd,
         [property: JsonPropertyName("model")] string? Modelo,
         [property: JsonPropertyName("threads")] int? Threads);
 }

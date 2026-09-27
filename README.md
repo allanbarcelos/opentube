@@ -52,7 +52,7 @@ the heavy work takes: transcoding each upload and transcribing the speech.
 | | Minimum | Recommended | Ideal |
 | --- | --- | --- | --- |
 | **For** | Trying it out, small library, few viewers | Day-to-day use by a team or company, no GPU | Large library, frequent uploads, best captions |
-| **CPU** | 2 vCPU (x86-64) | 8 vCPU, recent generation (AVX2 / AVX-512) | 8+ vCPU |
+| **CPU** | 2 vCPU (x86-64) | 8 vCPU with AVX2 (Intel Haswell / AMD Zen or newer) | 8+ vCPU |
 | **Memory** | 4 GB | 16 GB | 32 GB |
 | **GPU** | — | — | NVIDIA with ≥ 6 GB VRAM, Pascal or newer (T4, L4, A10, RTX 3060+) |
 | **System disk** | 40 GB SSD | 80 GB NVMe SSD | 100 GB NVMe SSD |
@@ -170,7 +170,7 @@ internal one, and the per-origin limits would apply to everyone at once.
 | `/opt/<name>/etc/` | Caddyfile and `install.conf` (the answers, no secrets) |
 | `/opt/<name>/data/` | PostgreSQL, Caddy certificates, and Whisper models |
 | MinIO disk (chosen) | Originals and published videos |
-| `/opt/<name>/scripts/update.sh` | Update to the latest images |
+| `/opt/<name>/scripts/update.sh` | Update everything to the latest version (see [operation](#operation)) |
 | `/opt/<name>/logs/` | Logs of the maintenance scripts |
 
 ### Automatic captions in production
@@ -192,11 +192,13 @@ and the worker talks to it over HTTP inside the private network.
       start(["Container starts"]) --> gpu{"NVIDIA GPU answering<br/>inside the container?"}
       gpu -->|"yes, ≥ 3 GB"| large["large-v3-turbo-q5_0 · 4 threads"]
       gpu -->|"yes, less"| smallq["small-q5_1 · 4 threads"]
-      gpu -->|no| cpu{"Cores and memory<br/>(cgroup limits)"}
+      gpu -->|no| simd{"CPU with AVX2?"}
+      simd -->|no| base0["base-q5_1 · cores"]
+      simd -->|yes| cpu{"Cores and memory<br/>(cgroup limits)"}
       cpu -->|"≥ 8 and ≥ 4 GB"| small["small · up to 8 threads"]
       cpu -->|"≥ 4 and ≥ 2 GB"| smallq2["small-q5_1 · cores"]
       cpu -->|smaller| base["base-q5_1 · cores"]
-      large & smallq & small & smallq2 & base --> have{"Model already<br/>in the volume?"}
+      large & smallq & base0 & small & smallq2 & base --> have{"Model already<br/>in the volume?"}
       have -->|no| download["Download and check SHA-256"]
       have -->|yes| run
       download --> run(["whisper-server -l auto<br/>publishes /info.json"])
@@ -206,6 +208,7 @@ and the worker talks to it over HTTP inside the private network.
   | --- | --- | --- |
   | NVIDIA GPU with ≥ 3 GB | `large-v3-turbo-q5_0` (574 MB), the most accurate | 4 |
   | NVIDIA GPU with less | `small-q5_1` | 4 |
+  | CPU **without AVX2** (Celeron, Atom, Pentium Silver) | `base-q5_1` (60 MB) — `small` would take almost 4 minutes per minute of speech | cores |
   | CPU with ≥ 8 cores and ≥ 4 GB | `small` (488 MB) | up to 8 |
   | CPU with ≥ 4 cores and ≥ 2 GB | `small-q5_1` (190 MB) | cores |
   | smaller | `base-q5_1` (60 MB) | cores |
@@ -231,11 +234,26 @@ The stack is named after the application (`opentube` by default; dashes become u
 
 | Task | How |
 | --- | --- |
-| Update to the latest images | `sudo /opt/<name>/scripts/update.sh` |
+| Update to the latest version | `sudo /opt/<name>/scripts/update.sh` |
 | See the services | `docker stack services <stack>` |
 | Follow a service's logs | `docker service logs -f <stack>_app` (also `_worker`, `_whisper`, `_caddy`) |
 | Change a setting | Run the installer again |
 | Back up | `/opt/<name>/data` and the MinIO disk, plus the summary from the first installation |
+
+**What an update does.** `update.sh` fetches the latest installer and runs it with `--update`: no
+questions, the answers saved in `etc/install.conf`, and the existing secrets. Everything comes out
+as the latest version describes it — images, the stack file, Caddy, the firewall rules, and
+`update.sh` itself — so a fix to the infrastructure arrives the same way as a fix to the code.
+Nothing that needs a decision happens on its own: installing the NVIDIA toolkit, restarting
+Docker, or turning on captions for an installation that never had them is left for an interactive
+run. A download that is cut or is not the installer is refused before anything runs, and each
+run is appended to `logs/update.log`.
+
+Installations older than this `update.sh` only pull images; to switch them over once, run:
+
+```bash
+curl -fsSL https://gist.githubusercontent.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a/raw/opentube-install.sh | sudo bash -s -- --update
+```
 
 ### Uninstall
 

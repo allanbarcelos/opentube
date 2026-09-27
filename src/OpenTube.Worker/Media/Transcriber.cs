@@ -60,8 +60,22 @@ public class TranscriptionOptions
     /// <summary>Idioma usado quando o pedido não traz um (trabalhos antigos na fila).</summary>
     public string Language { get; set; } = "pt";
 
-    /// <summary>Tempo máximo de uma transcrição.</summary>
+    /// <summary>Tempo mínimo concedido a uma transcrição, por mais curto que seja o áudio.</summary>
     public TimeSpan Timeout { get; set; } = TimeSpan.FromHours(4);
+
+    /// <summary>
+    /// Quantas vezes a duração do áudio uma transcrição pode levar. Numa CPU sem AVX2 o Whisper
+    /// chega a gastar quase 4 minutos por minuto de fala; um limite fixo derrubaria justo os
+    /// vídeos longos.
+    /// </summary>
+    public double TimeoutFactor { get; set; } = 10;
+
+    /// <summary>Limite para um áudio desta duração: o maior entre o mínimo e o proporcional.</summary>
+    public TimeSpan LimitFor(TimeSpan audio)
+    {
+        var proporcional = audio * Math.Max(TimeoutFactor, 1);
+        return proporcional > Timeout ? proporcional : Timeout;
+    }
 }
 
 /// <summary>Extração do áudio no formato que o Whisper usa: mono, 16 kHz, PCM.</summary>
@@ -84,6 +98,16 @@ public static class AudioForTranscription
             throw new InvalidOperationException($"Não foi possível extrair o áudio: {extracao.ShortError()}");
 
         return audio;
+    }
+
+    /// <summary>
+    /// Duração do áudio extraído, pelo tamanho: PCM de 16 bits, mono, 16 kHz são 32.000 bytes
+    /// por segundo, depois dos 44 bytes do cabeçalho WAV.
+    /// </summary>
+    public static TimeSpan Duration(string wavPath)
+    {
+        var bytes = Math.Max(0, new FileInfo(wavPath).Length - 44);
+        return TimeSpan.FromSeconds(bytes / 32000d);
     }
 }
 
@@ -131,7 +155,7 @@ public partial class CommandLineTranscriber(
         var saida = Path.Combine(workDirectory, "legenda");
 
         using var limite = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        limite.CancelAfter(_options.Timeout);
+        limite.CancelAfter(_options.LimitFor(AudioForTranscription.Duration(audio)));
 
         var resultado = await runner.RunAsync(
             _options.Executable!, MontarArgumentos(audio, saida, idioma), limite.Token);

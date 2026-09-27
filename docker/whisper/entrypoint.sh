@@ -65,10 +65,24 @@ memoria_mb() {
   echo "$total"
 }
 
+# Instruções vetoriais da CPU. Sem AVX2 (Celeron, Atom, Pentium Silver e VPS que escondem as
+# instruções) o Whisper fica várias vezes mais lento: o modelo escolhido precisa ser mais leve.
+simd() {
+  local flags
+  flags="$(grep -m1 '^flags' "${WHISPER_CPUINFO:-/proc/cpuinfo}" 2>/dev/null || true)"
+  if   [[ " $flags " == *" avx512f "* ]]; then echo "avx512"
+  elif [[ " $flags " == *" avx2 "* ]];    then echo "avx2"
+  elif [[ " $flags " == *" avx "* ]];     then echo "avx"
+  elif [[ " $flags " == *" sse4_2 "* ]];  then echo "sse4.2"
+  else echo "basic"
+  fi
+}
+
 # ── Escolhas ──────────────────────────────────────────────────────────────────
 
 NUCLEOS="$(nucleos)"
 MEMORIA="$(memoria_mb)"
+SIMD="$(simd)"
 
 if [[ "${WHISPER_DEVICE:-auto}" == "gpu" ]] && ! tem_gpu; then
   log "WHISPER_DEVICE=gpu, mas nenhuma GPU NVIDIA responde neste container; seguindo em CPU."
@@ -83,7 +97,7 @@ else
   VRAM=0
 fi
 
-log "CPU: ${NUCLEOS} núcleos disponíveis · memória: ${MEMORIA} MB"
+log "CPU: ${NUCLEOS} núcleos disponíveis · instruções: ${SIMD} · memória: ${MEMORIA} MB"
 
 MODELO="${WHISPER_MODEL:-auto}"
 if [[ "$MODELO" == "auto" ]]; then
@@ -91,6 +105,11 @@ if [[ "$MODELO" == "auto" ]]; then
     MODELO="large-v3-turbo-q5_0"      # na GPU, o mais preciso sai praticamente de graça
   elif [[ "$ACELERACAO" == "cuda" ]]; then
     MODELO="small-q5_1"
+  elif [[ "$SIMD" != "avx2" && "$SIMD" != "avx512" ]]; then
+    # Sem AVX2 o "small" gasta perto de 4 minutos por minuto de fala; o "base" fica perto do
+    # tempo real. WHISPER_MODEL=small-q5_1 troca velocidade por precisão, se preferir.
+    MODELO="base-q5_1"
+    log "CPU sem AVX2: usando o modelo leve para a transcrição não demorar horas."
   elif (( NUCLEOS >= 8 && MEMORIA >= 4000 )); then
     MODELO="small"
   elif (( NUCLEOS >= 4 && MEMORIA >= 2000 )); then
@@ -148,7 +167,7 @@ fi
 
 mkdir -p "$PUBLICO"
 cat > "${PUBLICO}/info.json" <<JSON
-{"acceleration":"${ACELERACAO}","model":"${MODELO}","threads":${THREADS},"cores":${NUCLEOS},"memoryMb":${MEMORIA},"vramMb":${VRAM:-0}}
+{"acceleration":"${ACELERACAO}","simd":"${SIMD}","model":"${MODELO}","threads":${THREADS},"cores":${NUCLEOS},"memoryMb":${MEMORIA},"vramMb":${VRAM:-0}}
 JSON
 
 ARGS=(--host 0.0.0.0 --port "$PORTA" -m "$ARQUIVO" -t "$THREADS" -l auto --public "$PUBLICO")

@@ -52,7 +52,7 @@ leva o trabalho pesado: transcodificar cada envio e transcrever a fala.
 | | Mínima | Recomendada | Ideal |
 | --- | --- | --- | --- |
 | **Para** | Experimentar, acervo pequeno, poucos espectadores | Uso diário de uma equipe ou empresa, sem GPU | Acervo grande, envios frequentes, as melhores legendas |
-| **CPU** | 2 vCPU (x86-64) | 8 vCPU, geração recente (AVX2 / AVX-512) | 8+ vCPU |
+| **CPU** | 2 vCPU (x86-64) | 8 vCPU com AVX2 (Intel Haswell / AMD Zen ou mais novos) | 8+ vCPU |
 | **Memória** | 4 GB | 16 GB | 32 GB |
 | **GPU** | — | — | NVIDIA com ≥ 6 GB de VRAM, Pascal ou mais nova (T4, L4, A10, RTX 3060+) |
 | **Disco do sistema** | 40 GB SSD | 80 GB SSD NVMe | 100 GB SSD NVMe |
@@ -170,7 +170,7 @@ por um interno, e os limites por origem passariam a valer para todo mundo de uma
 | `/opt/<nome>/etc/` | Caddyfile e `install.conf` (as respostas, sem segredos) |
 | `/opt/<nome>/data/` | PostgreSQL, certificados do Caddy e modelos do Whisper |
 | Disco do MinIO (escolhido) | Originais e vídeos publicados |
-| `/opt/<nome>/scripts/update.sh` | Atualiza para as imagens mais recentes |
+| `/opt/<nome>/scripts/update.sh` | Atualiza tudo para a versão mais recente (veja [operação](#operação)) |
 | `/opt/<nome>/logs/` | Logs dos scripts de manutenção |
 
 ### Legendas automáticas em produção
@@ -192,11 +192,13 @@ o worker fala com ele por HTTP dentro da rede privada.
       inicio(["Container sobe"]) --> gpu{"GPU NVIDIA respondendo<br/>dentro do container?"}
       gpu -->|"sim, ≥ 3 GB"| large["large-v3-turbo-q5_0 · 4 threads"]
       gpu -->|"sim, menos"| smallq["small-q5_1 · 4 threads"]
-      gpu -->|não| cpu{"Núcleos e memória<br/>(limites do cgroup)"}
+      gpu -->|não| simd{"CPU com AVX2?"}
+      simd -->|não| base0["base-q5_1 · núcleos"]
+      simd -->|sim| cpu{"Núcleos e memória<br/>(limites do cgroup)"}
       cpu -->|"≥ 8 e ≥ 4 GB"| small["small · até 8 threads"]
       cpu -->|"≥ 4 e ≥ 2 GB"| smallq2["small-q5_1 · núcleos"]
       cpu -->|menor| base["base-q5_1 · núcleos"]
-      large & smallq & small & smallq2 & base --> tem{"Modelo já<br/>no volume?"}
+      large & smallq & base0 & small & smallq2 & base --> tem{"Modelo já<br/>no volume?"}
       tem -->|não| baixa["Baixa e confere o SHA-256"]
       tem -->|sim| roda
       baixa --> roda(["whisper-server -l auto<br/>publica /info.json"])
@@ -206,6 +208,7 @@ o worker fala com ele por HTTP dentro da rede privada.
   | --- | --- | --- |
   | GPU NVIDIA com ≥ 3 GB | `large-v3-turbo-q5_0` (574 MB), o mais preciso | 4 |
   | GPU NVIDIA com menos | `small-q5_1` | 4 |
+  | CPU **sem AVX2** (Celeron, Atom, Pentium Silver) | `base-q5_1` (60 MB) — o `small` levaria quase 4 minutos por minuto de fala | núcleos |
   | CPU com ≥ 8 núcleos e ≥ 4 GB | `small` (488 MB) | até 8 |
   | CPU com ≥ 4 núcleos e ≥ 2 GB | `small-q5_1` (190 MB) | núcleos |
   | menor que isso | `base-q5_1` (60 MB) | núcleos |
@@ -231,11 +234,27 @@ A pilha leva o nome da aplicação (`opentube` por padrão; hífens viram sublin
 
 | Tarefa | Como |
 | --- | --- |
-| Atualizar para as imagens mais recentes | `sudo /opt/<nome>/scripts/update.sh` |
+| Atualizar para a versão mais recente | `sudo /opt/<nome>/scripts/update.sh` |
 | Ver os serviços | `docker stack services <pilha>` |
 | Acompanhar os logs de um serviço | `docker service logs -f <pilha>_app` (também `_worker`, `_whisper`, `_caddy`) |
 | Mudar uma configuração | Rodar o instalador de novo |
 | Backup | `/opt/<nome>/data` e o disco do MinIO, mais o resumo da primeira instalação |
+
+**O que uma atualização faz.** O `update.sh` baixa o instalador mais recente e o roda com
+`--update`: sem perguntas, com as respostas guardadas em `etc/install.conf` e os segredos que já
+existem. Tudo sai como a versão nova descreve — imagens, arquivo da pilha, Caddy, regras de
+firewall e o próprio `update.sh` —, então uma correção de infraestrutura chega do mesmo jeito que
+uma correção de código. Nada que exija decisão acontece sozinho: instalar o toolkit da NVIDIA,
+reiniciar o Docker ou ligar as legendas numa instalação que nunca as teve fica para uma execução
+interativa. Um download cortado, ou que não seja o instalador, é recusado antes de rodar qualquer
+coisa, e cada execução é acrescentada em `logs/update.log`.
+
+Instalações anteriores a este `update.sh` só baixam imagens; para passá-las para o novo, rode uma
+vez:
+
+```bash
+curl -fsSL https://gist.githubusercontent.com/allanbarcelos/be7a8e2ee36cfe0d0acfa123d4b4cd2a/raw/opentube-install.sh | sudo bash -s -- --update
+```
 
 ### Desinstalar
 

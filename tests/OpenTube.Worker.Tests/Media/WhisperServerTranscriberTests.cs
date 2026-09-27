@@ -184,4 +184,67 @@ public class WhisperServerTranscriberTests : IDisposable
     [InlineData(null, null)]
     public void Nome_do_idioma_vira_codigo(string? nome, string? codigo) =>
         Assert.Equal(codigo, WhisperLanguages.ToCode(nome));
+
+    [Fact]
+    public async Task Na_cpu_o_motor_informa_as_instrucoes_do_processador()
+    {
+        var servidor = new ServidorFalso(caminho => caminho switch
+        {
+            "/health" => Json("""{"status":"ok"}"""),
+            "/info.json" => Json("""{"acceleration":"cpu","simd":"sse4.2","model":"base-q5_1","threads":4}"""),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound)
+        });
+
+        var situacao = await Criar(servidor).CheckAsync();
+
+        Assert.Equal("whisper.cpp · CPU · SSE4.2 · base-q5_1 · 4 threads", situacao.Engine);
+    }
+
+    [Fact]
+    public void A_conexao_com_o_whisper_usa_keepalive_curto()
+    {
+        // Sem isso, o balanceador do Swarm derruba a conexão parada durante a transcrição e a
+        // resposta nunca chega (a conexão fica meio aberta até o prazo estourar).
+        using var socket = new System.Net.Sockets.Socket(
+            System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+
+        WhisperHttp.LigarKeepAlive(socket);
+
+        // Ligado é qualquer valor diferente de zero (o macOS devolve o bit, 8; o Linux, 1).
+        Assert.NotEqual(0, (int)socket.GetSocketOption(
+            System.Net.Sockets.SocketOptionLevel.Socket, System.Net.Sockets.SocketOptionName.KeepAlive)!);
+        Assert.Equal(30, (int)socket.GetSocketOption(
+            System.Net.Sockets.SocketOptionLevel.Tcp, System.Net.Sockets.SocketOptionName.TcpKeepAliveTime)!);
+        Assert.Equal(30, (int)socket.GetSocketOption(
+            System.Net.Sockets.SocketOptionLevel.Tcp, System.Net.Sockets.SocketOptionName.TcpKeepAliveInterval)!);
+        Assert.True(WhisperHttp.KeepAlive < TimeSpan.FromMinutes(15));
+    }
+
+    [Fact]
+    public void O_cliente_padrao_liga_o_keepalive_ao_conectar()
+    {
+        using var tratador = WhisperHttp.CriarTratador();
+
+        Assert.NotNull(tratador.ConnectCallback);
+    }
+
+    [Theory]
+    [InlineData(60, 4 * 60)]          // 1 min de áudio: vale o mínimo de 4 h
+    [InlineData(30 * 60, 5 * 60)]     // 30 min de áudio: 10× = 5 h
+    [InlineData(2 * 3600, 20 * 60)]   // 2 h de áudio: 10× = 20 h
+    public void O_prazo_acompanha_a_duracao_do_audio(int segundosDeAudio, int minutosDePrazo)
+    {
+        var opcoes = new TranscriptionOptions();
+
+        Assert.Equal(TimeSpan.FromMinutes(minutosDePrazo), opcoes.LimitFor(TimeSpan.FromSeconds(segundosDeAudio)));
+    }
+
+    [Fact]
+    public async Task A_duracao_vem_do_tamanho_do_wav()
+    {
+        var wav = Path.Combine(_pasta, "audio.wav");
+        await File.WriteAllBytesAsync(wav, new byte[44 + 32000 * 90]);
+
+        Assert.Equal(TimeSpan.FromSeconds(90), AudioForTranscription.Duration(wav));
+    }
 }

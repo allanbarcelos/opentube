@@ -2,7 +2,8 @@
 # ==============================================================================
 #  install.sh — OpenTube production installer (single-node Docker Swarm)
 #
-#  Usage: sudo bash install.sh
+#  Usage: sudo bash install.sh              first installation, or to change settings
+#         sudo bash install.sh --update [name]  update without questions (what update.sh runs)
 #
 #  Requires a 64-bit x86 (amd64) Linux server with apt (Ubuntu 22.04/24.04, Debian 12).
 #
@@ -22,7 +23,9 @@
 #    9. docker stack deploy
 #   10. Firewall: UFW (22, and web access according to the mode). In Cloudflare
 #       mode the origin port only answers Cloudflare, in UFW and in DOCKER-USER.
-#   11. scripts/update.sh to pull the published images and republish
+#   11. scripts/update.sh, which fetches the latest installer and runs it with --update:
+#       images, stack, Caddy, firewall, and update.sh itself come out as the latest
+#       version describes them, reusing the answers in etc/install.conf
 #   12. Wait for the services
 #   13. Summary. The password is shown only this first time: Swarm does not return it.
 #
@@ -59,6 +62,22 @@ if [ -z "${OPENTUBE_FROMFILE:-}" ] && [ -p /dev/stdin ]; then
   [ -n "$_self" ] && rm -f "$_self"
 fi
 
+# --update [name]: no questions. Every answer comes from the existing etc/install.conf and
+# the existing secrets are kept; anything that needs a decision (installing the NVIDIA
+# toolkit, restarting Docker) is left for an interactive run.
+UPDATE_MODE="n"
+UPDATE_NAME="opentube"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --update)
+      UPDATE_MODE="y"
+      if [[ -n "${2:-}" && "${2:-}" != --* ]]; then UPDATE_NAME="$2"; shift; fi
+      ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+  shift
+done
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
 
@@ -69,8 +88,17 @@ die()     { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 phase()   { echo -e "\n${BOLD}${CYAN}━━━  $*  ━━━${NC}"; }
 sep()     { echo -e "${DIM}──────────────────────────────────────────────────────${NC}"; }
 
+# In update mode the saved answer is taken as is and shown, so the log says what was used.
+answered() { echo -e "  ${BOLD}$1${NC}: ${2:-${DIM}(empty)${NC}}"; }
+
 ask() {
   local prompt="$1" default="${2:-}" var_name="$3" value
+  if [[ "$UPDATE_MODE" == "y" ]]; then
+    [[ -n "$default" ]] || die "No saved answer for \"${prompt}\". Run the installer without --update once."
+    answered "$prompt" "$default"
+    printf -v "$var_name" '%s' "$default"
+    return
+  fi
   if [[ -n "$default" ]]; then
     read -rp "$(echo -e "  ${BOLD}${prompt}${NC} ${DIM}[${default}]${NC}: ")" value </dev/tty
     value="${value:-$default}"
@@ -86,6 +114,11 @@ ask() {
 
 ask_secret() {
   local prompt="$1" var_name="$2" value
+  if [[ "$UPDATE_MODE" == "y" ]]; then
+    warn "${prompt}: not asked in update mode. Run the installer without --update to set it."
+    printf -v "$var_name" '%s' ""
+    return
+  fi
   while true; do
     read -rsp "$(echo -e "  ${BOLD}${prompt}${NC}: ")" value </dev/tty; echo
     [[ -n "$value" ]] && break
@@ -96,6 +129,11 @@ ask_secret() {
 
 ask_optional() {
   local prompt="$1" default="${2:-}" var_name="$3" value
+  if [[ "$UPDATE_MODE" == "y" ]]; then
+    answered "$prompt" "$default"
+    printf -v "$var_name" '%s' "$default"
+    return
+  fi
   if [[ -n "$default" ]]; then
     read -rp "$(echo -e "  ${BOLD}${prompt}${NC} ${DIM}[${default}]${NC}: ")" value </dev/tty
   else
@@ -107,6 +145,11 @@ ask_optional() {
 
 ask_yn() {
   local prompt="$1" var_name="$2" default="${3:-y}" value hint
+  if [[ "$UPDATE_MODE" == "y" ]]; then
+    answered "$prompt" "$default"
+    printf -v "$var_name" '%s' "$default"
+    return
+  fi
   [[ "$default" == "y" ]] && hint="Y/n" || hint="y/N"
   read -rp "$(echo -e "  ${BOLD}${prompt}${NC} ${DIM}[${hint}]${NC}: ")" value </dev/tty
   value="${value:-$default}"
@@ -219,8 +262,12 @@ case "$(uname -m)" in
 esac
 command -v openssl >/dev/null 2>&1 || die "Install openssl before continuing."
 
-clear
-echo -e "${BOLD}${CYAN}OpenTube${NC}  ·  production installer  ·  Docker Swarm"
+if [[ "$UPDATE_MODE" == "y" ]]; then
+  echo -e "${BOLD}${CYAN}OpenTube${NC}  ·  update  ·  $(date -u '+%Y-%m-%d %H:%M UTC')"
+else
+  clear 2>/dev/null || true
+  echo -e "${BOLD}${CYAN}OpenTube${NC}  ·  production installer  ·  Docker Swarm"
+fi
 sep
 
 # ==============================================================================
@@ -228,12 +275,20 @@ phase "PHASE 1 — Configuration"
 # ==============================================================================
 
 echo ""
-ask "Application name" "opentube" APP_NAME_RAW
+if [[ "$UPDATE_MODE" == "y" ]]; then
+  APP_NAME_RAW="$UPDATE_NAME"
+  answered "Application name" "$APP_NAME_RAW"
+else
+  ask "Application name" "opentube" APP_NAME_RAW
+fi
 APP_NAME="$(slugify "$APP_NAME_RAW")"
 [[ -n "$APP_NAME" ]] || die "Invalid name."
 APP_DIR="/opt/${APP_NAME}"
 STACK_NAME="${APP_NAME//-/_}"
 INSTALL_CONF="${APP_DIR}/etc/install.conf"
+if [[ "$UPDATE_MODE" == "y" && ! -f "$INSTALL_CONF" ]]; then
+  die "No installation at ${APP_DIR} (${INSTALL_CONF} is missing). Run the installer without --update."
+fi
 echo -e "  ${DIM}Directory: ${APP_DIR}  |  Stack: ${STACK_NAME}${NC}"
 echo ""
 
@@ -252,12 +307,17 @@ echo -e "  ${BOLD}2)${NC} Local network — internal certificate, UFW limited to
 echo -e "  ${BOLD}3)${NC} Cloudflare — Cloudflare terminates HTTPS; this server answers HTTP on one"
 echo -e "     port that only Cloudflare can reach (UFW and DOCKER-USER)"
 echo ""
-while true; do
+while [[ "$UPDATE_MODE" == "n" ]]; do
   read -rp "$(echo -e "  ${BOLD}Mode${NC} ${DIM}[${_access_default}]${NC}: ")" ACCESS_CHOICE </dev/tty
   ACCESS_CHOICE="${ACCESS_CHOICE:-$_access_default}"
   [[ "$ACCESS_CHOICE" =~ ^[123]$ ]] && break
   echo -e "  ${RED}Choose 1, 2, or 3.${NC}"
 done
+if [[ "$UPDATE_MODE" == "y" ]]; then
+  [[ -n "$_mode_default" ]] || die "No saved access mode in ${INSTALL_CONF}. Run the installer without --update."
+  ACCESS_CHOICE="$_access_default"
+  answered "Mode" "$_mode_default"
+fi
 
 CERTBOT_EMAIL=""
 APP_PORT=""
@@ -277,12 +337,14 @@ if [[ "$ACCESS_CHOICE" == "3" ]]; then
     ask "Port Cloudflare connects to on this server" "$_port_default" APP_PORT
     if ! [[ "$APP_PORT" =~ ^[0-9]+$ && "$APP_PORT" -ge 1 && "$APP_PORT" -le 65535 ]]; then
       echo -e "  ${RED}Invalid port. Use a number between 1 and 65535.${NC}"
+      [[ "$UPDATE_MODE" == "y" ]] && die "Invalid port in ${INSTALL_CONF}. Run the installer without --update."
       continue
     fi
     # On a re-run the port is held by this installation's own Caddy.
     if port_in_use "$APP_PORT" \
        && ! [[ "$_mode_default" == "cloudflare" && "$APP_PORT" == "$_port_default" ]]; then
       echo -e "  ${RED}Port ${APP_PORT} is already in use on this machine.${NC}"
+      [[ "$UPDATE_MODE" == "y" ]] && die "Port ${APP_PORT} is taken by something else. Run the installer without --update."
       continue
     fi
     break
@@ -343,12 +405,18 @@ else
 fi
 echo -e "  ${DIM}Without it, captions are uploaded or written in the application's editor.${NC}"
 _wh_default="$(read_conf "$INSTALL_CONF" WHISPER_ENABLED)"
-[[ -z "$_wh_default" ]] && _wh_default="y"
+# An installation from before automatic captions keeps them off on update: turning them on
+# downloads models and uses CPU, a decision for an interactive run.
+if [[ -z "$_wh_default" ]]; then
+  [[ "$UPDATE_MODE" == "y" ]] && _wh_default="n" || _wh_default="y"
+fi
 ask_yn "Enable automatic captions?" WHISPER_ENABLED "$_wh_default"
 WHISPER_VARIANT="cpu"
 if [[ "$WHISPER_ENABLED" == "y" && -n "$GPU_NAME" ]]; then
   _gpu_default="y"
   [[ "$(read_conf "$INSTALL_CONF" WHISPER_VARIANT)" == "cpu" ]] && _gpu_default="n"
+  # On update the GPU is used only if the installation already used it.
+  [[ "$UPDATE_MODE" == "y" && "$(read_conf "$INSTALL_CONF" WHISPER_VARIANT)" != "cuda" ]] && _gpu_default="n"
   ask_yn "Use the GPU for transcription? (needs the NVIDIA Container Toolkit)" _USE_GPU "$_gpu_default"
   [[ "$_USE_GPU" == "y" ]] && WHISPER_VARIANT="cuda"
 fi
@@ -391,8 +459,10 @@ else
 fi
 sep
 echo ""
-read -rp "$(echo -e "  ${BOLD}Install?${NC} ${DIM}[Y/n]${NC}: ")" _CONFIRM </dev/tty
-[[ "${_CONFIRM:-y}" =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
+if [[ "$UPDATE_MODE" == "n" ]]; then
+  read -rp "$(echo -e "  ${BOLD}Install?${NC} ${DIM}[Y/n]${NC}: ")" _CONFIRM </dev/tty
+  [[ "${_CONFIRM:-y}" =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
+fi
 
 # ==============================================================================
 phase "PHASE 2 — Packages"
@@ -418,7 +488,10 @@ ok "Docker"
 # is the NVIDIA runtime as Docker's default: the container asks for the GPU with
 # NVIDIA_VISIBLE_DEVICES (the Whisper image already sets it). For containers that
 # do not ask, the runtime changes nothing.
-if [[ "$WHISPER_VARIANT" == "cuda" && "$(docker_default_runtime)" != "nvidia" ]]; then
+if [[ "$WHISPER_VARIANT" == "cuda" && "$(docker_default_runtime)" != "nvidia" && "$UPDATE_MODE" == "y" ]]; then
+  warn "The NVIDIA runtime is not Docker's default — Whisper runs on the CPU. Run the installer without --update to set it up."
+  WHISPER_VARIANT="cpu"
+elif [[ "$WHISPER_VARIANT" == "cuda" && "$(docker_default_runtime)" != "nvidia" ]]; then
   if ! command -v nvidia-ctk >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
     ask_yn "The NVIDIA Container Toolkit is not installed. Install it now?" _INSTALL_CTK "y"
     if [[ "$_INSTALL_CTK" == "y" ]]; then
@@ -755,6 +828,9 @@ if [[ "$WHISPER_ENABLED" == "y" ]]; then
     networks:
       - internal
     deploy:
+      # Sem o balanceador virtual (IPVS) do Swarm: ele derruba em silêncio conexões paradas
+      # há 15 minutos, e o worker fica calado esperando enquanto o Whisper transcreve.
+      endpoint_mode: dnsrr
       replicas: 1
       placement:
         constraints: [\"node.role == manager\"]
@@ -979,26 +1055,47 @@ chmod 600 "$INSTALL_CONF"
 
 cat > "${APP_DIR}/scripts/update.sh" <<'UPD'
 #!/usr/bin/env bash
-# Pull the published images and republish the stack.
-# Does not regenerate the password.
-set -euo pipefail
-APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-CONF="${APP_DIR}/etc/install.conf"
-read_conf() { grep -m1 "^${1}=" "$CONF" | cut -d= -f2- | sed "s/^'//;s/'\$//" || true; }
-STACK="$(read_conf STACK_NAME)"
-[[ -n "$STACK" ]] || { echo "Missing STACK_NAME in ${CONF}" >&2; exit 1; }
-# Public images: no login. An old login is dropped so an expired token cannot block the pull.
-rm -f "${APP_DIR}/etc/.ghcr-credentials"
-docker logout ghcr.io >/dev/null 2>&1 || true
-docker pull ghcr.io/allanbarcelos/opentube/app:latest
-docker pull ghcr.io/allanbarcelos/opentube/worker:latest
-WHISPER_IMAGE="$(read_conf WHISPER_IMAGE)"
-if [[ -n "$WHISPER_IMAGE" ]]; then docker pull "$WHISPER_IMAGE"; fi
-docker stack deploy \
-  --compose-file "${APP_DIR}/docker-compose.prod.yml" \
-  --resolve-image always \
-  --prune \
-  "$STACK"
+# Update this installation to the latest version: fetches the current installer and runs it
+# with --update, which reuses the answers in etc/install.conf and the existing secrets. The
+# images, the stack, Caddy, the firewall rules, and this script itself come out as the latest
+# version describes them. Nothing is asked, and no password or key changes.
+#
+# Usage: sudo /opt/<name>/scripts/update.sh
+#        OPENTUBE_INSTALL_URL=<url> to take the installer from somewhere else (a fork, a branch).
+#
+# Everything runs inside main(): bash reads the whole function before running it, so the
+# installer can rewrite this file while it is running.
+main() {
+  set -euo pipefail
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
+  [[ $EUID -eq 0 ]] || { echo "Run as root: sudo $0" >&2; exit 1; }
+
+  local app_dir name url log
+  app_dir="$(cd "$(dirname "$0")/.." && pwd)"
+  name="$(basename "$app_dir")"
+  url="${OPENTUBE_INSTALL_URL:-https://raw.githubusercontent.com/allanbarcelos/opentube/main/install.sh}"
+  log="${app_dir}/logs/update.log"
+  mkdir -p "${app_dir}/logs"
+
+  # Global, not local: the cleanup runs on exit, after main() has returned.
+  OPENTUBE_UPDATE_INSTALLER="$(mktemp "${TMPDIR:-/tmp}/opentube-update.XXXXXX")"
+  trap 'rm -f "${OPENTUBE_UPDATE_INSTALLER:-}"' EXIT
+  local installer="$OPENTUBE_UPDATE_INSTALLER"
+
+  echo "Fetching the latest installer from ${url}"
+  curl -fsSL --retry 3 "$url" -o "$installer"
+
+  # A cut download or an error page must not run as root.
+  bash -n "$installer" || { echo "The downloaded installer is not a valid script; nothing changed." >&2; exit 1; }
+  grep -q 'OpenTube production installer' "$installer" \
+    || { echo "The downloaded file is not the OpenTube installer; nothing changed." >&2; exit 1; }
+
+  OPENTUBE_FROMFILE=1 bash "$installer" --update "$name" 2>&1 | tee -a "$log"
+  return "${PIPESTATUS[0]}"
+}
+
+main "$@"; exit $?
 UPD
 chmod 755 "${APP_DIR}/scripts/update.sh"
 ok "Stack, Caddy, and update.sh"
