@@ -21,7 +21,13 @@ public class MinioFixture : IAsyncLifetime
         .WithEnvironment("MINIO_ROOT_PASSWORD", Segredo)
         .WithEnvironment("MINIO_SCHEME", "http")
         .WithPortBinding(9000, true)
+        // A imagem da Bitnami sobe o MinIO uma vez para se configurar, derruba e sobe de novo
+        // (uns 5 segundos depois). O primeiro servidor já responde ao teste de saúde: esperar só
+        // por ele deixava os testes começarem em cima da troca, e a requisição em andamento
+        // morria ("Client disconnected before response was ready" / "response ended
+        // prematurely"). A mensagem abaixo marca o servidor definitivo.
         .WithWaitStrategy(Wait.ForUnixContainer()
+            .UntilMessageIsLogged(@"\*\* Starting MinIO \*\*")
             .UntilHttpRequestIsSucceeded(r => r.ForPort(9000).ForPath("/minio/health/live")))
         .Build();
 
