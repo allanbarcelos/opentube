@@ -8,8 +8,9 @@ Cabeçalho de licença e autoria em todo arquivo de código do projeto.
     python3 scripts/license-headers.py           acrescenta onde falta
     python3 scripts/license-headers.py --check   só confere (o CI usa); sai com erro se faltar
 
-Vale para os arquivos versionados no git. Código de terceiros (wwwroot/lib) e o que veio
-pronto do modelo de projeto da Microsoft ficam de fora: não são deste projeto.
+Vale para os arquivos do git, versionados ou novos (o que o .gitignore exclui fica de fora).
+Código de terceiros (wwwroot/lib) e o que veio pronto do modelo de projeto da Microsoft ficam
+de fora: não são deste projeto.
 """
 
 import subprocess
@@ -59,7 +60,11 @@ def cabecalho(tipo, formato) -> str:
 
 
 def arquivos():
-    saida = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True).stdout
+    # Versionados e também os novos ainda não adicionados (respeitando o .gitignore): um
+    # arquivo recém-criado recebe o cabeçalho antes do primeiro commit.
+    saida = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+        capture_output=True, text=True, check=True).stdout
     for nome in saida.splitlines():
         if nome.startswith(IGNORADOS):
             continue

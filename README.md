@@ -29,6 +29,7 @@ domain, with optional expiration and a detailed record of who watched what.
 - [Video pipeline](#video-pipeline)
 - [Analytics](#analytics)
 - [Captions](#captions)
+- [Chapters](#chapters)
 - [Per-video support](#per-video-support)
 
 **Project**
@@ -408,6 +409,7 @@ testable without a database or network; the rest uses ephemeral containers.
 | Analytics | Who watched, when, from where, on which device, and how much of each video |
 | Support | Private comments per video, visible only to the author and the administrator |
 | Collections | Videos grouped into collections; access can be granted per video, collection, or the whole library |
+| Chapters | Summary built in the video settings, shown next to the video and as a chapter bar under the player |
 | Captions | Per-language tab: automatic with Whisper (language detected on its own), upload, and an in-app editor |
 | Protection | Moving watermark with the viewer's email, library PNG watermark, no download or casting, limit on simultaneous playbacks |
 | Audit | Every administrative action is recorded: grant, revoke, publish, delete |
@@ -719,6 +721,21 @@ sequenceDiagram
         K->>Q: Failed, with the reason (never overwritten)
     end
 ```
+
+---
+
+## Chapters
+
+The administration builds each video's summary in its settings: rows of start time (`0:00`,
+`5:10`, `1:05:10`) and title, added and removed on the page; the order is fixed by time when saving,
+and no chapter can start past the end of the video. Each chapter goes from its start to the start
+of the next one.
+
+Viewers see the summary next to the video, with the current chapter highlighted as it plays, and a
+chapter bar right under the player — one segment per chapter, sized by its length and filled as the
+video advances. Clicking a chapter, or a point in the bar, takes the player there. The player keeps
+the browser's native controls, which do not accept marks on their own progress bar; the chapter
+bar sits just below it instead.
 
 ---
 

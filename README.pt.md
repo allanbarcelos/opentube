@@ -29,6 +29,7 @@ de email inteiro, com validade opcional e registro detalhado de quem assistiu o 
 - [Pipeline de vídeo](#pipeline-de-vídeo)
 - [Analytics](#analytics)
 - [Legendas](#legendas)
+- [Capítulos](#capítulos)
 - [Suporte por vídeo](#suporte-por-vídeo)
 
 **Projeto**
@@ -408,6 +409,7 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | Analytics | Quem assistiu, quando, de onde, em qual dispositivo e quanto de cada vídeo |
 | Suporte | Comentários privados por vídeo, visíveis apenas ao autor e ao administrador |
 | Coleções | Vídeos agrupados em coleções; o acesso pode ser dado por vídeo, por coleção ou ao acervo inteiro |
+| Capítulos | Sumário montado nas configurações do vídeo, mostrado ao lado dele e numa barra de capítulos sob o player |
 | Legendas | Aba por idioma: automáticas com o Whisper (idioma detectado sozinho), envio de arquivo e editor no próprio sistema |
 | Proteção | Marca d'água móvel com o email de quem assiste, marca d'água do acervo em PNG, sem download nem transmissão, limite de reproduções simultâneas |
 | Auditoria | Toda ação administrativa fica registrada: concessão, revogação, publicação, exclusão |
@@ -716,6 +718,21 @@ sequenceDiagram
         K->>Q: Falha, com o motivo (nunca sobrescreve)
     end
 ```
+
+---
+
+## Capítulos
+
+A administração monta o sumário de cada vídeo nas configurações dele: linhas de início (`0:00`,
+`5:10`, `1:05:10`) e título, acrescentadas e removidas na própria página; a ordem é acertada pelo
+tempo ao salvar, e nenhum capítulo começa depois do fim do vídeo. Cada capítulo vai do seu início
+até o início do próximo.
+
+Quem assiste vê o sumário ao lado do vídeo, com o capítulo atual destacado conforme ele toca, e uma
+barra de capítulos logo abaixo do player — um segmento por capítulo, do tamanho da duração dele,
+que se enche conforme o vídeo avança. Clicar num capítulo, ou num ponto da barra, leva o player até
+lá. O player mantém os controles nativos do navegador, que não aceitam marcas na própria barra de
+progresso; por isso a barra de capítulos fica logo abaixo.
 
 ---
 

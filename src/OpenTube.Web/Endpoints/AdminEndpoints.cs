@@ -277,6 +277,34 @@ public static class AdminEndpoints
             return Results.Redirect($"/admin/videos/{videoId}?restaurado=1");
         });
 
+        // Sumário: o editor manda as linhas como listas paralelas, na ordem da tela; a ordem que
+        // vale é a do tempo, acertada ao salvar.
+        grupo.MapPost("/chapters", async (
+            Guid videoId, VideoChapterService sumarios, HttpContext contexto, CancellationToken cancellationToken) =>
+        {
+            var formulario = await contexto.Request.ReadFormAsync(cancellationToken);
+            var inicios = formulario["inicio"];
+            var titulos = formulario["titulo"];
+            var linhas = Enumerable.Range(0, Math.Max(inicios.Count, titulos.Count))
+                .Select(i => ((string?)(i < inicios.Count ? inicios[i] : null), (string?)(i < titulos.Count ? titulos[i] : null)));
+
+            try
+            {
+                var capitulos = await sumarios.ReplaceAsync(videoId, linhas, cancellationToken);
+
+                await contexto.RegistrarAsync(
+                    AuditActions.VideoAlterado, AuditEntities.Video, videoId,
+                    LocalText.Format("Video summary saved with {0} chapter(s)", capitulos.Count), cancellationToken);
+
+                return Results.Redirect($"/admin/videos/{videoId}?sumario=1#sumario");
+            }
+            catch (OpenTube.Domain.Media.ChapterException e)
+            {
+                var mensagem = LocalText.Format(e.Key, [.. e.Args]);
+                return Results.Redirect($"/admin/videos/{videoId}?erro-sumario={Uri.EscapeDataString(mensagem)}#sumario");
+            }
+        });
+
         grupo.MapPost("/reprocess", async (
             Guid videoId, AdminVideoService admin, HttpContext contexto, CancellationToken cancellationToken) =>
         {

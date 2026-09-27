@@ -6,10 +6,12 @@
 @page "/watch/{slug}"
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Playback
+@using OpenTube.Domain.Media
 @inject VideoCatalog Catalogo
 @inject CurrentViewer Espectadores
 @inject OpenTube.Infrastructure.Branding.WatermarkService Marcas
 @inject OpenTube.Infrastructure.Services.CaptionService Legendas
+@inject OpenTube.Infrastructure.Services.VideoChapterService Sumarios
 @inject Microsoft.Extensions.Options.IOptions<OpenTube.Infrastructure.Options.SecurityOptions> Seguranca
 @inject NavigationManager Navegacao
 
@@ -65,6 +67,26 @@
                     }
                 </div>
 
+                @* Barra de capítulos: o player usa os controles nativos, que não aceitam marcas na
+                   barra de progresso; esta fica logo abaixo, com um segmento por capítulo que se
+                   enche conforme o vídeo avança (sumario.js). *@
+                @if (Segmentos.Count > 0)
+                {
+                    <div class="sumario-barra mt-2" data-sumario-barra role="group" aria-label="@T["Chapters"]">
+                        @foreach (var segmento in Segmentos)
+                        {
+                            <button type="button" class="sumario-segmento" style="flex-grow: @segmento.Duracao"
+                                    data-inicio="@segmento.Inicio" data-fim="@segmento.Fim"
+                                    data-titulo="@segmento.Titulo"
+                                    title="@($"{VideoTimestamps.Format(TimeSpan.FromSeconds(segmento.Inicio))} · {segmento.Titulo}")"
+                                    aria-label="@($"{VideoTimestamps.Format(TimeSpan.FromSeconds(segmento.Inicio))} {segmento.Titulo}")">
+                                <span class="sumario-preenchido"></span>
+                            </button>
+                        }
+                    </div>
+                    <p class="small text-body-secondary mt-1 mb-0" data-sumario-atual aria-live="polite"></p>
+                }
+
                 <h1 class="h4 mt-3 mb-1">@Video.Title</h1>
                 <p class="text-body-secondary small mb-3">
                     @DuracaoTexto
@@ -89,6 +111,25 @@
             </div>
 
             <div class="col-lg-4">
+                @if (Capitulos.Count > 0)
+                {
+                    <div class="card mb-3" data-sumario-lista>
+                        <div class="card-header">@T["Chapters"]</div>
+                        <div class="list-group list-group-flush">
+                            @for (var i = 0; i < Capitulos.Count; i++)
+                            {
+                                var capitulo = Capitulos[i];
+                                <a class="list-group-item list-group-item-action d-flex gap-3 sumario-item"
+                                   href="/watch/@Video.Slug?t=@capitulo.StartSeconds" data-instante="@capitulo.StartSeconds"
+                                   data-capitulo="@i">
+                                    <span class="font-monospace small text-body-secondary pt-1">@VideoTimestamps.Format(TimeSpan.FromSeconds(capitulo.StartSeconds))</span>
+                                    <span>@capitulo.Title</span>
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+
                 @if (Video.Tags.Count > 0)
                 {
                     <h2 class="h6">@T["Tags"]</h2>
@@ -131,6 +172,11 @@
 
     private IReadOnlyList<OpenTube.Domain.Entities.VideoAsset> ListaDeLegendas = [];
 
+    private IReadOnlyList<Chapter> Capitulos = [];
+
+    /// <summary>Pedaços da barra de capítulos; um trecho antes do primeiro capítulo fica sem título.</summary>
+    private readonly List<(int Inicio, int Fim, int Duracao, string Titulo)> Segmentos = [];
+
     private OpenTube.Infrastructure.Branding.WatermarkInfo? Logo;
 
     private string DuracaoTexto
@@ -156,6 +202,8 @@
         if (Video is not null)
         {
             ListaDeLegendas = await Legendas.ListPlayableAsync(Video.Id, Http.RequestAborted);
+            Capitulos = await Sumarios.ListAsync(Video.Id, Http.RequestAborted);
+            MontarSegmentos();
             Logo = await Marcas.GetInfoAsync(Http.RequestAborted);
         }
 
@@ -173,5 +221,22 @@
         // "não existe" e "existe mas não é para você" já seria informação sobre o acervo.
         if (Video is null)
             Navegacao.NotFound();
+    }
+
+    private void MontarSegmentos()
+    {
+        Segmentos.Clear();
+        var duracao = TimeSpan.FromSeconds(Video?.DurationSeconds ?? 0);
+        if (Capitulos.Count == 0 || duracao <= TimeSpan.Zero)
+            return;
+
+        if (Capitulos[0].StartSeconds > 0)
+            Segmentos.Add((0, Capitulos[0].StartSeconds, Capitulos[0].StartSeconds, string.Empty));
+
+        for (var i = 0; i < Capitulos.Count; i++)
+        {
+            var fim = VideoChapters.EndOf(Capitulos, i, duracao);
+            Segmentos.Add((Capitulos[i].StartSeconds, fim, Math.Max(1, fim - Capitulos[i].StartSeconds), Capitulos[i].Title));
+        }
     }
 }

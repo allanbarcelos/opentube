@@ -513,3 +513,48 @@
     border-color: var(--bs-primary);
     box-shadow: 0 0.125rem 0.5rem rgba(var(--bs-primary-rgb), 0.15);
 }
+
+/* Barra de capítulos sob o player: um segmento por capítulo, com o trecho já visto preenchido. */
+.sumario-barra {
+    display: flex;
+    gap: 3px;
+    height: 6px;
+    transition: height 0.1s ease-in-out;
+}
+
+.sumario-barra:hover,
+.sumario-barra:focus-within {
+    height: 10px;
+}
+
+.sumario-segmento {
+    position: relative;
+    flex-basis: 0;
+    min-width: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    overflow: hidden;
+    background: var(--bs-secondary-bg);
+    cursor: pointer;
+}
+
+.sumario-segmento.atual {
+    background: var(--bs-tertiary-color);
+}
+
+.sumario-segmento:focus-visible {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: 2px;
+}
+
+.sumario-preenchido {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0;
+    background: var(--bs-primary);
+}
+
+.sumario-item.active .text-body-secondary {
+    color: inherit !important;
+}

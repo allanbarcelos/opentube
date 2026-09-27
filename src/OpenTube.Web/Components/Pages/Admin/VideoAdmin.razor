@@ -9,6 +9,7 @@
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject AdminVideoService Admin
 @inject OpenTube.Infrastructure.Services.CaptionService Legendas
+@inject OpenTube.Infrastructure.Services.VideoChapterService Sumarios
 @inject ShareLinkFlash Links
 @inject NavigationManager Navegacao
 
@@ -180,6 +181,76 @@
                     </div>
                 </div>
 
+                @* Sumário: linhas de tempo e título, acrescentadas e removidas pelo sumario.js. *@
+                <div class="card mt-4" id="sumario" data-sumario-editor>
+                    <div class="card-header d-flex flex-wrap justify-content-between gap-2">
+                        <span>@T["Chapters"]</span>
+                        <span class="small text-body-secondary">@T["Shown next to the video and on the chapter bar"]</span>
+                    </div>
+                    <div class="card-body">
+                        @if (SumarioSalvo)
+                        {
+                            <div class="alert alert-success" role="status">@T["Chapters saved."]</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(ErroDoSumario))
+                        {
+                            <div class="alert alert-danger" role="alert">@ErroDoSumario</div>
+                        }
+
+                        <p class="form-text mt-0">
+                            @T["Each chapter goes from its start to the start of the next one. Write the start like 0:00, 5:10 or 1:05:10; the order is fixed by time when saving. Leave it empty to remove the chapters."]
+                        </p>
+
+                        <form method="post" action="/admin/videos/@Video.Id/chapters">
+                            <AntiforgeryToken />
+
+                            <div data-sumario-linhas>
+                                @foreach (var capitulo in LinhasDoSumario)
+                                {
+                                    <div class="row g-2 mb-2" data-sumario-linha>
+                                        <div class="col-4 col-sm-3">
+                                            <input class="form-control form-control-sm font-monospace" name="inicio"
+                                                   value="@capitulo.Inicio" placeholder="0:00" aria-label="@T["Start"]" />
+                                        </div>
+                                        <div class="col">
+                                            <input class="form-control form-control-sm" name="titulo" value="@capitulo.Titulo"
+                                                   maxlength="@OpenTube.Domain.Media.VideoChapters.MaxTitleLength"
+                                                   placeholder="@T["Chapter title"]" aria-label="@T["Chapter title"]" />
+                                        </div>
+                                        <div class="col-auto">
+                                            <button class="btn btn-sm btn-outline-secondary" type="button" data-sumario-remover
+                                                    title="@T["Remove"]" aria-label="@T["Remove"]">✕</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+
+                            <template data-sumario-modelo>
+                                <div class="row g-2 mb-2" data-sumario-linha>
+                                    <div class="col-4 col-sm-3">
+                                        <input class="form-control form-control-sm font-monospace" name="inicio"
+                                               placeholder="0:00" aria-label="@T["Start"]" />
+                                    </div>
+                                    <div class="col">
+                                        <input class="form-control form-control-sm" name="titulo"
+                                               maxlength="@OpenTube.Domain.Media.VideoChapters.MaxTitleLength"
+                                               placeholder="@T["Chapter title"]" aria-label="@T["Chapter title"]" />
+                                    </div>
+                                    <div class="col-auto">
+                                        <button class="btn btn-sm btn-outline-secondary" type="button" data-sumario-remover
+                                                title="@T["Remove"]" aria-label="@T["Remove"]">✕</button>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <div class="d-flex flex-wrap gap-2">
+                                <button class="btn btn-sm btn-outline-primary" type="button" data-sumario-acrescentar>+ @T["Add chapter"]</button>
+                                <button class="btn btn-sm btn-primary" type="submit">@T["Save chapters"]</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
                 <PainelDeAcessos TargetType="GrantTargetType.Video" TargetId="Video.Id" />
             </div>
 
@@ -276,6 +347,17 @@
     [SupplyParameterFromQuery(Name = "tab")]
     private string? Aba { get; set; }
 
+    [SupplyParameterFromQuery(Name = "sumario")]
+    private string? SumarioBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "erro-sumario")]
+    private string? ErroDoSumario { get; set; }
+
+    private bool SumarioSalvo => SumarioBruto == "1";
+
+    /// <summary>Linhas do editor: os capítulos salvos, ou uma primeira linha em 0:00 para começar.</summary>
+    private IReadOnlyList<(string Inicio, string Titulo)> LinhasDoSumario = [];
+
     /// <summary>Resultado da última ação nas legendas: enviada, pedida ou removida.</summary>
     [SupplyParameterFromQuery(Name = "legenda")]
     private string? Legenda { get; set; }
@@ -362,5 +444,10 @@
         }
 
         QuantasLegendas = (await Legendas.ListAsync(VideoId, Http.RequestAborted)).Count;
+
+        var capitulos = await Sumarios.ListAsync(VideoId, Http.RequestAborted);
+        LinhasDoSumario = capitulos.Count > 0
+            ? [.. capitulos.Select(c => (OpenTube.Domain.Media.VideoTimestamps.Format(TimeSpan.FromSeconds(c.StartSeconds)), c.Title))]
+            : [("0:00", string.Empty)];
     }
 }
