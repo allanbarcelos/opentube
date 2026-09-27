@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 using System.Net;
 using OpenTube.Domain.Enums;
 using OpenTube.TestSupport;
@@ -174,5 +177,17 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var resposta = await cliente.GetAsync("/watch/nao-existe");
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task Toda_pagina_credita_o_projeto_original()
+    {
+        using var cliente = _app.CreateBrowser();
+
+        var html = await cliente.GetStringAsync("/");
+
+        Assert.Contains("data-credito=\"opentube\"", html);
+        Assert.Contains("href=\"https://github.com/allanbarcelos/opentube\"", html);
+        Assert.Contains("<meta name=\"generator\" content=\"OpenTube (https://github.com/allanbarcelos/opentube)\"", html);
     }
 }

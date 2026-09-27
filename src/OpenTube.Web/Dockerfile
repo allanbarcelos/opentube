@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # Imagem da aplicação. A restauração vem antes do código para que uma alteração de fonte não
 # invalide o cache das dependências.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build

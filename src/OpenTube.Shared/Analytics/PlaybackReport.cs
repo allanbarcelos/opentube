@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 namespace OpenTube.Shared.Analytics;
 
 /// <summary>Um evento relatado pelo player.</summary>

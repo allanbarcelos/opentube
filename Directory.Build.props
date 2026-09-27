@@ -1,3 +1,8 @@
+<!--
+  SPDX-License-Identifier: MIT
+  Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+-->
+
 <Project>
   <PropertyGroup>
     <!-- O padrão do MSBuild é "obj\", no estilo Windows. O dotnet watch lê o caminho do

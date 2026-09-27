@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # Prepara a transcrição automática de legendas para o 'make watch': instala o whisper.cpp
 # (whisper-cli) e baixa um modelo para .whisper/, conferindo o SHA-256 publicado.
 #

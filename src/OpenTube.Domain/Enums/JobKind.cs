@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 namespace OpenTube.Domain.Enums;
 
 /// <summary>Tipos de trabalho que o worker sabe executar.</summary>

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 namespace OpenTube.Shared.Catalog;
 
 /// <summary>Resumo de um vídeo para listagens e resultados de busca.</summary>

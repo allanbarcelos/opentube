@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 using OpenTube.Domain.Entities;
 
 namespace OpenTube.Domain.Tests.Entities;

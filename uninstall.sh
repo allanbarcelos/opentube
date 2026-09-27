@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # ==============================================================================
 #  uninstall.sh — remove what install.sh created for one installation
 #

@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # Wait for the database and storage before handing off the process. Swarm has
 # no depends_on; without this wait the app exits and restarts until the
 # network publishes the name.

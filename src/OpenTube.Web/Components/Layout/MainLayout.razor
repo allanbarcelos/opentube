@@ -1,3 +1,8 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
 @inherits LayoutComponentBase
 
 <div class="d-flex flex-column min-vh-100 bg-body-tertiary">
@@ -9,7 +14,13 @@
 
     <footer class="border-top bg-body py-3 mt-4">
         <div class="container d-flex flex-wrap justify-content-between gap-2 small text-body-secondary">
-            <span>OpenTube</span>
+            @* Crédito ao projeto original. A licença MIT não obriga a mantê-lo, mas o pedido está
+               no NOTICE: quem usa o OpenTube, por favor, deixe o link. *@
+            <span data-credito="opentube">
+                @T["Powered by"]
+                <a class="link-secondary" href="https://github.com/allanbarcelos/opentube"
+                   target="_blank" rel="noopener">OpenTube</a>
+            </span>
             <span>@T["Access to this platform is recorded."]</span>
         </div>
     </footer>

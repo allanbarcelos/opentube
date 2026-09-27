@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 // Identificação de quem assiste, sobre o vídeo. Não impede a gravação da tela — nada no
 // navegador impede —, mas faz a gravação carregar quem estava vendo e quando.
 //

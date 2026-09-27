@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # Sobe o servidor do Whisper ajustado à máquina em que está: detecta GPU NVIDIA, núcleos e
 # memória disponíveis ao container, escolhe o modelo e as threads, baixa o modelo na primeira
 # vez (conferindo o SHA-256) e publica o que escolheu em /info.json para o worker mostrar.

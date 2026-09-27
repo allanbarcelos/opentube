@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 namespace OpenTube.Infrastructure.Storage;
 
 /// <summary>Um pedaço do envio multipart, com a URL que o navegador usa para enviá-lo.</summary>

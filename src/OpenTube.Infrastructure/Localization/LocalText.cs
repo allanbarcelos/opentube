@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 using System.Globalization;
 
 namespace OpenTube.Infrastructure.Localization;
@@ -241,6 +244,7 @@ public static class LocalText
         ["Support"] = "Suporte",
         ["Audit"] = "Auditoria",
         ["Upload video"] = "Enviar vídeo",
+        ["Powered by"] = "Feito com",
         ["Upload videos — OpenTube"] = "Enviar vídeos — OpenTube",
         ["Upload videos"] = "Enviar vídeos",
         ["Preparing…"] = "Preparando…",
@@ -818,6 +822,7 @@ public static class LocalText
         ["Support"] = "Assistance",
         ["Audit"] = "Audit",
         ["Upload video"] = "Envoyer une vidéo",
+        ["Powered by"] = "Propulsé par",
         ["Upload videos — OpenTube"] = "Envoyer des vidéos — OpenTube",
         ["Upload videos"] = "Envoyer des vidéos",
         ["Preparing…"] = "Préparation…",

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 // Leitura ponto a ponto da curva de retenção. Um gráfico desenhado numa página é
 // interativo por natureza: sem o cursor, saber o valor de um instante exige contar
 // pixels na tela.

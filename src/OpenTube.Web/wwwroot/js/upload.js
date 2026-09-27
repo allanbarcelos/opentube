@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 // Envio de vídeos direto do navegador para o storage, em pedaços assinados pela aplicação.
 // O servidor nunca recebe os bytes do vídeo: só coordena o envio.
 //

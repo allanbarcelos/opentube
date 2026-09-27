@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 using System.Text.Json;
 using Dapper;
 using Microsoft.EntityFrameworkCore;

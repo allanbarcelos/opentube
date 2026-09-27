@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Microsoft.Extensions.Logging.Abstractions;

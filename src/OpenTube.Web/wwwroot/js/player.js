@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 // Reprodução HLS. O Safari toca HLS nativamente; os demais navegadores precisam da hls.js,
 // que é servida pelo próprio site para não depender de rede externa.
 //

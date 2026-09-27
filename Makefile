@@ -1,5 +1,8 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 .PHONY: help up up-d down restart logs ps build clean shell _docker \
-        watch watch-web watch-worker deps-up deps-down test whisper
+        watch watch-web watch-worker deps-up deps-down test whisper headers
 
 .DEFAULT_GOAL := help
 
@@ -106,6 +109,11 @@ ifeq ($(strip $(p)),)
 else
 	dotnet test tests/OpenTube.$(p).Tests --artifacts-path $(TEST_ARTIFACTS)
 endif
+
+# ── License headers ───────────────────────────────────────────────────────────
+# Todo arquivo de código leva o cabeçalho SPDX com licença e autoria; o CI recusa o que faltar.
+headers: ## Acrescenta o cabeçalho de licença e autoria onde faltar (o CI confere)
+	@python3 scripts/license-headers.py
 
 # ── Maintenance ───────────────────────────────────────────────────────────────
 clean: ## Remove containers, volumes e orphans  (reset completo)

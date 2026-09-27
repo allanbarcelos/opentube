@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 namespace OpenTube.Worker.Media;
 
 /// <summary>O que o <c>ffprobe</c> descobriu sobre o arquivo enviado.</summary>

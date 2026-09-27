@@ -1,0 +1,24 @@
+OpenTube
+Copyright (c) 2026 Allan Barcelos
+https://github.com/allanbarcelos/opentube
+
+This software is licensed under the MIT License (see LICENSE).
+
+REQUIRED BY THE LICENSE
+  Any copy or substantial portion of this software must keep the copyright
+  notice and the MIT License text. That includes the SPDX header at the top of
+  each source file ("SPDX-License-Identifier: MIT" and the copyright line):
+  removing it from copied code does not comply with the license.
+
+ASKED AS A COURTESY
+  If you run, fork, or build on OpenTube, please:
+    - keep the "Powered by OpenTube" link in the interface footer;
+    - mention the original project, with a link, in your README or About page.
+  The MIT License does not require these, but they are how a free project gets
+  known, and the author asks that you keep them.
+
+Third-party components keep their own licenses and notices:
+  Bootstrap (MIT)          src/OpenTube.Web/wwwroot/lib/bootstrap
+  hls.js (Apache-2.0)      src/OpenTube.Web/wwwroot/lib/hlsjs
+  whisper.cpp (MIT)        built into the whisper image (docker/whisper)
+  FFmpeg (LGPL/GPL)        installed in the worker image from distribution packages

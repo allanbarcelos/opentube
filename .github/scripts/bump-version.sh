@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # Computes the next A.B.C.D version tag for one component from the commits
 # since its last tag, and creates and pushes that tag when a bump is warranted.
 #

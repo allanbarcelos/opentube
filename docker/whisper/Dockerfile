@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # Servidor do Whisper (whisper.cpp) para as legendas automáticas. Duas variantes:
 #
 #   cpu   imagem leve; traz o código de CPU compilado para várias gerações de processador

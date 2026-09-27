@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # Portas só para o hot-reload: a aplicação roda no host e precisa alcançar banco,
 # storage e SMTP. Não use este arquivo no `make up`.
 

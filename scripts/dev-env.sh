@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # Load .env and export the variables the application reads on the host.
 # Usage: source scripts/dev-env.sh   (from the repository root)
 if [[ ! -f .env ]]; then

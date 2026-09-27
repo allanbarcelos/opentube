@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 namespace OpenTube.Domain.Access;
 
 /// <summary>Motivo pelo qual o acesso foi concedido ou negado.</summary>

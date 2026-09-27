@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # Imagem do worker. Leva o FFmpeg porque é ele quem faz o trabalho pesado do pipeline.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src

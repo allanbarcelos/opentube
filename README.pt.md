@@ -39,6 +39,7 @@ de email inteiro, com validade opcional e registro detalhado de quem assistiu o 
 - [Segurança e privacidade](#segurança-e-privacidade)
 - [Roadmap](#roadmap)
 - [Uso de IA no desenvolvimento](#uso-de-ia-no-desenvolvimento)
+- [Créditos e atribuição](#créditos-e-atribuição)
 - [Licença](#licença)
 
 ---
@@ -779,6 +780,7 @@ Cada imagem tem o seu workflow, e um push no `main` roda só o que a mudança ex
 | `worker.yml` | `ghcr.io/allanbarcelos/opentube/worker` | Worker | `latest`, SHA do commit, `worker-vA.B.C.D` |
 | `whisper.yml` | `ghcr.io/allanbarcelos/opentube/whisper` | ShellCheck, teste de fumaça | `cpu`, `cuda`, `cpu-v1.9.4`, `cuda-v1.9.4` |
 | `gist.yml` | — | — | Publica o `install.sh` e o `uninstall.sh` no gist |
+| `headers.yml` | — | Cabeçalhos de licença | Recusa arquivo de código sem o cabeçalho SPDX (corrija com `make headers`) |
 
 Os testes rodam quando muda código que eles compilam, mas uma imagem só é compilada e publicada
 quando algo que vai para dentro dela mudou desde o push anterior: README, teste, instalador ou o
@@ -834,6 +836,26 @@ Para relatar uma vulnerabilidade, veja o [SECURITY.md](SECURITY.md) — de forma
 
 Ferramentas de IA foram usadas apenas para gerar os READMEs e demais textos, para o início dos
 testes unitários e para análise de segurança. Todo o código foi revisado e/ou feito por humano.
+
+---
+
+## Créditos e atribuição
+
+Todo arquivo de código começa com um cabeçalho SPDX que informa a licença e o autor:
+
+```
+SPDX-License-Identifier: MIT
+Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+```
+
+A licença MIT exige que esse aviso seja mantido em qualquer cópia ou parte relevante do código;
+apagá-lo de arquivos copiados descumpre a licença. O `make headers` o acrescenta em arquivos
+novos, e o CI recusa uma mudança que traga arquivo sem ele. Código de terceiros (Bootstrap,
+hls.js) mantém os próprios avisos.
+
+Se você usa, faz um fork ou constrói sobre o OpenTube, mantenha também o link **Feito com
+OpenTube** no rodapé e cite o projeto original com um link. A licença não obriga, mas é assim que
+um projeto livre fica conhecido — veja o [NOTICE](NOTICE).
 
 ---
 

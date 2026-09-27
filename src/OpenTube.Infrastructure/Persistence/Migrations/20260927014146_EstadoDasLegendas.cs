@@ -1,4 +1,7 @@
-﻿using System;
+﻿// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable

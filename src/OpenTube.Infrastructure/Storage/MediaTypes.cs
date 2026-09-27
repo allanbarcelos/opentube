@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 namespace OpenTube.Infrastructure.Storage;
 
 /// <summary>Tipos de mídia aceitos no envio e usados ao servir as saídas.</summary>

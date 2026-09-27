@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 // Registro do que foi assistido. Relata trechos, e não porcentagem: é o que permite saber
 // se a pessoa pulou um pedaço e onde o público abandona o vídeo.
 window.openTubeAnalytics = (function () {

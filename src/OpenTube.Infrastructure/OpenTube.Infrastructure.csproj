@@ -1,4 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<!--
+  SPDX-License-Identifier: MIT
+  Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+-->
+
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\OpenTube.Domain\OpenTube.Domain.csproj" />

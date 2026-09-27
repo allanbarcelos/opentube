@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 # Tells whether any of the given paths changed between a base commit and HEAD.
 # Markdown files never count: a README edit does not justify building an image.
 #

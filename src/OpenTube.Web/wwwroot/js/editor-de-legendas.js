@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 // Editor de legendas no estilo de um editor de código: a primeira coluna numera as linhas, a
 // segunda tem o tempo em que a legenda entra (e sai) e a terceira, o texto. Ao lado, o vídeo:
 // a linha em exibição fica destacada e o texto aparece sobre ele enquanto se digita.

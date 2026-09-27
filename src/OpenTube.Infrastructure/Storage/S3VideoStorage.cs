@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 using Amazon.S3;
 using Amazon.S3.Model;
 using Microsoft.Extensions.Logging;

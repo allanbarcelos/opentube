@@ -39,6 +39,7 @@ domain, with optional expiration and a detailed record of who watched what.
 - [Security and privacy](#security-and-privacy)
 - [Roadmap](#roadmap)
 - [Use of AI in development](#use-of-ai-in-development)
+- [Credits and attribution](#credits-and-attribution)
 - [License](#license)
 
 ---
@@ -782,6 +783,7 @@ Each image has its own workflow, and a push to `main` runs only what the change 
 | `worker.yml` | `ghcr.io/allanbarcelos/opentube/worker` | Worker | `latest`, commit SHA, `worker-vA.B.C.D` |
 | `whisper.yml` | `ghcr.io/allanbarcelos/opentube/whisper` | ShellCheck, smoke test | `cpu`, `cuda`, `cpu-v1.9.4`, `cuda-v1.9.4` |
 | `gist.yml` | — | — | Publishes `install.sh` and `uninstall.sh` to the gist |
+| `headers.yml` | — | License headers | Refuses a source file without the SPDX header (fix with `make headers`) |
 
 Tests run when code they compile changes, but an image is built and published only when something
 that goes into it changed since the previous push: a README, a test, the installer, or the
@@ -837,6 +839,26 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md) — privately, never i
 
 AI tools were used only to generate the READMEs and other texts, to start the unit tests, and for
 security analysis. All code was reviewed and/or written by a human.
+
+---
+
+## Credits and attribution
+
+Every source file starts with an SPDX header naming the license and the author:
+
+```
+SPDX-License-Identifier: MIT
+Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+```
+
+The MIT License requires that notice to stay in any copy or substantial portion of the code, so
+removing it from copied files does not comply with the license. `make headers` adds it to new
+files, and CI refuses a change that brings a file without it. Third-party code (Bootstrap, hls.js)
+keeps its own notices.
+
+If you run, fork, or build on OpenTube, please also keep the **Powered by OpenTube** link in the
+footer and mention the original project with a link. The license does not require it, but it is
+how a free project gets known — see [NOTICE](NOTICE).
 
 ---
 

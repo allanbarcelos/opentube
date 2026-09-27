@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Logging;

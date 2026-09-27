@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
+name: License headers
+
+# Every source file carries the SPDX license and authorship header. This check is cheap (a
+# few seconds, nothing is built) and refuses a change that brings a file without it.
+# Fix locally with: make headers
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every source file has the header
+        run: python3 scripts/license-headers.py --check

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+
 // Aba de legendas: enquanto alguma legenda estiver processando, consulta a situação de tempos em
 // tempos e recarrega a página quando ela muda — a transcrição roda em segundo plano no worker.
 // Carregado no layout e montado sozinho, como o player.
