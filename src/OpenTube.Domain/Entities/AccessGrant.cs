@@ -58,6 +58,12 @@ public class AccessGrant
     /// <summary>Anotação livre do administrador, para lembrar o motivo da liberação.</summary>
     public string? Note { get; private set; }
 
+    /// <summary>
+    /// Convite de que a concessão faz parte. Nulo nas concessões de antes dos convites, que
+    /// aparecem cada uma como um convite próprio.
+    /// </summary>
+    public Guid? InvitationId { get; private set; }
+
     public bool IsRevoked => RevokedAt is not null;
 
     public bool IsExhausted => MaxViews is { } teto && ViewsUsed >= teto;
@@ -92,7 +98,8 @@ public class AccessGrant
         TimeSpan? durationAfterFirstUse = null,
         int? maxViews = null,
         bool canDownload = false,
-        string? note = null)
+        string? note = null,
+        Guid? invitationId = null)
     {
         if (targetType is GrantTargetType.All && targetId is not null)
             throw new ArgumentException("A grant for the whole library does not point at a target.", nameof(targetId));
@@ -123,8 +130,20 @@ public class AccessGrant
             CanDownload = canDownload,
             CreatedBy = createdBy,
             CreatedAt = now,
-            Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim()
+            Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
+            InvitationId = invitationId
         };
+    }
+
+    /// <summary>Concessão de uma pessoa, domínio ou link dentro de um convite, com a validade dele.</summary>
+    public static AccessGrant ForInvitation(Invitation invitation, GrantSubjectType subjectType, string subjectValue)
+    {
+        ArgumentNullException.ThrowIfNull(invitation);
+
+        return Create(subjectType, subjectValue, invitation.TargetType, invitation.TargetId, invitation.CreatedBy,
+            invitation.CreatedAt, expiresAt: invitation.ExpiresAt,
+            durationAfterFirstUse: invitation.DurationAfterFirstUse, maxViews: invitation.MaxViews,
+            note: invitation.Note, invitationId: invitation.Id);
     }
 
     /// <summary>Concessão para um endereço de email específico.</summary>

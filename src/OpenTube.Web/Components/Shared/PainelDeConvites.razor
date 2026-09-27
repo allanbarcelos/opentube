@@ -1,0 +1,439 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@using OpenTube.Domain.Entities
+@using OpenTube.Infrastructure.Access
+@inject GrantService Concessoes
+@inject ShareLinkFlash Links
+
+@* Convites de um vídeo ou de uma coleção. Cada convite é independente: o que um cria ou
+   revoga não mexe nos outros, e a mesma pessoa em dois convites tem os dois acessos. *@
+<div id="convites" data-convites>
+    @if (Convidados > 0)
+    {
+        <div class="alert alert-success" role="status">@T.Format(Convidados == 1 ? "{0} invite sent" : "{0} invites sent", Convidados)</div>
+    }
+    @if (Dominios > 0)
+    {
+        <div class="alert alert-success" role="status">@T.Format("{0} domain(s) granted.", Dominios)</div>
+    }
+    @if (AcessoRevogado)
+    {
+        <div class="alert alert-success" role="status">@T["Access revoked."]</div>
+    }
+    @if (AcessoRestaurado)
+    {
+        <div class="alert alert-success" role="status">@T["Access restored."]</div>
+    }
+    @if (ConviteRevogado)
+    {
+        <div class="alert alert-success" role="status">@T["Invitation revoked: nobody in it can watch any more."]</div>
+    }
+    @if (ConviteRestaurado)
+    {
+        <div class="alert alert-success" role="status">@T["Invitation restored."]</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(LinkCriado))
+    {
+        <div class="alert alert-warning">
+            <p class="mb-2"><strong>@T["Link created."]</strong> @T["Copy it now: it will not be shown again."]</p>
+            <input class="form-control font-monospace" value="@LinkCriado" readonly data-link-criado
+                   onclick="this.select()" aria-label="@T["Share link address"]" />
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(Erro))
+    {
+        <div class="alert alert-danger" role="alert">@Erro</div>
+    }
+
+    <div class="row g-4">
+        <div class="@(Largo ? "col-lg-8" : "col-12")">
+            <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2 mb-2">
+                <h2 class="h6 mb-0">@T["Invitations"]</h2>
+                <span class="small text-body-secondary" data-resumo-convites>
+                    @T.Format("{0} active · {1} people · {2} domain(s) · {3} link(s)", Ativos, PessoasAtivas, DominiosAtivos, LinksAtivos)
+                </span>
+            </div>
+
+            @if (Convites.Count == 0)
+            {
+                <div class="card">
+                    <div class="card-body text-center text-body-secondary py-5">
+                        @T["Nobody except administrators can watch. Create an invitation."]
+                    </div>
+                </div>
+            }
+
+            @foreach (var convite in Convites)
+            {
+                var situacao = Situacao(convite);
+                <div class="card mb-3 @(situacao == "ativo" ? "" : "opacity-75")" data-convite="@convite.Id" data-situacao="@situacao">
+                    <div class="card-header d-flex flex-wrap align-items-center gap-2">
+                        <span class="badge @TipoClasse(convite.Kind)">@TipoTexto(convite.Kind)</span>
+                        <span class="fw-semibold">@Quantos(convite)</span>
+                        <span class="badge @SituacaoClasse(situacao)">@SituacaoTexto(situacao)</span>
+                        <span class="ms-auto small text-body-secondary">
+                            @convite.CreatedAt.ToLocalTime().ToString("g")
+                            @if (!string.IsNullOrWhiteSpace(convite.CreatedBy))
+                            {
+                                <span> · @convite.CreatedBy</span>
+                            }
+                        </span>
+                    </div>
+
+                    <div class="card-body pb-2">
+                        <p class="small mb-1">
+                            <span class="text-body-secondary">@T["Validity"]:</span> @Validade(convite)
+                            @if (convite.MaxViews is { } teto)
+                            {
+                                <span class="text-body-secondary"> · </span>@T.Format("up to {0} views", teto)
+                            }
+                        </p>
+                        @if (!string.IsNullOrWhiteSpace(convite.Note))
+                        {
+                            <p class="small fst-italic text-body-secondary mb-1">@convite.Note</p>
+                        }
+                    </div>
+
+                    <ul class="list-group list-group-flush">
+                        @foreach (var membro in convite.Members)
+                        {
+                            <li class="list-group-item d-flex flex-wrap align-items-center gap-2 @(membro.IsRevoked ? "text-body-secondary" : "")"
+                                data-concessao="@membro.Id">
+                                <span class="@(membro.IsRevoked ? "text-decoration-line-through" : "")">@Sujeito(membro)</span>
+                                <span class="small text-body-secondary">@Uso(membro)</span>
+                                @if (membro.IsRevoked)
+                                {
+                                    <span class="badge text-bg-secondary">@T["Revoked"]</span>
+                                }
+
+                                @* Uma pessoa ou domínio sozinho; o link se revoga pelo convite. *@
+                                @if (!convite.IsLegacy && convite.Kind != InvitationKind.Link && convite.Members.Count > 1 && convite.RevokedAt is null)
+                                {
+                                    <form method="post" action="/admin/access/@membro.Id/@(membro.IsRevoked ? "restore" : "revoke")" class="ms-auto">
+                                        <AntiforgeryToken />
+                                        <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
+                                        <input type="hidden" name="alvoId" value="@TargetId" />
+                                        <button class="btn btn-sm btn-link p-0 @(membro.IsRevoked ? "" : "link-danger")" type="submit">
+                                            @(membro.IsRevoked ? T["Restore"] : T["Revoke"])
+                                        </button>
+                                    </form>
+                                }
+                            </li>
+                        }
+                    </ul>
+
+                    <div class="card-footer d-flex justify-content-end">
+                        @if (convite.IsLegacy)
+                        {
+                            var concessao = convite.Members[0];
+                            <form method="post" action="/admin/access/@concessao.Id/@(concessao.IsRevoked ? "restore" : "revoke")">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
+                                <input type="hidden" name="alvoId" value="@TargetId" />
+                                <button class="btn btn-sm @(concessao.IsRevoked ? "btn-outline-secondary" : "btn-outline-danger")" type="submit">
+                                    @(concessao.IsRevoked ? T["Restore"] : T["Revoke"])
+                                </button>
+                            </form>
+                        }
+                        else if (convite.RevokedAt is null)
+                        {
+                            <form method="post" action="/admin/access/invitations/@convite.Id/revoke"
+                                  onsubmit="return confirm(this.dataset.confirmar)"
+                                  data-confirmar="@T["Revoke the whole invitation? Everyone in it stops having access."]">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
+                                <input type="hidden" name="alvoId" value="@TargetId" />
+                                <button class="btn btn-sm btn-outline-danger" type="submit">@T["Revoke invitation"]</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <form method="post" action="/admin/access/invitations/@convite.Id/restore">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
+                                <input type="hidden" name="alvoId" value="@TargetId" />
+                                <button class="btn btn-sm btn-outline-secondary" type="submit">@T["Restore invitation"]</button>
+                            </form>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="@(Largo ? "col-lg-4" : "col-12")">
+            <div class="card @(Largo ? "position-sticky" : "")" style="@(Largo ? "top: 1rem" : null)">
+                <div class="card-header">@T["New invitation"]</div>
+                <div class="card-body">
+                    <ul class="nav nav-pills nav-fill mb-3 small" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="aba-pessoas-@Sufixo" data-bs-toggle="pill" data-bs-target="#novo-pessoas-@Sufixo"
+                                    type="button" role="tab" aria-controls="novo-pessoas-@Sufixo" aria-selected="true">@T["People"]</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="aba-dominios-@Sufixo" data-bs-toggle="pill" data-bs-target="#novo-dominios-@Sufixo"
+                                    type="button" role="tab" aria-controls="novo-dominios-@Sufixo" aria-selected="false">@T["Domains"]</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="aba-link-@Sufixo" data-bs-toggle="pill" data-bs-target="#novo-link-@Sufixo"
+                                    type="button" role="tab" aria-controls="novo-link-@Sufixo" aria-selected="false">@T["Secret link"]</button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="novo-pessoas-@Sufixo" role="tabpanel" aria-labelledby="aba-pessoas-@Sufixo">
+                            <form method="post" action="/admin/access/invite" data-novo-convite="pessoas">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
+                                <input type="hidden" name="alvoId" value="@TargetId" />
+
+                                <div class="mb-3">
+                                    <label class="form-label" for="emails-@Sufixo">@T["Email addresses"]</label>
+                                    <textarea class="form-control" id="emails-@Sufixo" name="emails" rows="3" required
+                                              placeholder="ana@empresa.com, bia@empresa.com"></textarea>
+                                    <div class="form-text">@T["One person or many, separated by comma, semicolon, or line break. Everyone gets the same validity."]</div>
+                                </div>
+
+                                <ValidadeDaConcessao Prefixo="@($"pessoas-{Sufixo}")" />
+
+                                <div class="mb-3">
+                                    <label class="form-label" for="nota-pessoas-@Sufixo">@T["Note"]</label>
+                                    <input class="form-control" id="nota-pessoas-@Sufixo" name="nota" maxlength="500"
+                                           placeholder="@T["To remember why this was granted"]" />
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" name="enviarEmail" value="1" id="enviar-@Sufixo" checked />
+                                    @* Desmarcado, o navegador não manda o campo; o marcador diz que a escolha existia. *@
+                                    <input type="hidden" name="escolhaDoEmail" value="1" />
+                                    <label class="form-check-label" for="enviar-@Sufixo">@T["Send the invitation email"]</label>
+                                </div>
+
+                                <button class="btn btn-primary w-100" type="submit">@T["Invite"]</button>
+                            </form>
+                        </div>
+
+                        <div class="tab-pane fade" id="novo-dominios-@Sufixo" role="tabpanel" aria-labelledby="aba-dominios-@Sufixo">
+                            <form method="post" action="/admin/access/domain" data-novo-convite="dominios">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
+                                <input type="hidden" name="alvoId" value="@TargetId" />
+
+                                <div class="mb-3">
+                                    <label class="form-label" for="dominios-@Sufixo">@T["Domains"]</label>
+                                    <textarea class="form-control" id="dominios-@Sufixo" name="dominios" rows="2" required
+                                              placeholder="empresa.com, parceira.com.br"></textarea>
+                                    <div class="form-text">@T["Anyone with an email at these domains can watch, after confirming the address with the code."]</div>
+                                </div>
+
+                                <ValidadeDaConcessao Prefixo="@($"dominios-{Sufixo}")" />
+
+                                <div class="mb-3">
+                                    <label class="form-label" for="nota-dominios-@Sufixo">@T["Note"]</label>
+                                    <input class="form-control" id="nota-dominios-@Sufixo" name="nota" maxlength="500" />
+                                </div>
+
+                                <button class="btn btn-primary w-100" type="submit">@T["Grant domains"]</button>
+                            </form>
+                        </div>
+
+                        <div class="tab-pane fade" id="novo-link-@Sufixo" role="tabpanel" aria-labelledby="aba-link-@Sufixo">
+                            <form method="post" action="/admin/access/link" data-novo-convite="link">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
+                                <input type="hidden" name="alvoId" value="@TargetId" />
+
+                                <ValidadeDaConcessao Prefixo="@($"link-{Sufixo}")" />
+
+                                <div class="mb-3">
+                                    <label class="form-label" for="limite-@Sufixo">@T["View limit"]</label>
+                                    <input class="form-control" id="limite-@Sufixo" name="limiteDeVisualizacoes" type="number" min="1"
+                                           placeholder="@T["no limit"]" />
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label" for="nota-link-@Sufixo">@T["Note"]</label>
+                                    <input class="form-control" id="nota-link-@Sufixo" name="nota" maxlength="500" />
+                                </div>
+
+                                <div class="alert alert-warning small">
+                                    @T["Anyone with the address can watch without identifying themselves. It is shown only once."]
+                                </div>
+
+                                <button class="btn btn-primary w-100" type="submit">@T["Create link"]</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public GrantTargetType TargetType { get; set; }
+
+    [Parameter]
+    public Guid? TargetId { get; set; }
+
+    /// <summary>Lista e formulário lado a lado (a aba do vídeo); sem isso, um embaixo do outro.</summary>
+    [Parameter]
+    public bool Largo { get; set; }
+
+    [SupplyParameterFromQuery(Name = "convidados")]
+    private int? ConvidadosBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "dominios")]
+    private int? DominiosBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "acesso-revogado")]
+    private string? AcessoRevogadoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "acesso-restaurado")]
+    private string? AcessoRestauradoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "convite-revogado")]
+    private string? ConviteRevogadoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "convite-restaurado")]
+    private string? ConviteRestauradoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "link")]
+    private string? LinkBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "erro-acesso")]
+    private string? Erro { get; set; }
+
+    private int Convidados => ConvidadosBruto ?? 0;
+    private int Dominios => DominiosBruto ?? 0;
+    private bool AcessoRevogado => AcessoRevogadoBruto == "1";
+    private bool AcessoRestaurado => AcessoRestauradoBruto == "1";
+    private bool ConviteRevogado => ConviteRevogadoBruto == "1";
+    private bool ConviteRestaurado => ConviteRestauradoBruto == "1";
+
+    private string? LinkCriado;
+
+    /// <summary>Distingue os campos se o painel aparecer mais de uma vez na mesma página.</summary>
+    private string Sufixo => TargetId?.ToString("n")[..8] ?? "acervo";
+
+    private IReadOnlyList<InvitationView> Convites = [];
+
+    private readonly DateTimeOffset Agora = DateTimeOffset.UtcNow;
+
+    private int Ativos => Convites.Count(c => Situacao(c) == "ativo");
+
+    private int PessoasAtivas => ContarAtivos(GrantSubjectType.User);
+    private int DominiosAtivos => ContarAtivos(GrantSubjectType.Domain);
+    private int LinksAtivos => ContarAtivos(GrantSubjectType.Link);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // O endereço do link é recuperado do servidor e descartado: só aparece uma vez.
+        LinkCriado = Links.Take(LinkBruto);
+
+        Convites = await Concessoes.ListInvitationsAsync(TargetType, TargetId, Http.RequestAborted);
+    }
+
+    private int ContarAtivos(GrantSubjectType tipo) =>
+        Convites.Where(c => c.RevokedAt is null)
+            .SelectMany(c => c.Members)
+            .Where(m => m.SubjectType == tipo && m.IsActiveAt(Agora))
+            .Select(m => m.SubjectValue)
+            .Distinct()
+            .Count();
+
+    private string Situacao(InvitationView convite)
+    {
+        if (convite.RevokedAt is not null || convite.Members.All(m => m.IsRevoked))
+            return "revogado";
+
+        return convite.IsActiveAt(Agora) ? "ativo" : "expirado";
+    }
+
+    private string SituacaoTexto(string situacao) => situacao switch
+    {
+        "ativo" => T["Active"],
+        "revogado" => T["Revoked"],
+        _ => T["Expired"]
+    };
+
+    private static string SituacaoClasse(string situacao) => situacao switch
+    {
+        "ativo" => "text-bg-success",
+        "revogado" => "text-bg-secondary",
+        _ => "text-bg-warning"
+    };
+
+    private string TipoTexto(InvitationKind tipo) => tipo switch
+    {
+        InvitationKind.Domains => T["Domains"],
+        InvitationKind.Link => T["Secret link"],
+        _ => T["People"]
+    };
+
+    private static string TipoClasse(InvitationKind tipo) => tipo switch
+    {
+        InvitationKind.Domains => "text-bg-info",
+        InvitationKind.Link => "text-bg-warning",
+        _ => "text-bg-primary"
+    };
+
+    private string Quantos(InvitationView convite) => convite.Kind switch
+    {
+        InvitationKind.Link => T["1 link"],
+        InvitationKind.Domains => T.Format(convite.Members.Count == 1 ? "{0} domain" : "{0} domains", convite.Members.Count),
+        _ => convite.Members.Count == 1 && convite.Members[0].SubjectType == GrantSubjectType.Public
+            ? T["any visitor"]
+            : T.Format(convite.Members.Count == 1 ? "{0} person" : "{0} people", convite.Members.Count)
+    };
+
+    private string Validade(InvitationView convite) => convite switch
+    {
+        { DurationAfterFirstUse: { } prazo } => T.Format("{0} days from the first visit", (int)Math.Round(prazo.TotalDays)),
+        { ExpiresAt: { } fim } => T.Format("until {0}", Termino(fim)),
+        _ => T["no end date"]
+    };
+
+    /// <summary>
+    /// A data escolhida vale o dia inteiro, então o acesso termina à meia-noite seguinte;
+    /// mostrar "até 1/1" confundiria quem escolheu "até 31/12". Um horário quebrado aparece inteiro.
+    /// </summary>
+    private static string Termino(DateTimeOffset fim)
+    {
+        var local = fim.ToLocalTime();
+        return local.TimeOfDay == TimeSpan.Zero ? local.AddDays(-1).ToString("d") : local.ToString("g");
+    }
+
+    private string Sujeito(AccessGrant concessao) => concessao.SubjectType switch
+    {
+        GrantSubjectType.Link => T["secret link"],
+        GrantSubjectType.Public => T["any visitor"],
+        GrantSubjectType.Domain => "@" + concessao.SubjectValue,
+        _ => concessao.SubjectValue
+    };
+
+    /// <summary>Como a concessão foi usada: primeiro acesso, visualizações e até quando vale.</summary>
+    private string Uso(AccessGrant concessao)
+    {
+        var partes = new List<string>();
+
+        partes.Add(concessao.FirstUsedAt is { } primeiro
+            ? T.Format("first visit {0}", primeiro.ToLocalTime().ToString("g"))
+            : T["not used yet"]);
+
+        partes.Add(concessao.MaxViews is { } teto
+            ? T.Format("{0} of {1} views", concessao.ViewsUsed, teto)
+            : T.Format("{0} view(s)", concessao.ViewsUsed));
+
+        if (concessao.DurationAfterFirstUse is not null && concessao.EffectiveExpiry is { } fim)
+            partes.Add(T.Format("until {0}", fim.ToLocalTime().ToString("g")));
+
+        return string.Join(" · ", partes);
+    }
+}

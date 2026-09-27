@@ -11,7 +11,6 @@
 @inject OpenTube.Infrastructure.Services.CaptionService Legendas
 @inject OpenTube.Infrastructure.Services.VideoChapterService Sumarios
 @inject OpenTube.Infrastructure.Services.VideoRatingService Avaliacoes
-@inject ShareLinkFlash Links
 @inject NavigationManager Navegacao
 
 <PageTitle>@(Video?.Title ?? T["Video"]) — @T["Administration"]</PageTitle>
@@ -42,20 +41,6 @@
         {
             <div class="alert alert-success" role="status">@T["Video restored. It is still private."]</div>
         }
-        @if (Convidados > 0)
-        {
-            <div class="alert alert-success" role="status">
-                @T.Format(Convidados == 1 ? "{0} invite sent" : "{0} invites sent", Convidados)
-            </div>
-        }
-        @if (DominioLiberado)
-        {
-            <div class="alert alert-success" role="status">@T["Domain granted."]</div>
-        }
-        @if (Revogado)
-        {
-            <div class="alert alert-success" role="status">@T["Access revoked."]</div>
-        }
         @if (Legenda == "enviada")
         {
             <div class="alert alert-success" role="status">@T["Caption uploaded."]</div>
@@ -69,14 +54,6 @@
         @if (Legenda == "removida")
         {
             <div class="alert alert-success" role="status">@T["Caption removed."]</div>
-        }
-        @if (!string.IsNullOrWhiteSpace(LinkCriado))
-        {
-            <div class="alert alert-warning">
-                <p class="mb-2"><strong>@T["Link created."]</strong> @T["Copy it now: it will not be shown again."]</p>
-                <input class="form-control font-monospace" value="@LinkCriado" readonly
-                       onclick="this.select()" aria-label="@T["Share link address"]" />
-            </div>
         }
         @if (!string.IsNullOrWhiteSpace(Erro))
         {
@@ -107,6 +84,9 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link @(MostrarAcesso ? "active" : "")" href="/admin/videos/@Video.Id?tab=access">@T["Access"]</a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link @(MostrarAudiencia ? "active" : "")" href="/admin/videos/@Video.Id?tab=audience">@T["Audience"]</a>
             </li>
         </ul>
@@ -114,6 +94,18 @@
         @if (MostrarAudiencia)
         {
             <PainelDeAudiencia VideoId="Video.Id" />
+        }
+        else if (MostrarAcesso)
+        {
+            @if (Video.Visibility != VideoVisibility.Restricted)
+            {
+                <div class="alert alert-info small" role="note">
+                    @(Video.Visibility == VideoVisibility.Public
+                        ? T["This video is public: anyone can watch it, with or without an invitation. Invitations matter while it is restricted."]
+                        : T["This video is private: invitations only take effect when its visibility is Restricted, in the Configuration tab."])
+                </div>
+            }
+            <PainelDeConvites TargetType="GrantTargetType.Video" TargetId="Video.Id" Largo="true" />
         }
         else if (MostrarLegendas)
         {
@@ -252,7 +244,6 @@
                     </div>
                 </div>
 
-                <PainelDeAcessos TargetType="GrantTargetType.Video" TargetId="Video.Id" />
             </div>
 
             <div class="col-lg-5">
@@ -367,18 +358,6 @@
     [SupplyParameterFromQuery(Name = "erro")]
     private string? Erro { get; set; }
 
-    [SupplyParameterFromQuery(Name = "convidados")]
-    private int? ConvidadosBruto { get; set; }
-
-    [SupplyParameterFromQuery(Name = "dominio")]
-    private string? DominioBruto { get; set; }
-
-    [SupplyParameterFromQuery(Name = "revogado")]
-    private string? RevogadoBruto { get; set; }
-
-    [SupplyParameterFromQuery(Name = "link")]
-    private string? LinkBruto { get; set; }
-
     [SupplyParameterFromQuery(Name = "tab")]
     private string? Aba { get; set; }
 
@@ -401,10 +380,8 @@
 
     private bool MostrarLegendas => Aba == "captions";
 
-    private int Convidados => ConvidadosBruto ?? 0;
-    private bool DominioLiberado => DominioBruto == "1";
-    private bool Revogado => RevogadoBruto == "1";
-    private string? LinkCriado;
+    private bool MostrarAcesso => Aba == "access";
+
 
     private bool Salvo => SalvoBruto == "1";
     private bool Enfileirado => EnfileiradoBruto == "1";
@@ -469,9 +446,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // O endereço do link é recuperado do servidor e descartado: só aparece uma vez.
-        LinkCriado = Links.Take(LinkBruto);
-
         Video = await Admin.FindAsync(VideoId, Http.RequestAborted);
 
         if (Video is null)

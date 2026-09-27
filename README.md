@@ -447,6 +447,19 @@ Each grant targets a **video**, a **collection**, or **the whole library**, and 
 window (`starts_at` / `expires_at`, null = forever), an optional view limit, a download permission,
 and a revocation record.
 
+### Invitations
+
+Grants are created through **invitations**, managed in the video's **Access** tab (and on the
+collection page): one person or many, one domain or many, or a secret link — each invitation with
+one validity for everyone in it (no end date, N days from the first visit, or until a date, that
+whole day included) and an optional note.
+
+Invitations are **independent**. A new one never changes an existing grant: inviting someone who
+already has access creates a second grant, and the person can watch while any of them is active.
+An invitation can be revoked as a whole, or one person or domain at a time; restoring an invitation
+brings back only what revoking it cut, not someone revoked individually before. Grants from before
+invitations existed show up in the list as invitations of their own.
+
 The view limit is counted on the master playlist, with a conditional increment in the database
 that keeps simultaneous playbacks from going over the cap. When the view is counted, the
 application issues a signed ticket (one cookie per video, valid for the video's duration plus a

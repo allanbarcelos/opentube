@@ -23,6 +23,26 @@ public class AccessGrantConfiguration : IEntityTypeConfiguration<AccessGrant>
         builder.HasIndex(g => new { g.SubjectType, g.SubjectValue });
         builder.HasIndex(g => new { g.TargetType, g.TargetId });
         builder.HasIndex(g => g.RevokedAt);
+
+        // Concessões de um convite; as de antes dos convites ficam sem.
+        builder.HasOne<Invitation>().WithMany().HasForeignKey(g => g.InvitationId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasIndex(g => g.InvitationId);
+    }
+}
+
+public class InvitationConfiguration : IEntityTypeConfiguration<Invitation>
+{
+    public void Configure(EntityTypeBuilder<Invitation> builder)
+    {
+        builder.ToTable("invitations");
+        builder.HasKey(i => i.Id);
+
+        builder.Property(i => i.Kind).HasConversion<int>();
+        builder.Property(i => i.TargetType).HasConversion<int>();
+        builder.Property(i => i.Note).HasMaxLength(500);
+
+        // A lista de convites de um vídeo ou coleção.
+        builder.HasIndex(i => new { i.TargetType, i.TargetId });
     }
 }
 

@@ -40,7 +40,37 @@ public readonly record struct GrantValidity(DateTimeOffset? ExpiresAt, TimeSpan?
 /// <param name="Email">Endereço convidado.</param>
 /// <param name="GrantId">Concessão criada.</param>
 /// <param name="EmailSent">Se o convite foi despachado.</param>
-public sealed record InviteResult(string Email, Guid GrantId, bool EmailSent);
+/// <param name="InvitationId">Convite de que a concessão faz parte.</param>
+public sealed record InviteResult(string Email, Guid GrantId, bool EmailSent, Guid InvitationId);
+
+/// <summary>Um convite como a administração o vê: a validade comum e cada pessoa, domínio ou link dele.</summary>
+/// <param name="Id">Convite; nas concessões de antes dos convites, o da própria concessão.</param>
+/// <param name="Kind">Pessoas, domínios ou link.</param>
+/// <param name="IsLegacy">Concessão de antes dos convites, mostrada como um convite próprio.</param>
+/// <param name="CreatedAt">Quando foi criado.</param>
+/// <param name="CreatedBy">Email de quem criou, quando conhecido.</param>
+/// <param name="ExpiresAt">Data de término comum.</param>
+/// <param name="DurationAfterFirstUse">Prazo a partir do primeiro acesso, comum.</param>
+/// <param name="MaxViews">Teto de visualizações (link).</param>
+/// <param name="Note">Anotação.</param>
+/// <param name="RevokedAt">Quando o convite inteiro foi revogado.</param>
+/// <param name="Members">As concessões do convite.</param>
+public sealed record InvitationView(
+    Guid Id,
+    InvitationKind Kind,
+    bool IsLegacy,
+    DateTimeOffset CreatedAt,
+    string? CreatedBy,
+    DateTimeOffset? ExpiresAt,
+    TimeSpan? DurationAfterFirstUse,
+    int? MaxViews,
+    string? Note,
+    DateTimeOffset? RevokedAt,
+    IReadOnlyList<AccessGrant> Members)
+{
+    /// <summary>Se ainda dá acesso a alguém: não revogado e com ao menos uma concessão valendo.</summary>
+    public bool IsActiveAt(DateTimeOffset now) => RevokedAt is null && Members.Any(m => m.IsActiveAt(now, ignoreViewLimit: false));
+}
 
 /// <summary>Link de compartilhamento recém-criado.</summary>
 /// <param name="GrantId">Concessão correspondente.</param>
@@ -62,8 +92,9 @@ public class GrantService(
     private readonly SecurityOptions _options = options.Value;
 
     /// <summary>
-    /// Concede acesso a uma lista de endereços e envia o convite. Endereço repetido sobre o
-    /// mesmo alvo não gera concessão nova: reenviar o convite basta.
+    /// Convida uma ou mais pessoas, com a mesma validade, e envia o email a cada uma. É sempre
+    /// um convite novo: nenhuma concessão que já exista é alterada, e quem já tinha acesso por
+    /// outro convite passa a ter os dois.
     /// </summary>
     public async Task<IReadOnlyList<InviteResult>> InviteAsync(
         IEnumerable<string> emails,
@@ -88,23 +119,21 @@ public class GrantService(
             throw new InvalidOperationException("No valid email address was given.");
 
         var rotulo = await DescreverAlvoAsync(targetType, targetId, cancellationToken);
-        var agora = clock.GetUtcNow();
-        var resultados = new List<InviteResult>(enderecos.Count);
 
-        foreach (var endereco in enderecos)
+        var convite = Invitation.Create(InvitationKind.People, targetType, targetId, adminId, clock.GetUtcNow(),
+            validity.ExpiresAt, validity.DurationAfterFirstUse, note: note);
+        var concessoes = enderecos
+            .Select(e => (Endereco: e, Concessao: AccessGrant.ForInvitation(convite, GrantSubjectType.User, e.Value)))
+            .ToList();
+
+        db.Invitations.Add(convite);
+        db.AccessGrants.AddRange(concessoes.Select(c => c.Concessao));
+        await db.SaveChangesAsync(cancellationToken);
+
+        var resultados = new List<InviteResult>(concessoes.Count);
+
+        foreach (var (endereco, concessao) in concessoes)
         {
-            var concessao = await ExistenteAsync(GrantSubjectType.User, endereco.Value, targetType, targetId, cancellationToken)
-                ?? AccessGrant.ForUser(endereco, targetType, targetId, adminId, agora,
-                    validity.ExpiresAt, validity.DurationAfterFirstUse, note);
-
-            if (db.Entry(concessao).State is EntityState.Detached)
-                db.AccessGrants.Add(concessao);
-            else
-                concessao.Reschedule(concessao.StartsAt, validity.ExpiresAt, validity.DurationAfterFirstUse);
-
-            concessao.Restore();
-            await db.SaveChangesAsync(cancellationToken);
-
             var enviado = false;
 
             if (sendEmail)
@@ -118,15 +147,15 @@ public class GrantService(
                 enviado = true;
             }
 
-            resultados.Add(new InviteResult(endereco.Value, concessao.Id, enviado));
+            resultados.Add(new InviteResult(endereco.Value, concessao.Id, enviado, convite.Id));
         }
 
-        logger.LogInformation("{Quantidade} convites processados para {Alvo}", resultados.Count, rotulo);
+        logger.LogInformation("Convite {ConviteId}: {Quantidade} pessoa(s) em {Alvo}", convite.Id, resultados.Count, rotulo);
 
         return resultados;
     }
 
-    /// <summary>Concede acesso a todos os endereços de um domínio.</summary>
+    /// <summary>Concede acesso a todos os endereços de um domínio, num convite próprio.</summary>
     public async Task<AccessGrant> GrantToDomainAsync(
         string domain,
         GrantTargetType targetType,
@@ -134,30 +163,45 @@ public class GrantService(
         GrantValidity validity,
         Guid adminId,
         string? note = null,
+        CancellationToken cancellationToken = default) =>
+        (await GrantToDomainsAsync([domain], targetType, targetId, validity, adminId, note, cancellationToken))[0];
+
+    /// <summary>
+    /// Libera um ou mais domínios inteiros, com a mesma validade, num convite novo. Como no
+    /// convite de pessoas, nada que já exista é alterado.
+    /// </summary>
+    public async Task<IReadOnlyList<AccessGrant>> GrantToDomainsAsync(
+        IEnumerable<string> domains,
+        GrantTargetType targetType,
+        Guid? targetId,
+        GrantValidity validity,
+        Guid adminId,
+        string? note = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(domain);
+        ArgumentNullException.ThrowIfNull(domains);
 
-        var normalizado = domain.Trim().ToLowerInvariant();
+        var dominios = domains
+            .Select(d => (d ?? string.Empty).Trim().TrimStart('@').ToLowerInvariant())
+            .Where(d => d.Length > 0)
+            .Distinct()
+            .ToList();
 
-        var concessao = await ExistenteAsync(GrantSubjectType.Domain, normalizado, targetType, targetId, cancellationToken);
+        if (dominios.Count == 0)
+            throw new InvalidOperationException("No domain was given.");
 
-        if (concessao is null)
-        {
-            concessao = AccessGrant.ForDomain(normalizado, targetType, targetId, adminId, clock.GetUtcNow(),
-                validity.ExpiresAt, validity.DurationAfterFirstUse, note);
+        if (dominios.FirstOrDefault(d => !DominioValido(d)) is { } invalido)
+            throw new InvalidOperationException(LocalText.Format("{0} is not a valid domain.", invalido));
 
-            db.AccessGrants.Add(concessao);
-        }
-        else
-        {
-            concessao.Reschedule(concessao.StartsAt, validity.ExpiresAt, validity.DurationAfterFirstUse);
-            concessao.Restore();
-        }
+        var convite = Invitation.Create(InvitationKind.Domains, targetType, targetId, adminId, clock.GetUtcNow(),
+            validity.ExpiresAt, validity.DurationAfterFirstUse, note: note);
+        var concessoes = dominios.Select(d => AccessGrant.ForInvitation(convite, GrantSubjectType.Domain, d)).ToList();
 
+        db.Invitations.Add(convite);
+        db.AccessGrants.AddRange(concessoes);
         await db.SaveChangesAsync(cancellationToken);
 
-        return concessao;
+        return concessoes;
     }
 
     /// <summary>
@@ -175,14 +219,11 @@ public class GrantService(
     {
         var token = OneTimeCode.GenerateToken();
 
-        var concessao = AccessGrant.ForLink(
-            TokenHasher.Hash(token, _options.TokenPepper),
-            targetType, targetId, adminId, clock.GetUtcNow(),
-            validity.ExpiresAt, maxViews, note);
+        var convite = Invitation.Create(InvitationKind.Link, targetType, targetId, adminId, clock.GetUtcNow(),
+            validity.ExpiresAt, validity.DurationAfterFirstUse, maxViews, note);
+        var concessao = AccessGrant.ForInvitation(convite, GrantSubjectType.Link, TokenHasher.Hash(token, _options.TokenPepper));
 
-        if (validity.DurationAfterFirstUse is not null)
-            concessao.Reschedule(null, validity.ExpiresAt, validity.DurationAfterFirstUse);
-
+        db.Invitations.Add(convite);
         db.AccessGrants.Add(concessao);
         await db.SaveChangesAsync(cancellationToken);
 
@@ -209,6 +250,90 @@ public class GrantService(
         concessao.Restore();
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Revoga o convite inteiro: todas as concessões dele que ainda valiam, no mesmo instante.
+    /// </summary>
+    public async Task RevokeInvitationAsync(Guid invitationId, CancellationToken cancellationToken = default)
+    {
+        var convite = await db.Invitations.FirstOrDefaultAsync(i => i.Id == invitationId, cancellationToken)
+            ?? throw new InvalidOperationException("Invitation not found.");
+
+        var agora = clock.GetUtcNow();
+        convite.Revoke(agora);
+
+        foreach (var concessao in await db.AccessGrants.Where(g => g.InvitationId == invitationId && g.RevokedAt == null).ToListAsync(cancellationToken))
+            concessao.Revoke(agora);
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Convite {ConviteId} revogado", invitationId);
+    }
+
+    /// <summary>
+    /// Restaura o convite: devolve só as concessões que a revogação dele cortou. Quem já tinha
+    /// sido revogado individualmente antes continua revogado.
+    /// </summary>
+    public async Task RestoreInvitationAsync(Guid invitationId, CancellationToken cancellationToken = default)
+    {
+        var convite = await db.Invitations.FirstOrDefaultAsync(i => i.Id == invitationId, cancellationToken)
+            ?? throw new InvalidOperationException("Invitation not found.");
+
+        if (convite.RevokedAt is { } revogadoEm)
+        {
+            foreach (var concessao in await db.AccessGrants.Where(g => g.InvitationId == invitationId && g.RevokedAt == revogadoEm).ToListAsync(cancellationToken))
+                concessao.Restore();
+        }
+
+        convite.Restore();
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Convites de um alvo, do mais recente para o mais antigo, cada um com as suas concessões.
+    /// As concessões de antes dos convites aparecem cada uma como um convite próprio.
+    /// </summary>
+    public async Task<IReadOnlyList<InvitationView>> ListInvitationsAsync(
+        GrantTargetType targetType, Guid? targetId, CancellationToken cancellationToken = default)
+    {
+        var convites = await db.Invitations
+            .AsNoTracking()
+            .Where(i => i.TargetType == targetType && i.TargetId == targetId)
+            .ToListAsync(cancellationToken);
+
+        var concessoes = await ListForTargetAsync(targetType, targetId, cancellationToken);
+
+        var autores = convites.Select(c => c.CreatedBy).Concat(concessoes.Select(c => c.CreatedBy)).Distinct().ToList();
+        var emails = await db.Users
+            .AsNoTracking()
+            .Where(u => autores.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.Email, cancellationToken);
+
+        var porConvite = concessoes.Where(c => c.InvitationId is not null).ToLookup(c => c.InvitationId!.Value);
+
+        var lista = convites.Select(c => new InvitationView(
+            c.Id, c.Kind, false, c.CreatedAt, emails.GetValueOrDefault(c.CreatedBy),
+            c.ExpiresAt, c.DurationAfterFirstUse, c.MaxViews, c.Note, c.RevokedAt,
+            [.. porConvite[c.Id].OrderBy(m => m.SubjectValue, StringComparer.Ordinal)]));
+
+        var antigas = concessoes.Where(c => c.InvitationId is null).Select(c => new InvitationView(
+            c.Id, TipoDoConvite(c.SubjectType), true, c.CreatedAt, emails.GetValueOrDefault(c.CreatedBy),
+            c.ExpiresAt, c.DurationAfterFirstUse, c.MaxViews, c.Note, null, [c]));
+
+        return [.. lista.Concat(antigas).OrderByDescending(c => c.CreatedAt)];
+    }
+
+    private static InvitationKind TipoDoConvite(GrantSubjectType tipo) => tipo switch
+    {
+        GrantSubjectType.Domain => InvitationKind.Domains,
+        GrantSubjectType.Link => InvitationKind.Link,
+        _ => InvitationKind.People
+    };
+
+    /// <summary>Domínio como "empresa.com.br": rótulos de letras, números e hífen, separados por ponto.</summary>
+    public static bool DominioValido(string dominio) =>
+        dominio.Length <= 253
+        && System.Text.RegularExpressions.Regex.IsMatch(dominio, @"^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$");
 
     /// <summary>Concessões que recaem sobre um alvo, da mais recente para a mais antiga.</summary>
     public Task<List<AccessGrant>> ListForTargetAsync(
@@ -242,12 +367,6 @@ public class GrantService(
             .OrderByDescending(g => g.CreatedAt)
             .ToListAsync(cancellationToken);
     }
-
-    private Task<AccessGrant?> ExistenteAsync(
-        GrantSubjectType tipo, string valor, GrantTargetType alvo, Guid? alvoId, CancellationToken cancellationToken) =>
-        db.AccessGrants.FirstOrDefaultAsync(
-            g => g.SubjectType == tipo && g.SubjectValue == valor && g.TargetType == alvo && g.TargetId == alvoId,
-            cancellationToken);
 
     /// <summary>Nome do que foi liberado, para aparecer no convite.</summary>
     private async Task<string> DescreverAlvoAsync(GrantTargetType tipo, Guid? alvoId, CancellationToken cancellationToken) => tipo switch

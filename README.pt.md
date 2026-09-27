@@ -447,6 +447,19 @@ Cada concessão aponta para um **vídeo**, uma **coleção** ou **todo o acervo*
 validade (`starts_at` / `expires_at`, nulo = eterno), limite opcional de visualizações, permissão de
 download e registro de revogação.
 
+### Convites
+
+As concessões são criadas por **convites**, gerenciados na aba **Access** do vídeo (e na página da
+coleção): uma pessoa ou várias, um domínio ou vários, ou um link secreto — cada convite com uma
+validade comum a todos dele (sem prazo, N dias a partir do primeiro acesso, ou até uma data, com o
+dia inteiro incluído) e uma nota opcional.
+
+Os convites são **independentes**. Um novo nunca altera uma concessão existente: convidar quem já
+tem acesso cria uma segunda concessão, e a pessoa assiste enquanto qualquer uma estiver valendo. Dá
+para revogar o convite inteiro ou uma pessoa ou domínio de cada vez; restaurar o convite devolve só
+o que a revogação dele cortou, não quem já tinha sido revogado individualmente. Concessões de antes
+dos convites aparecem na lista como convites próprios.
+
 O limite de visualizações é contado na playlist principal, com um incremento condicional no
 banco que não deixa reproduções simultâneas passarem do teto. Ao contar a visualização, a
 aplicação emite um bilhete assinado (cookie por vídeo, válido pela duração mais uma folga) que

@@ -11,7 +11,6 @@
 @inject CollectionService Colecoes
 @inject VideoCatalog Catalogo
 @inject CurrentViewer Espectadores
-@inject ShareLinkFlash Links
 @inject NavigationManager Navegacao
 
 <PageTitle>@(Colecao?.Name ?? T["Collection"]) — @T["Administration"]</PageTitle>
@@ -34,14 +33,6 @@
         @foreach (var aviso in Avisos)
         {
             <div class="alert alert-success" role="status">@aviso</div>
-        }
-        @if (!string.IsNullOrWhiteSpace(LinkCriado))
-        {
-            <div class="alert alert-warning">
-                <p class="mb-2"><strong>@T["Link created."]</strong> @T["Copy it now: it will not be shown again."]</p>
-                <input class="form-control font-monospace" value="@LinkCriado" readonly
-                       onclick="this.select()" aria-label="@T["Share link address"]" />
-            </div>
         }
         @if (!string.IsNullOrWhiteSpace(Erro))
         {
@@ -114,7 +105,7 @@
                     </div>
                 </div>
 
-                <PainelDeAcessos TargetType="GrantTargetType.Collection" TargetId="Colecao.Id" />
+                <PainelDeConvites TargetType="GrantTargetType.Collection" TargetId="Colecao.Id" />
             </div>
 
             <div class="col-lg-5">
@@ -186,20 +177,6 @@
     [SupplyParameterFromQuery(Name = "erro")]
     private string? Erro { get; set; }
 
-    [SupplyParameterFromQuery(Name = "convidados")]
-    private int? Convidados { get; set; }
-
-    [SupplyParameterFromQuery(Name = "dominio")]
-    private string? DominioBruto { get; set; }
-
-    [SupplyParameterFromQuery(Name = "revogado")]
-    private string? RevogadoBruto { get; set; }
-
-    [SupplyParameterFromQuery(Name = "link")]
-    private string? LinkBruto { get; set; }
-
-    private string? LinkCriado;
-
     private Collection? Colecao;
 
     private IReadOnlyList<VideoSummary> Videos = [];
@@ -215,16 +192,11 @@
             if (Adicionado == "1") yield return T["Video added to the collection."];
             if (Removido == "1") yield return T["Video removed from the collection."];
             if (Restaurada == "1") yield return T["Collection restored."];
-            if (Convidados is > 0) yield return T.Format("{0} invite(s) sent.", Convidados);
-            if (DominioBruto == "1") yield return T["Domain granted."];
-            if (RevogadoBruto == "1") yield return T["Access revoked."];
         }
     }
 
     protected override async Task OnInitializedAsync()
     {
-        LinkCriado = Links.Take(LinkBruto);
-
         Colecao = await Colecoes.FindAsync(CollectionId, Http.RequestAborted);
 
         if (Colecao is null)

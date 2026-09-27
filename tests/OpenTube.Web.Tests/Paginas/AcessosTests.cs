@@ -103,7 +103,7 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
                 ["nota"] = "auditoria externa"
             });
 
-        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}");
+        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access");
 
         Assert.Contains(Convidado, html);
         Assert.Contains("auditoria externa", html);
@@ -127,7 +127,7 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
                 ["valorDaValidade"] = "30"
             });
 
-        Assert.Contains("30 days from the first visit", await cliente.GetStringAsync($"/admin/videos/{video.Id}"));
+        Assert.Contains("30 days from the first visit", await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access"));
     }
 
     [Fact]
@@ -245,7 +245,7 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
             });
 
         Assert.Equal(HttpStatusCode.NotFound, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
-        Assert.Contains("Revoked", await cliente.GetStringAsync($"/admin/videos/{video.Id}"));
+        Assert.Contains("Revoked", await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access"));
     }
 
     [Fact]
@@ -301,7 +301,10 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
                 ["valorDaValidade"] = ""
             });
 
-        Assert.Contains("erro=", resposta.Headers.Location!.ToString());
+        var destino = resposta.Headers.Location!.ToString();
+        Assert.Contains("tab=access", destino);
+        Assert.Contains("erro-acesso=", destino);
+        Assert.Contains("No valid email address was given.", System.Net.WebUtility.HtmlDecode(await cliente.GetStringAsync(destino)));
     }
 
     [Fact]
@@ -334,5 +337,178 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
 
         await using var leitura = postgres.CreateContext();
         Assert.Empty(await leitura.AccessGrants.ToListAsync());
+    }
+
+    private Task<HttpResponseMessage> ConvidarAsync(HttpClient cliente, Guid videoId, Dictionary<string, string> campos)
+    {
+        campos["alvoTipo"] = ((int)GrantTargetType.Video).ToString();
+        campos["alvoId"] = videoId.ToString();
+        return FormularioHelpers.EnviarFormularioAsync(cliente, $"/admin/videos/{videoId}?tab=access", "/admin/access/invite", campos);
+    }
+
+    [Fact]
+    public async Task Os_convites_ficam_numa_aba_propria()
+    {
+        var (cliente, video) = await PrepararAsync();
+        using var _ = cliente;
+
+        var configuracao = await cliente.GetStringAsync($"/admin/videos/{video.Id}");
+        Assert.Contains($"href=\"/admin/videos/{video.Id}?tab=access\"", configuracao);
+        Assert.DoesNotContain("action=\"/admin/access/invite\"", configuracao);
+
+        var aba = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access");
+        Assert.Contains("data-convites", aba);
+        Assert.Contains("data-novo-convite=\"pessoas\"", aba);
+        Assert.Contains("data-novo-convite=\"dominios\"", aba);
+        Assert.Contains("data-novo-convite=\"link\"", aba);
+        Assert.Contains("Nobody except administrators can watch.", aba);
+    }
+
+    [Fact]
+    public async Task Convidar_de_novo_cria_outro_convite_sem_mexer_no_primeiro()
+    {
+        var (cliente, video) = await PrepararAsync();
+        using var _ = cliente;
+
+        await ConvidarAsync(cliente, video.Id, new() { ["emails"] = Convidado, ["validade"] = "dias", ["dias"] = "30" });
+        await ConvidarAsync(cliente, video.Id, new() { ["emails"] = $"{Convidado}, outra@barcelos.dev", ["validade"] = "sempre" });
+
+        var aba = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access");
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(aba, "data-convite=\"").Count);
+        Assert.Contains("30 days from the first visit", aba);
+        Assert.Contains("2 people", aba);
+
+        await using var db = postgres.CreateContext();
+        Assert.Equal(2, await db.Invitations.CountAsync());
+        Assert.Equal(TimeSpan.FromDays(30),
+            (await db.AccessGrants.OrderBy(g => g.CreatedAt).FirstAsync(g => g.SubjectValue == Convidado)).DurationAfterFirstUse);
+    }
+
+    [Fact]
+    public async Task Varios_dominios_num_convite_liberam_cada_um()
+    {
+        var (cliente, video) = await PrepararAsync();
+        using var _ = cliente;
+
+        var resposta = await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/videos/{video.Id}?tab=access", "/admin/access/domain",
+            new Dictionary<string, string>
+            {
+                ["alvoTipo"] = ((int)GrantTargetType.Video).ToString(),
+                ["alvoId"] = video.Id.ToString(),
+                ["dominios"] = "barcelos.dev\nparceira.com.br",
+                ["validade"] = "ate",
+                ["dataFinal"] = "2099-12-31"
+            });
+        Assert.True(resposta.Headers.Location is not null, $"{(int)resposta.StatusCode}: {await resposta.Content.ReadAsStringAsync()}");
+        Assert.Contains("dominios=2", resposta.Headers.Location!.ToString());
+
+        var aba = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access");
+        Assert.Contains("2 domains", aba);
+        Assert.Contains("@barcelos.dev", aba);
+        Assert.Contains("@parceira.com.br", aba);
+
+        await using var db = postgres.CreateContext();
+        Assert.Equal(1, await db.Invitations.CountAsync());
+        Assert.Equal(2, await db.AccessGrants.CountAsync(g => g.SubjectType == GrantSubjectType.Domain));
+    }
+
+    [Fact]
+    public async Task Revogar_o_convite_corta_todos_e_restaurar_devolve()
+    {
+        var (cliente, video) = await PrepararAsync();
+        using var _ = cliente;
+        _app.Emails.Clear();
+
+        await ConvidarAsync(cliente, video.Id, new() { ["emails"] = Convidado, ["validade"] = "sempre" });
+
+        using var convidado = _app.CreateBrowser();
+        await convidado.GetAsync($"/sign-in/{_app.Emails.LastToken()}");
+        Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
+
+        Guid conviteId;
+        await using (var db = postgres.CreateContext())
+            conviteId = (await db.Invitations.SingleAsync()).Id;
+
+        var campos = new Dictionary<string, string>
+        {
+            ["alvoTipo"] = ((int)GrantTargetType.Video).ToString(),
+            ["alvoId"] = video.Id.ToString()
+        };
+
+        var revogar = await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/videos/{video.Id}?tab=access", $"/admin/access/invitations/{conviteId}/revoke", campos);
+        Assert.Contains("convite-revogado=1", revogar.Headers.Location!.ToString());
+        Assert.Equal(HttpStatusCode.NotFound, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
+
+        var aba = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access");
+        Assert.Contains($"data-convite=\"{conviteId}\" data-situacao=\"revogado\"", aba);
+        Assert.Contains($"action=\"/admin/access/invitations/{conviteId}/restore\"", aba);
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/videos/{video.Id}?tab=access", $"/admin/access/invitations/{conviteId}/restore", campos);
+        Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Sem_marcar_o_envio_o_convite_nao_manda_email()
+    {
+        var (cliente, video) = await PrepararAsync();
+        using var _ = cliente;
+        _app.Emails.Clear();
+
+        // Desmarcado, o navegador manda só o marcador da escolha.
+        var resposta = await ConvidarAsync(cliente, video.Id, new()
+        {
+            ["emails"] = Convidado,
+            ["validade"] = "sempre",
+            ["escolhaDoEmail"] = "1"
+        });
+
+        Assert.Contains("convidados=1", resposta.Headers.Location!.ToString());
+        Assert.Empty(_app.Emails.Sent);
+    }
+
+    [Fact]
+    public async Task Prazo_invalido_volta_com_o_motivo_e_nao_cria_convite()
+    {
+        var (cliente, video) = await PrepararAsync();
+        using var _ = cliente;
+
+        var resposta = await ConvidarAsync(cliente, video.Id, new() { ["emails"] = Convidado, ["validade"] = "dias", ["dias"] = "" });
+
+        Assert.Contains("erro-acesso=", resposta.Headers.Location!.ToString());
+
+        await using var db = postgres.CreateContext();
+        Assert.Equal(0, await db.AccessGrants.CountAsync());
+    }
+
+    [Fact]
+    public async Task A_colecao_usa_o_mesmo_painel_de_convites()
+    {
+        var (cliente, _) = await PrepararAsync();
+        using var __ = cliente;
+
+        await FormularioHelpers.EnviarFormularioAsync(cliente, "/admin/collections", "/admin/collections/create",
+            new Dictionary<string, string> { ["nome"] = "Diretoria" });
+
+        Guid colecaoId;
+        await using (var db = postgres.CreateContext())
+            colecaoId = (await db.Collections.SingleAsync()).Id;
+
+        var resposta = await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{colecaoId}", "/admin/access/invite",
+            new Dictionary<string, string>
+            {
+                ["alvoTipo"] = ((int)GrantTargetType.Collection).ToString(),
+                ["alvoId"] = colecaoId.ToString(),
+                ["emails"] = Convidado,
+                ["validade"] = "sempre"
+            });
+        Assert.StartsWith($"/admin/collections/{colecaoId}?convidados=1", resposta.Headers.Location!.ToString());
+
+        var pagina = await cliente.GetStringAsync($"/admin/collections/{colecaoId}");
+        Assert.Contains("data-convites", pagina);
+        Assert.Contains(Convidado, pagina);
     }
 }

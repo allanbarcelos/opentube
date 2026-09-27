@@ -155,41 +155,51 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Reconvidar_a_mesma_pessoa_nao_cria_concessao_duplicada()
+    public async Task Cada_convite_e_independente_e_nao_altera_o_anterior()
     {
         var video = await VideoRestritoAsync();
         var (servico, db) = Criar();
         await using var _ = db;
 
         var primeiro = await servico.InviteAsync(
-            ["allan@barcelos.dev"], GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
+            ["allan@barcelos.dev"], GrantTargetType.Video, video.Id, GrantValidity.Until(Agora.AddDays(90)), Admin);
         var segundo = await servico.InviteAsync(
-            ["allan@barcelos.dev"], GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
+            ["allan@barcelos.dev"], GrantTargetType.Video, video.Id, GrantValidity.For(TimeSpan.FromDays(7)), Admin);
 
-        Assert.Equal(primeiro[0].GrantId, segundo[0].GrantId);
+        Assert.NotEqual(primeiro[0].InvitationId, segundo[0].InvitationId);
+        Assert.NotEqual(primeiro[0].GrantId, segundo[0].GrantId);
 
         await using var leitura = postgres.CreateContext();
-        Assert.Equal(1, await leitura.AccessGrants.CountAsync());
-        // O email sai de novo: reenviar o convite é justamente o caso de uso.
+        Assert.Equal(2, await leitura.Invitations.CountAsync());
+
+        // O primeiro convite continua com a validade que tinha.
+        var antigo = await leitura.AccessGrants.SingleAsync(g => g.Id == primeiro[0].GrantId);
+        Assert.Equal(Agora.AddDays(90), antigo.ExpiresAt);
+        Assert.Null(antigo.DurationAfterFirstUse);
         Assert.Equal(2, _emails.Sent.Count);
     }
 
     [Fact]
-    public async Task Reconvidar_reativa_uma_concessao_revogada()
+    public async Task Convite_novo_nao_desfaz_a_revogacao_de_outro()
     {
         var video = await VideoRestritoAsync();
         var (servico, db) = Criar();
         await using var _ = db;
 
-        var convite = await servico.InviteAsync(
+        var revogado = await servico.InviteAsync(
             ["allan@barcelos.dev"], GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
-        await servico.RevokeAsync(convite[0].GrantId);
+        await servico.RevokeAsync(revogado[0].GrantId);
 
-        await servico.InviteAsync(
+        var novo = await servico.InviteAsync(
             ["allan@barcelos.dev"], GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
 
         await using var leitura = postgres.CreateContext();
-        Assert.False((await leitura.AccessGrants.SingleAsync()).IsRevoked);
+        Assert.True((await leitura.AccessGrants.SingleAsync(g => g.Id == revogado[0].GrantId)).IsRevoked);
+        Assert.False((await leitura.AccessGrants.SingleAsync(g => g.Id == novo[0].GrantId)).IsRevoked);
+
+        // E a pessoa assiste pelo convite novo.
+        var pessoa = Viewer.Authenticated(Guid.CreateVersion7(), EmailAddress.Parse("allan@barcelos.dev"));
+        Assert.True((await CriarAcesso(leitura).EvaluateAsync(pessoa, video)).Allowed);
     }
 
     [Fact]
@@ -225,20 +235,117 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Conceder_o_mesmo_dominio_duas_vezes_apenas_atualiza_a_validade()
+    public async Task Varios_dominios_num_convite_com_a_mesma_validade()
     {
         var video = await VideoRestritoAsync();
         var (servico, db) = Criar();
         await using var _ = db;
 
+        var concessoes = await servico.GrantToDomainsAsync(
+            ["barcelos.dev", " @Empresa.com.br ", "barcelos.dev"], GrantTargetType.Video, video.Id,
+            GrantValidity.Until(Agora.AddDays(30)), Admin, "Parceiros");
+
+        Assert.Equal(["barcelos.dev", "empresa.com.br"], concessoes.Select(c => c.SubjectValue));
+        Assert.All(concessoes, c => Assert.Equal(Agora.AddDays(30), c.ExpiresAt));
+        Assert.Single(concessoes.Select(c => c.InvitationId).Distinct());
+
+        // Outro convite para o mesmo domínio é outro, e não mexe no primeiro.
         await servico.GrantToDomainAsync("barcelos.dev", GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
-        await servico.GrantToDomainAsync("barcelos.dev", GrantTargetType.Video, video.Id,
-            GrantValidity.Until(Agora.AddDays(30)), Admin);
 
         await using var leitura = postgres.CreateContext();
-        var concessao = await leitura.AccessGrants.SingleAsync();
+        Assert.Equal(3, await leitura.AccessGrants.CountAsync());
+        Assert.Equal(2, await leitura.AccessGrants.CountAsync(g => g.ExpiresAt == Agora.AddDays(30)));
+    }
 
-        Assert.Equal(Agora.AddDays(30), concessao.ExpiresAt);
+    [Theory]
+    [InlineData("barcelos")]
+    [InlineData("-barcelos.dev")]
+    [InlineData("barcelos..dev")]
+    [InlineData("pessoa@barcelos.dev")]
+    [InlineData("barcelos.dev/x")]
+    public async Task Dominio_invalido_e_recusado_sem_criar_nada(string dominio)
+    {
+        var video = await VideoRestritoAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servico.GrantToDomainsAsync(["barcelos.dev", dominio], GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin));
+
+        await using var leitura = postgres.CreateContext();
+        Assert.Equal(0, await leitura.AccessGrants.CountAsync());
+        Assert.Equal(0, await leitura.Invitations.CountAsync());
+    }
+
+    [Fact]
+    public async Task Revogar_o_convite_corta_todos_e_restaurar_devolve_so_o_que_ele_cortou()
+    {
+        var video = await VideoRestritoAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        var convite = await servico.InviteAsync(
+            ["ana@barcelos.dev", "bia@barcelos.dev", "caio@barcelos.dev"], GrantTargetType.Video, video.Id,
+            GrantValidity.Forever, Admin, sendEmail: false);
+        var conviteId = convite[0].InvitationId;
+        var caio = convite.Single(c => c.Email == "caio@barcelos.dev").GrantId;
+
+        // Caio foi revogado sozinho antes; depois, o convite inteiro.
+        await servico.RevokeAsync(caio);
+        _relogio.Advance(TimeSpan.FromMinutes(1));
+        await servico.RevokeInvitationAsync(conviteId);
+
+        await using (var leitura = postgres.CreateContext())
+        {
+            Assert.All(await leitura.AccessGrants.ToListAsync(), g => Assert.True(g.IsRevoked));
+            Assert.True((await leitura.Invitations.SingleAsync()).IsRevoked);
+        }
+
+        await servico.RestoreInvitationAsync(conviteId);
+
+        await using var depois = postgres.CreateContext();
+        var ativos = await depois.AccessGrants.Where(g => g.RevokedAt == null).Select(g => g.SubjectValue).ToListAsync();
+        Assert.Equal(["ana@barcelos.dev", "bia@barcelos.dev"], ativos.Order());
+        Assert.False((await depois.Invitations.SingleAsync()).IsRevoked);
+    }
+
+    [Fact]
+    public async Task Lista_os_convites_do_alvo_com_as_concessoes_de_cada_um()
+    {
+        var video = await VideoRestritoAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        await servico.InviteAsync(["bia@barcelos.dev", "ana@barcelos.dev"], GrantTargetType.Video, video.Id,
+            GrantValidity.For(TimeSpan.FromDays(15)), Admin, "Diretoria", sendEmail: false);
+        _relogio.Advance(TimeSpan.FromMinutes(1));
+        await servico.GrantToDomainsAsync(["barcelos.dev"], GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
+        _relogio.Advance(TimeSpan.FromMinutes(1));
+        await servico.CreateShareLinkAsync(GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin, maxViews: 3);
+
+        // Concessão de antes dos convites.
+        await using (var antigo = postgres.CreateContext())
+        {
+            antigo.AccessGrants.Add(AccessGrant.ForUser(EmailAddress.Parse("velho@barcelos.dev"), GrantTargetType.Video,
+                video.Id, Admin, Agora.AddMinutes(-10)));
+            await antigo.SaveChangesAsync();
+        }
+
+        var convites = await servico.ListInvitationsAsync(GrantTargetType.Video, video.Id);
+
+        Assert.Equal([InvitationKind.Link, InvitationKind.Domains, InvitationKind.People, InvitationKind.People],
+            convites.Select(c => c.Kind));
+
+        var pessoas = convites[2];
+        Assert.False(pessoas.IsLegacy);
+        Assert.Equal(TimeSpan.FromDays(15), pessoas.DurationAfterFirstUse);
+        Assert.Equal("Diretoria", pessoas.Note);
+        Assert.Equal(["ana@barcelos.dev", "bia@barcelos.dev"], pessoas.Members.Select(m => m.SubjectValue));
+
+        Assert.Equal(3, convites[0].MaxViews);
+        Assert.True(convites[3].IsLegacy);
+        Assert.Equal("velho@barcelos.dev", Assert.Single(convites[3].Members).SubjectValue);
+        Assert.All(convites, c => Assert.True(c.IsActiveAt(Agora)));
     }
 
     [Fact]

@@ -3,40 +3,34 @@
     Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 *@
 
-@* Escolha da validade, compartilhada pelos três formulários de concessão. *@
+@* Validade comum a todos do convite. Cada opção tem o seu campo: escrever num deles escolhe a
+   opção, e um valor inválido volta com o motivo, em vez de virar "sem prazo" em silêncio. *@
 
 <fieldset class="mb-3">
-    <legend class="form-label">@T["Validity"]</legend>
+    <legend class="form-label fs-6">@T["Validity"]</legend>
 
-    <div class="form-check">
+    <div class="form-check mb-1">
         <input class="form-check-input" type="radio" name="validade" value="sempre"
                id="validade-sempre-@Prefixo" checked />
         <label class="form-check-label" for="validade-sempre-@Prefixo">@T["No end date"]</label>
     </div>
 
-    <div class="form-check">
-        <input class="form-check-input" type="radio" name="validade" value="dias"
-               id="validade-dias-@Prefixo" />
-        <label class="form-check-label" for="validade-dias-@Prefixo">
-            @T["For a period from the first visit"]
-        </label>
+    <div class="form-check mb-1 d-flex flex-wrap align-items-center gap-2">
+        <input class="form-check-input mt-0" type="radio" name="validade" value="dias" id="validade-dias-@Prefixo" />
+        <label class="form-check-label" for="validade-dias-@Prefixo">@T["For"]</label>
+        <input class="form-control form-control-sm" style="width: 5.5rem" type="number" min="1" max="3650"
+               name="dias" id="dias-@Prefixo" placeholder="30" aria-label="@T["Number of days"]"
+               onfocus="document.getElementById('validade-dias-@Prefixo').checked = true" />
+        <span class="small">@T["days from the first visit"]</span>
     </div>
 
-    <div class="form-check">
-        <input class="form-check-input" type="radio" name="validade" value="ate"
-               id="validade-ate-@Prefixo" />
-        <label class="form-check-label" for="validade-ate-@Prefixo">@T["Until a date"]</label>
-    </div>
-
-    <div class="mt-2">
-        <label class="form-label visually-hidden" for="valor-@Prefixo">
-            @T["Number of days or end date"]
-        </label>
-        <input class="form-control" id="valor-@Prefixo" name="valorDaValidade"
-               placeholder="30 (dias) ou 2026-12-31 (data)" />
-        <div class="form-text">
-            @T["Fill in according to the option. No end date leaves this field empty."]
-        </div>
+    <div class="form-check d-flex flex-wrap align-items-center gap-2">
+        <input class="form-check-input mt-0" type="radio" name="validade" value="ate" id="validade-ate-@Prefixo" />
+        <label class="form-check-label" for="validade-ate-@Prefixo">@T["Until"]</label>
+        <input class="form-control form-control-sm" style="width: 10rem" type="date"
+               name="dataFinal" id="data-@Prefixo" aria-label="@T["End date"]"
+               onfocus="document.getElementById('validade-ate-@Prefixo').checked = true" />
+        <span class="small text-body-secondary">@T["(the whole day included)"]</span>
     </div>
 </fieldset>
 

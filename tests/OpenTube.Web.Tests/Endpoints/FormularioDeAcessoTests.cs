@@ -30,24 +30,45 @@ public class FormularioDeAcessoTests
     [InlineData("-5")]
     [InlineData("abc")]
     [InlineData("")]
-    public void Prazo_em_dias_invalido_vira_sem_prazo(string valor)
+    [InlineData("99999")]
+    public void Prazo_em_dias_invalido_e_recusado_em_vez_de_virar_sem_prazo(string valor)
     {
-        Assert.Equal("no end date", AccessEndpoints.MontarValidade("dias", valor).Describe());
+        var erro = Assert.Throws<InvalidOperationException>(() => AccessEndpoints.MontarValidade("dias", valor));
+
+        Assert.Equal("Enter the number of days, from 1 to 3650.", erro.Message);
+    }
+
+    [Fact]
+    public void Campo_proprio_de_dias_tem_preferencia()
+    {
+        Assert.Equal(TimeSpan.FromDays(15), AccessEndpoints.MontarValidade("dias", null, dias: "15").DurationAfterFirstUse);
     }
 
     [Fact]
     public void Data_fixa_define_o_termino()
     {
-        var validade = AccessEndpoints.MontarValidade("ate", "2026-12-31");
+        var validade = AccessEndpoints.MontarValidade("ate", "2099-12-31");
 
         Assert.NotNull(validade.ExpiresAt);
         Assert.Null(validade.DurationAfterFirstUse);
     }
 
     [Fact]
-    public void Data_invalida_vira_sem_prazo()
+    public void A_data_vale_ate_o_fim_do_dia_escolhido()
     {
-        Assert.Equal("no end date", AccessEndpoints.MontarValidade("ate", "trinta e um").Describe());
+        var validade = AccessEndpoints.MontarValidade("ate", null, data: "2099-12-31");
+
+        var fim = validade.ExpiresAt!.Value.ToLocalTime();
+        Assert.Equal(new DateTime(2100, 1, 1), fim.DateTime);
+    }
+
+    [Theory]
+    [InlineData("trinta e um")]
+    [InlineData("")]
+    [InlineData("2001-01-01")]
+    public void Data_invalida_ou_passada_e_recusada(string valor)
+    {
+        Assert.Throws<InvalidOperationException>(() => AccessEndpoints.MontarValidade("ate", null, data: valor));
     }
 
     [Theory]

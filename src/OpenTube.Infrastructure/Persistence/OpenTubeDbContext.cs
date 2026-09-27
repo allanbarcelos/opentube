@@ -17,6 +17,7 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
     public DbSet<AuthAttempt> AuthAttempts => Set<AuthAttempt>();
     public DbSet<AccessGrant> AccessGrants => Set<AccessGrant>();
+    public DbSet<Invitation> Invitations => Set<Invitation>();
     public DbSet<Collection> Collections => Set<Collection>();
     public DbSet<CollectionVideo> CollectionVideos => Set<CollectionVideo>();
     public DbSet<VerifiedDomain> VerifiedDomains => Set<VerifiedDomain>();

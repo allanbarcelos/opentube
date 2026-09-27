@@ -24,6 +24,9 @@
 <body>
     <Routes />
     <ReconnectModal />
+    @* Comportamentos do Bootstrap (menu recolhido no celular, abas, sanfonas). As delegações
+       dele ficam no documento, então valem também nas páginas da navegação aprimorada. *@
+    <script src="@Assets["lib/bootstrap/dist/js/bootstrap.bundle.min.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     @* Carregados uma vez para todas as páginas: o player se monta sozinho na carga inicial e
        a cada navegação aprimorada, que não executaria scripts colocados na própria página. *@
