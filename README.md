@@ -663,6 +663,8 @@ testable without a database or network; the rest uses ephemeral containers.
 
 ## Security and privacy
 
+To report a vulnerability, see [SECURITY.md](SECURITY.md) — privately, never in a public issue.
+
 - No password is generated or sent by email.
 - Codes and tokens are stored only as hashes, single-use and short-lived.
 - Rate limiting on sending and checking codes, with progressive lockout. Each code attempt is

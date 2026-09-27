@@ -658,6 +658,8 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 
 ## Segurança e privacidade
 
+Para relatar uma vulnerabilidade, veja o [SECURITY.md](SECURITY.md) — de forma privada, nunca numa issue pública.
+
 - Nenhuma senha é gerada ou enviada por email.
 - Códigos e tokens ficam apenas como hash, com uso único e expiração curta.
 - Limite de taxa no envio e na validação de códigos, com bloqueio progressivo. Cada tentativa de
