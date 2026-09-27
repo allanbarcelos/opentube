@@ -1,6 +1,7 @@
 # Build
 bin/
 obj/
+/.artifacts/
 [Dd]ebug/
 [Rr]elease/
 artifacts/

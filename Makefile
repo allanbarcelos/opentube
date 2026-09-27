@@ -85,11 +85,16 @@ build: .env ## Reconstrói as imagens sem subir
 # Os testes de integração sobem Postgres e MinIO próprios (Testcontainers): precisam do
 # Docker, mas não do .env nem das dependências do 'make watch'. Os que usam FFmpeg são
 # pulados quando ele não está instalado.
+#
+# Compilam em .artifacts/test, e não no bin/obj dos projetos: com o 'make watch' aberto, os
+# dois builds disputariam os mesmos arquivos, e um teste pegaria uma saída pela metade.
+TEST_ARTIFACTS := .artifacts/test
+
 test: _docker ## Roda os testes  →  make test  |  make test p=Web  (Domain, Infrastructure, Worker, Web)
 ifeq ($(strip $(p)),)
-	dotnet test OpenTube.slnx
+	dotnet test OpenTube.slnx --artifacts-path $(TEST_ARTIFACTS)
 else
-	dotnet test tests/OpenTube.$(p).Tests
+	dotnet test tests/OpenTube.$(p).Tests --artifacts-path $(TEST_ARTIFACTS)
 endif
 
 # ── Maintenance ───────────────────────────────────────────────────────────────

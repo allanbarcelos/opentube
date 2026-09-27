@@ -373,7 +373,8 @@ make test p=Web      # um projeto: Domain, Infrastructure, Worker ou Web
 
 Os testes de integração sobem PostgreSQL e MinIO próprios (Testcontainers): precisam do Docker,
 mas não do `.env` nem das dependências do `make watch`. Os que usam FFmpeg são pulados quando ele
-não está instalado.
+não está instalado. Compilam em `.artifacts/test`, e não no `bin`/`obj` dos projetos, para poderem
+rodar enquanto o `make watch` recompila os mesmos projetos.
 
 Cada fase do roadmap só é considerada concluída com sua suíte verde. A lógica sensível vive em
 classes puras (regras de acesso, fusão de intervalos, cálculo do ladder de transcodificação,

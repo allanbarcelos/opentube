@@ -380,7 +380,8 @@ make test p=Web      # one project: Domain, Infrastructure, Worker, or Web
 
 Integration tests start their own PostgreSQL and MinIO (Testcontainers): they need Docker, but not
 `.env` or the `make watch` dependencies. Tests that use FFmpeg are skipped when it is not
-installed.
+installed. They build into `.artifacts/test`, not into the projects' `bin`/`obj`, so they can run
+while `make watch` rebuilds the same projects.
 
 Each roadmap phase is only considered done when its suite is green. The sensitive logic lives in
 pure classes (access rules, interval merging, transcoding ladder calculation, rate limiter),

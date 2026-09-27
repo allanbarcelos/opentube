@@ -4,7 +4,9 @@
          manifesto de arquivos estáticos sem normalizar a barra e, no macOS e no Linux, procura
          um diretório chamado "obj\Debug" que não existe: perde o recarregamento de CSS e JS.
          Este arquivo é lido antes do padrão, então basta definir a pasta com barra normal. -->
-    <BaseIntermediateOutputPath>obj/</BaseIntermediateOutputPath>
+    <!-- Quando o build usa uma pasta de artefatos (a opção artifacts-path, que o make test usa),
+         tudo vai para ela, e esta regra não pode prender o intermediário de volta ao projeto. -->
+    <BaseIntermediateOutputPath Condition="'$(ArtifactsPath)' == ''">obj/</BaseIntermediateOutputPath>
   </PropertyGroup>
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>

@@ -9,3 +9,4 @@ storage/
 *.md
 .env
 **/.env
+.artifacts/
