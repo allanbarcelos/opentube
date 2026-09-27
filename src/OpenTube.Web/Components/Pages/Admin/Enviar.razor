@@ -51,7 +51,7 @@
                             <div class="col-md-6">
                                 <label class="form-label" for="arquivos">@T["Video files"]</label>
                                 <input class="form-control" id="arquivos" type="file" accept="video/*" multiple />
-                                <div class="form-text">@T["One or more videos. The title of each one is its file name, and can be changed below."]</div>
+                                <div class="form-text">@T["One or more videos, as many times as you like: each choice adds to the list. The title of each one is its file name, and can be changed below."]</div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="pasta">@T["Or a whole folder"]</label>
@@ -68,12 +68,6 @@
                         <input class="form-control" id="nome-colecao" maxlength="@UploadNames.MaxCollectionNameLength" />
                         <div class="form-text">@T["A new collection is created with this name when the upload starts."]</div>
                     </div>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label" for="descricao">@T["Description"]</label>
-                    <textarea class="form-control" id="descricao" rows="2" maxlength="10000"></textarea>
-                    <div class="form-text">@T["Optional, applied to every video in this upload."]</div>
                 </div>
 
                 <div class="card mb-3 d-none" id="bloco-fila">

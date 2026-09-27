@@ -543,8 +543,9 @@ container of its own too, and is optional (see [Automatic captions in production
 
 1. **Upload** — the application creates the video record in `Draft` and returns signed URLs; the
    browser sends the parts straight to the `originals` bucket; on completion, the transcoding job
-   is queued. Several files can be chosen at once, and each video's title starts as its file name
-   without the extension (editable before sending). Choosing a folder creates a collection named
+   is queued. Several files can be chosen at once, or in several rounds (each choice adds to the
+   list), and each video's title starts as its file name without the extension (editable before
+   sending); the description is filled in later, in the video's settings. Choosing a folder creates a collection named
    after it, and each video of the folder (subfolders included) joins the collection when its
    upload completes; files that are not videos are skipped. Files go up one at a time, and a
    failed one can be retried without resending the others.

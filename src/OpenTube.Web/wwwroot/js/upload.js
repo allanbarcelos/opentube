@@ -67,7 +67,6 @@ window.envioDeVideos = (function () {
         const campoPasta = document.getElementById('pasta');
         const blocoColecao = document.getElementById('bloco-colecao');
         const campoColecao = document.getElementById('nome-colecao');
-        const campoDescricao = document.getElementById('descricao');
         const blocoFila = document.getElementById('bloco-fila');
         const corpoFila = document.getElementById('fila-envio');
         const resumoFila = document.getElementById('resumo-fila');
@@ -185,19 +184,29 @@ window.envioDeVideos = (function () {
             });
         }
 
-        function montarFila(arquivos) {
-            fila = [];
-            colecao = null;
-            campoColecao.disabled = false;
-            corpoFila.replaceChildren();
+        // Mesmo arquivo escolhido de novo não entra duas vezes na fila.
+        const chave = arquivo => [arquivo.webkitRelativePath || arquivo.name, arquivo.size, arquivo.lastModified].join('|');
+
+        function montarFila(arquivos, acrescentar) {
+            if (!acrescentar) {
+                fila = [];
+                colecao = null;
+                campoColecao.disabled = false;
+                corpoFila.replaceChildren();
+            }
             mostrarErro('');
             conclusao.classList.add('d-none');
+
+            const naFila = new Set(fila.map(item => chave(item.arquivo)));
 
             const videos = [];
             const outros = [];
             for (const arquivo of arquivos) {
                 // Arquivos ocultos (.DS_Store, Thumbs.db) não interessam nem como aviso.
                 if (arquivo.name.startsWith('.') || arquivo.name === 'Thumbs.db') {
+                    continue;
+                }
+                if (naFila.has(chave(arquivo))) {
                     continue;
                 }
                 (ehVideo(arquivo) ? videos : outros).push(arquivo);
@@ -249,14 +258,17 @@ window.envioDeVideos = (function () {
             return videos.length;
         }
 
+        // Depois de escolhidos, os arquivos já estão na fila: o campo volta a ficar vazio, pronto
+        // para acrescentar mais. Uma fila de pasta, ou já toda enviada, começa de novo.
         campoArquivos.addEventListener('change', function () {
             if (enviando) {
                 return;
             }
-            campoPasta.value = '';
+            const acrescentar = !pasta && fila.some(item => !item.concluido);
             pasta = null;
             blocoColecao.classList.add('d-none');
-            montarFila(campoArquivos.files);
+            montarFila(Array.from(campoArquivos.files), acrescentar);
+            campoArquivos.value = '';
         });
 
         campoPasta.addEventListener('change', function () {
@@ -271,7 +283,8 @@ window.envioDeVideos = (function () {
             blocoColecao.classList.toggle('d-none', !pasta);
             campoColecao.value = pasta ? pasta.slice(0, limiteColecao) : '';
 
-            const quantos = montarFila(arquivos);
+            const quantos = montarFila(arquivos, false);
+            campoPasta.value = '';
             if (pasta && quantos === 0) {
                 mostrarErro(textos.pastaVazia);
             }
@@ -286,7 +299,7 @@ window.envioDeVideos = (function () {
             try {
                 bilhete = await postar('/api/admin/uploads/start', {
                     titulo: item.titulo.value.trim() || tituloDoArquivo(arquivo.name, limiteTitulo),
-                    descricao: campoDescricao.value,
+                    descricao: null,
                     arquivo: arquivo.name,
                     tipo: arquivo.type,
                     tamanho: arquivo.size,
@@ -360,7 +373,6 @@ window.envioDeVideos = (function () {
             campoArquivos.disabled = travado;
             campoPasta.disabled = travado;
             campoColecao.disabled = travado || colecao !== null;
-            campoDescricao.disabled = travado;
             fila.forEach(item => {
                 item.titulo.disabled = travado || item.concluido;
                 item.linha.querySelector('[data-campo="remover"]').disabled = travado;

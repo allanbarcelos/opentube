@@ -543,8 +543,9 @@ próprio, e é opcional (veja [Legendas automáticas em produção](#legendas-au
 
 1. **Envio** — a aplicação cria o registro do vídeo em `Draft` e devolve URLs assinadas; o navegador
    envia os pedaços direto ao bucket `originals`; ao concluir, enfileira o job de transcodificação.
-   Dá para escolher vários arquivos de uma vez, e o título de cada vídeo começa como o nome do
-   arquivo sem a extensão (editável antes de enviar). Escolher uma pasta cria uma coleção com o
+   Dá para escolher vários arquivos de uma vez, ou em várias rodadas (cada escolha acrescenta à
+   lista), e o título de cada vídeo começa como o nome do arquivo sem a extensão (editável antes
+   de enviar); a descrição é preenchida depois, nas configurações do vídeo. Escolher uma pasta cria uma coleção com o
    nome dela, e cada vídeo da pasta (inclusive de subpastas) entra na coleção quando termina de
    subir; o que não é vídeo fica de fora. Os arquivos sobem um de cada vez, e um que falhou pode ser
    enviado de novo sem reenviar os outros.

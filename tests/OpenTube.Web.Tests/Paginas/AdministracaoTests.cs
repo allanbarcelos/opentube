@@ -316,6 +316,8 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         Assert.Matches("id=\"arquivos\"[^>]*multiple", html);
         Assert.Matches("id=\"pasta\"[^>]*webkitdirectory", html);
         Assert.Contains("id=\"modelo-linha-envio\"", html);
+        // A descrição é preenchida depois, nas configurações de cada vídeo.
+        Assert.DoesNotContain("id=\"descricao\"", html);
         Assert.Contains("data-token=", html);
     }
 
