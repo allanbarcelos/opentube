@@ -17,6 +17,12 @@ public class FakeTranscriber : ITranscriber
 
     public int Chamadas { get; private set; }
 
+    /// <summary>Idioma "detectado" quando o pedido é <c>auto</c>.</summary>
+    public string IdiomaDetectado { get; set; } = "pt";
+
+    public Task<TranscriberStatus> CheckAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(IsAvailable ? new TranscriberStatus(true, "fake") : TranscriberStatus.Off);
+
     public async Task<Transcription> TranscribeAsync(
         string mediaPath, string workDirectory, string language, CancellationToken cancellationToken = default)
     {
@@ -29,6 +35,6 @@ public class FakeTranscriber : ITranscriber
         var caminho = Path.Combine(workDirectory, "legenda.vtt");
         await File.WriteAllTextAsync(caminho, Vtt, cancellationToken);
 
-        return new Transcription(caminho, VttParser.ExtractText(Vtt), language);
+        return new Transcription(caminho, VttParser.ExtractText(Vtt), language == "auto" ? IdiomaDetectado : language);
     }
 }

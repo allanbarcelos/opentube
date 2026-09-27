@@ -139,4 +139,59 @@ public class JobWorkerTests(PostgresFixture postgres) : IAsyncLifetime
 
         Assert.Equal(0, executor.Chamadas);
     }
+
+    /// <summary>Transcrição que só termina quando o teste libera.</summary>
+    private sealed class TranscricaoPresa : IJobHandler
+    {
+        public TaskCompletionSource Comecou { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Liberar { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public JobKind Kind => JobKind.Transcript;
+
+        public async Task HandleAsync(QueuedJob job, CancellationToken cancellationToken = default)
+        {
+            Comecou.TrySetResult();
+            await Liberar.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Transcricao_longa_nao_segura_a_transcodificacao()
+    {
+        var executor = new ExecutorDeTeste();
+        var transcricao = new TranscricaoPresa();
+        var servicos = new ServiceCollection();
+
+        servicos.AddDbContext<OpenTubeDbContext>(o => o
+            .UseNpgsql(postgres.ConnectionString)
+            .UseSnakeCaseNamingConvention());
+        servicos.AddSingleton<TimeProvider>(_relogio);
+        servicos.AddScoped<IJobQueue, PostgresJobQueue>();
+        servicos.AddSingleton<IJobHandler>(executor);
+        servicos.AddSingleton<IJobHandler>(transcricao);
+
+        await using var provider = servicos.BuildServiceProvider();
+
+        using (var escopo = provider.CreateScope())
+        {
+            var fila = escopo.ServiceProvider.GetRequiredService<IJobQueue>();
+            await fila.EnqueueAsync(JobKind.Transcript, Guid.CreateVersion7(), new { idioma = "auto" });
+        }
+
+        var worker = Criar(provider);
+        using var parada = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await worker.StartAsync(parada.Token);
+        await transcricao.Comecou.Task.WaitAsync(parada.Token);
+
+        // Com a transcrição ainda em andamento, um vídeo novo chega e é processado.
+        await EnfileirarAsync(provider);
+        await executor.Executado.WaitAsync(parada.Token);
+
+        transcricao.Liberar.SetResult();
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.Equal(1, executor.Chamadas);
+    }
 }

@@ -36,9 +36,27 @@ public class JobWorker(
 {
     private readonly WorkerOptions _options = options.Value;
 
+    /// <summary>
+    /// Trabalhos que correm na própria fila. Uma transcrição leva de minutos a horas; na mesma
+    /// fila das transcodificações, um vídeo enviado agora esperaria a legenda de outro terminar.
+    /// </summary>
+    public static readonly IReadOnlySet<JobKind> Transcricao = new HashSet<JobKind> { JobKind.Transcript };
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("Worker {WorkerId} iniciado", _options.WorkerId);
+
+        await Task.WhenAll(
+            ConsumirAsync(tipo => !Transcricao.Contains(tipo), stoppingToken),
+            ConsumirAsync(Transcricao.Contains, stoppingToken));
+
+        logger.LogInformation("Worker {WorkerId} encerrado", _options.WorkerId);
+    }
+
+    private async Task ConsumirAsync(Func<JobKind, bool> atende, CancellationToken stoppingToken)
+    {
+        // Cede a thread de quem chamou: os dois laços começam juntos.
+        await Task.Yield();
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -46,7 +64,7 @@ public class JobWorker(
 
             try
             {
-                trabalhou = await ProcessarProximoAsync(stoppingToken);
+                trabalhou = await ProcessarProximoAsync(atende, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -63,16 +81,16 @@ public class JobWorker(
             if (!trabalhou)
                 await Task.Delay(_options.IdleDelay, stoppingToken).ContinueWith(_ => { }, TaskScheduler.Default);
         }
-
-        logger.LogInformation("Worker {WorkerId} encerrado", _options.WorkerId);
     }
 
-    private async Task<bool> ProcessarProximoAsync(CancellationToken stoppingToken)
+    private async Task<bool> ProcessarProximoAsync(Func<JobKind, bool> atende, CancellationToken stoppingToken)
     {
         using var escopo = scopeFactory.CreateScope();
 
         var fila = escopo.ServiceProvider.GetRequiredService<IJobQueue>();
-        var executores = escopo.ServiceProvider.GetServices<IJobHandler>().ToDictionary(h => h.Kind);
+        var executores = escopo.ServiceProvider.GetServices<IJobHandler>()
+            .Where(h => atende(h.Kind))
+            .ToDictionary(h => h.Kind);
 
         if (executores.Count == 0)
             return false;

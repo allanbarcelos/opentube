@@ -23,6 +23,7 @@ artifacts/
 appsettings.Development.local.json
 
 # Dados locais
+/.whisper/
 /data/
 /storage/
 TestResults/

@@ -9,6 +9,7 @@ using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Services;
 using OpenTube.Infrastructure.Storage;
 using OpenTube.Infrastructure.Tests.Support;
+using OpenTube.Infrastructure.Transcription;
 using OpenTube.TestSupport;
 
 namespace OpenTube.Infrastructure.Tests.Services;
@@ -26,7 +27,19 @@ public class CaptionServiceTests(PostgresFixture postgres, MinioFixture minio) :
 
     private readonly FakeTimeProvider _relogio = new(Agora);
 
-    public Task InitializeAsync() => postgres.ResetAsync();
+    public async Task InitializeAsync()
+    {
+        await postgres.ResetAsync();
+
+        // Um worker com Whisper respondendo, como numa instalação com transcrição.
+        await InformarWhisperAsync(disponivel: true);
+    }
+
+    private async Task InformarWhisperAsync(bool disponivel)
+    {
+        await using var db = postgres.CreateContext();
+        await new TranscriptionAvailability(db, _relogio).ReportAsync("worker-1", disponivel, "whisper.cpp · CPU");
+    }
 
     public Task DisposeAsync() => Task.CompletedTask;
 
@@ -35,7 +48,7 @@ public class CaptionServiceTests(PostgresFixture postgres, MinioFixture minio) :
         var db = postgres.CreateContext();
         var storage = minio.CreateStorage();
 
-        return (new CaptionService(db, storage, new PostgresJobQueue(db, _relogio), _relogio, NullLogger<CaptionService>.Instance), db, storage);
+        return (new CaptionService(db, storage, new PostgresJobQueue(db, _relogio), new TranscriptionAvailability(db, _relogio), _relogio, NullLogger<CaptionService>.Instance), db, storage);
     }
 
     private async Task<Video> CriarVideoAsync()
@@ -298,5 +311,94 @@ public class CaptionServiceTests(PostgresFixture postgres, MinioFixture minio) :
 
         await Assert.ThrowsAsync<ArgumentException>(() => servico.RequestTranscriptionAsync(video.Id, "../../etc"));
         await Assert.ThrowsAsync<ArgumentException>(() => servico.UploadAsync(video.Id, "português", null, Vtt));
+    }
+
+    [Fact]
+    public async Task Sem_whisper_disponivel_o_pedido_e_recusado_sem_criar_legenda()
+    {
+        var video = await CriarVideoAsync();
+        await InformarWhisperAsync(disponivel: false);
+
+        var (servico, db, storage) = Criar();
+        await using var _ = db;
+        using var __ = storage;
+
+        var erro = await Assert.ThrowsAsync<InvalidOperationException>(() => servico.RequestTranscriptionAsync(video.Id, "pt-br"));
+
+        Assert.Equal("Automatic transcription is not available on this server.", erro.Message);
+        Assert.Empty(await servico.ListAsync(video.Id));
+        Assert.Equal(0, await db.ProcessingJobs.CountAsync());
+    }
+
+    [Fact]
+    public async Task Whisper_que_parou_de_informar_deixa_de_contar_como_disponivel()
+    {
+        await using var db = postgres.CreateContext();
+        var disponibilidade = new TranscriptionAvailability(db, _relogio);
+
+        Assert.True((await disponibilidade.GetAsync()).Available);
+        Assert.Equal("whisper.cpp · CPU", (await disponibilidade.GetAsync()).Engine);
+
+        _relogio.Advance(TranscriptionWorker.Validity + TimeSpan.FromSeconds(1));
+
+        Assert.False((await disponibilidade.GetAsync()).Available);
+    }
+
+    [Fact]
+    public async Task Deteccao_automatica_cria_uma_legenda_provisoria_unica()
+    {
+        var video = await CriarVideoAsync();
+        var (servico, db, storage) = Criar();
+        await using var _ = db;
+        using var __ = storage;
+
+        await servico.RequestTranscriptionAsync(video.Id, "auto");
+
+        var legenda = Assert.Single(await servico.ListAsync(video.Id));
+        Assert.True(legenda.IsLanguagePending);
+        Assert.True(legenda.IsProcessing);
+
+        var trabalho = await db.ProcessingJobs.SingleAsync();
+        using var payload = System.Text.Json.JsonDocument.Parse(trabalho.Payload);
+        Assert.Equal("auto", payload.RootElement.GetProperty("language").GetString());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servico.RequestTranscriptionAsync(video.Id, "AUTO"));
+    }
+
+    [Fact]
+    public async Task Envio_com_idioma_auto_e_recusado()
+    {
+        var video = await CriarVideoAsync();
+        var (servico, db, storage) = Criar();
+        await using var _ = db;
+        using var __ = storage;
+
+        var erro = await Assert.ThrowsAsync<InvalidOperationException>(() => servico.UploadAsync(video.Id, "auto", null, Vtt));
+
+        Assert.Equal("Choose the caption language.", erro.Message);
+    }
+
+    [Fact]
+    public async Task Legenda_nova_nasce_vazia_editada_e_sem_mexer_na_busca()
+    {
+        var video = await CriarVideoAsync();
+        var (servico, db, storage) = Criar();
+        await using var _ = db;
+        using var __ = storage;
+
+        var legenda = await servico.CreateEmptyAsync(video.Id, "en", "English (review)");
+
+        Assert.Equal("en", legenda.Language);
+        Assert.Equal("English (review)", legenda.Label);
+        Assert.Equal(CaptionSource.Edited, legenda.Source);
+        Assert.True(legenda.HasContent);
+
+        var lida = await servico.ReadAsync(legenda.Id);
+        Assert.Empty(CaptionDocument.Parse(lida!.Value.Content).Cues);
+
+        var erro = await Assert.ThrowsAsync<InvalidOperationException>(() => servico.CreateEmptyAsync(video.Id, "EN", null));
+        Assert.Equal("This language already has a caption.", erro.Message);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servico.CreateEmptyAsync(video.Id, "auto", null));
     }
 }

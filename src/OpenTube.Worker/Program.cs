@@ -21,11 +21,18 @@ builder.Services.AddScoped<TranscodePipeline>();
 builder.Services.AddScoped<IJobHandler, TranscodeJobHandler>();
 builder.Services.AddScoped<IJobHandler, RetireOutputsJobHandler>();
 builder.Services.AddScoped<IJobHandler, AnalyticsRollupJobHandler>();
-builder.Services.AddScoped<ITranscriber, CommandLineTranscriber>();
+// O servidor do Whisper (o container dedicado) tem preferência; sem ele, o programa de linha
+// de comando, se houver; sem nenhum dos dois, a legenda automática fica desligada.
+builder.Services.AddSingleton<WhisperHttp>();
+builder.Services.AddScoped<ITranscriber>(sp =>
+    string.IsNullOrWhiteSpace(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<TranscriptionOptions>>().Value.ServerUrl)
+        ? ActivatorUtilities.CreateInstance<CommandLineTranscriber>(sp)
+        : ActivatorUtilities.CreateInstance<WhisperServerTranscriber>(sp));
 builder.Services.AddScoped<IJobHandler, TranscriptionJobHandler>();
 
 builder.Services.AddHostedService<AnalyticsBootstrapper>();
 builder.Services.AddHostedService<JobWorker>();
+builder.Services.AddHostedService<TranscriptionHeartbeat>();
 
 var host = builder.Build();
 await host.RunAsync();

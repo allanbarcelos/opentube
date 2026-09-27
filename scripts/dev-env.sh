@@ -20,3 +20,10 @@ export Security__IpHashPepper="${IP_HASH_PEPPER}"
 export Security__PublicUrl="http://localhost:5080"
 export ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Development}"
 export DOTNET_ENVIRONMENT="${DOTNET_ENVIRONMENT:-Development}"
+
+# Transcrição automática de legendas: ligada quando o whisper-cli e o modelo baixado por
+# 'make whisper' existem. Uma configuração já definida no ambiente prevalece.
+if [[ -z "${Transcription__Executable:-}" ]] && command -v whisper-cli >/dev/null 2>&1 && [[ -f .whisper/modelo.bin ]]; then
+  export Transcription__Executable="$(command -v whisper-cli)"
+  export Transcription__ModelPath="$PWD/.whisper/modelo.bin"
+fi

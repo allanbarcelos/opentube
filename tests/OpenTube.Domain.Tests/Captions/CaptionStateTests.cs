@@ -107,4 +107,26 @@ public class CaptionStateTests
 
         Assert.Throws<InvalidOperationException>(() => miniatura.StartTranscription(Agora));
     }
+
+    [Fact]
+    public void Legenda_provisoria_assume_o_idioma_detectado()
+    {
+        var legenda = VideoAsset.CaptionTranscriptionRequest(Video, "auto", null, "v/captions/auto.vtt", Agora);
+        Assert.True(legenda.IsLanguagePending);
+
+        legenda.ResolveLanguage("PT", "v/captions/pt.vtt", "Português");
+
+        Assert.False(legenda.IsLanguagePending);
+        Assert.Equal("pt", legenda.Language);
+        Assert.Equal("v/captions/pt.vtt", legenda.StorageKey);
+        Assert.Equal("Português", legenda.Label);
+    }
+
+    [Fact]
+    public void So_a_legenda_provisoria_troca_de_idioma()
+    {
+        var legenda = VideoAsset.CaptionWithContent(Video, "en", "English", "chave", CaptionSource.Upload, 10, Agora);
+
+        Assert.Throws<InvalidOperationException>(() => legenda.ResolveLanguage("pt", "outra", "Português"));
+    }
 }

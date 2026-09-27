@@ -10,6 +10,7 @@ de email inteiro, com validade opcional e registro detalhado de quem assistiu o 
 
 ## Índice
 
+- [Requisitos do servidor](#requisitos-do-servidor)
 - [Visão geral](#visão-geral)
 - [Modelo de acesso](#modelo-de-acesso)
 - [Arquitetura](#arquitetura)
@@ -26,6 +27,52 @@ de email inteiro, com validade opcional e registro detalhado de quem assistiu o 
 
 ---
 
+## Requisitos do servidor
+
+Tudo roda numa única máquina (Docker Swarm de um nó): PostgreSQL, MinIO, a aplicação, o worker
+(FFmpeg), o Caddy e — com as legendas automáticas ligadas — o Whisper. O que muda é quanto tempo
+leva o trabalho pesado: transcodificar cada envio e transcrever a fala.
+
+| | Mínima | Recomendada | Ideal |
+| --- | --- | --- | --- |
+| **Para** | Experimentar, acervo pequeno, poucos espectadores | Uso diário de uma equipe ou empresa, sem GPU | Acervo grande, envios frequentes, as melhores legendas |
+| **CPU** | 2 vCPU (x86-64) | 8 vCPU, geração recente (AVX2 / AVX-512) | 8+ vCPU |
+| **Memória** | 4 GB | 16 GB | 32 GB |
+| **GPU** | — | — | NVIDIA com ≥ 6 GB de VRAM, Pascal ou mais nova (T4, L4, A10, RTX 3060+) |
+| **Disco do sistema** | 40 GB SSD | 80 GB SSD NVMe | 100 GB SSD NVMe |
+| **Storage dos vídeos** | Conforme o acervo (veja abaixo) | Disco ou volume separado | Disco ou volume separado, com backup |
+| **Rede** | 100 Mbps | 1 Gbps | 1 Gbps ou mais |
+| **Legendas automáticas** | Opcionais; `base-q5_1` (rápido, qualidade básica) | `small` na CPU | `large-v3-turbo-q5_0` na GPU, o mais preciso |
+| **Imagem do Whisper** | `whisper:cpu` | `whisper:cpu` | `whisper:cuda` |
+
+O container do Whisper lê a máquina ao subir e escolhe sozinho o modelo e as threads (tabela em
+[Legendas automáticas em produção](#legendas-automáticas-em-produção)); nada precisa ser
+configurado à mão. Na máquina mínima, deixar as legendas automáticas desligadas também é uma
+escolha válida: as legendas continuam podendo ser enviadas ou escritas no editor.
+
+**Sistema operacional:** Linux 64 bits recente, x86-64/amd64 (a arquitetura das imagens publicadas), com `apt` (Ubuntu 22.04/24.04 ou Debian 12). O
+instalador instala o Docker, o UFW e — na máquina ideal — o NVIDIA Container Toolkit. A GPU precisa
+do driver da NVIDIA já instalado (`nvidia-smi` funcionando no host).
+
+**Storage dos vídeos.** Cada vídeo é guardado duas vezes: o original (para permitir reprocessar) e
+as versões adaptativas. De um original 1080p, as versões somam cerca de 10,5 Mbit/s — **perto de
+4,7 GB por hora de vídeo**, mais o original (em geral de 1 a 4 GB por hora). Reserve **de 6 a 9 GB
+por hora de 1080p**; originais de resolução menor ocupam menos, porque a escada nunca passa da
+resolução do original.
+
+**O que cada faixa significa na prática** (números aproximados, variam com o conteúdo):
+
+- **Transcodificação** usa só a CPU (FFmpeg, preset `veryfast`); a GPU não a acelera. Em 2 vCPU,
+  uma hora de 1080p leva da ordem de uma hora ou mais; em 8 vCPU, uma fração disso.
+- **Transcrição** corre numa fila própria, então nunca atrasa a transcodificação. Em 2 vCPU com
+  `base-q5_1`, conte com algo perto do tempo real ou mais lento; em 8 vCPU com `small`, várias
+  vezes mais rápido que o tempo real; na GPU com `large-v3-turbo`, uma hora de áudio em poucos
+  minutos, com a melhor precisão.
+- **Assistir** custa pouco ao servidor: os segmentos são arquivos estáticos que o Caddy entrega a
+  partir do MinIO. O limite ali é a banda de saída — cada espectador em 1080p usa até uns 5 Mbit/s.
+
+---
+
 ## Visão geral
 
 | Recurso | Descrição |
@@ -38,6 +85,11 @@ de email inteiro, com validade opcional e registro detalhado de quem assistiu o 
 | Validade | Acesso eterno, até uma data ou por um período após o primeiro uso |
 | Analytics | Quem assistiu, quando, de onde, em qual dispositivo e quanto de cada vídeo |
 | Suporte | Comentários privados por vídeo, visíveis apenas ao autor e ao administrador |
+| Coleções | Vídeos agrupados em coleções; o acesso pode ser dado por vídeo, por coleção ou ao acervo inteiro |
+| Legendas | Aba por idioma: automáticas com o Whisper (idioma detectado sozinho), envio de arquivo e editor no próprio sistema |
+| Proteção | Marca d'água móvel com o email de quem assiste, marca d'água do acervo em PNG, sem download nem transmissão, limite de reproduções simultâneas |
+| Auditoria | Toda ação administrativa fica registrada: concessão, revogação, publicação, exclusão |
+| Idiomas | Interface em inglês, português e francês |
 
 ---
 
@@ -76,6 +128,20 @@ A decisão fica concentrada numa única função `CanWatch(viewer, video)` — t
 busca, player, legenda, thumbnail, download) passa por ela. É o ponto do sistema com maior cobertura
 de testes, porque um erro ali vaza conteúdo confidencial.
 
+```mermaid
+flowchart TD
+    inicio(["CanWatch(espectador, vídeo)"]) --> admin{"Administrador?"}
+    admin -->|sim| libera(["Libera"])
+    admin -->|não| estado{"Excluído ou<br/>não Ready?"}
+    estado -->|sim| nega(["Nega"])
+    estado -->|não| vis{"Visibilidade"}
+    vis -->|Public| libera
+    vis -->|Private| nega
+    vis -->|Restricted| concessao{"Alguma concessão que<br/>alcança o espectador<br/>(email · domínio · link · pública),<br/>cobre o vídeo<br/>(vídeo · coleção · acervo)<br/>e está ativa<br/>(período · limite · não revogada)?"}
+    concessao -->|sim| libera
+    concessao -->|não| motivo(["Nega com o motivo mais próximo<br/>(expirou, limite atingido, revogada…)"])
+```
+
 ### Autenticação sem senha
 
 Nenhuma senha é gerada, trafegada ou armazenada. O convite traz um **link de uso único** e um
@@ -100,18 +166,39 @@ bruta num código de 6 dígitos.
 
 ```mermaid
 flowchart TB
-    navegador([Navegador]) -->|HTTPS| caddy["Caddy<br/>TLS automático"]
-    caddy --> web["OpenTube.Web<br/>Blazor"]
-    caddy --> minio[("MinIO<br/>S3")]
-    caddy --> mailpit["Mailpit<br/>dev"]
-    web --> postgres[(PostgreSQL)]
-    worker["OpenTube.Worker<br/>FFmpeg"] --> postgres
+    navegador(["Navegador"])
+    smtp["Servidor SMTP<br/>(Mailpit no desenvolvimento)"]
+
+    subgraph servidor["Servidor x86-64 · Docker Swarm de um nó · rede privada criptografada"]
+        caddy["Caddy<br/>TLS · forward_auth"]
+        web["OpenTube.Web<br/>Blazor · regras de acesso"]
+        worker["OpenTube.Worker<br/>FFmpeg · duas filas"]
+        whisper["Whisper (opcional)<br/>whisper.cpp · CPU ou CUDA"]
+        postgres[("PostgreSQL<br/>dados · fila de trabalhos")]
+        minio[("MinIO<br/>originals · vod")]
+    end
+
+    gpu{{"GPU NVIDIA<br/>(opcional)"}}
+
+    navegador -->|"HTTPS, direto ou pela Cloudflare"| caddy
+    caddy -->|"páginas · API · playlists"| web
+    caddy -->|"/vod/* após o forward_auth"| minio
+    caddy -->|"/originals/* envio assinado"| minio
+    web --> postgres
+    web -->|"URLs assinadas"| minio
+    web -->|"códigos · convites"| smtp
+    worker -->|"trabalhos · heartbeat"| postgres
     worker --> minio
+    worker -->|"HTTP /inference"| whisper
+    whisper -.-> gpu
 ```
 
 O envio do arquivo vai **direto do navegador para o MinIO** via URLs assinadas de multipart, sem
-passar pela aplicação. O worker é o único componente que escala por CPU e por isso vive em container
-separado desde o primeiro dia.
+passar pela aplicação. Em produção o envio passa pelo Caddy, no caminho `/originals`. O worker é
+o único componente que escala por CPU e por isso vive em container separado desde o primeiro dia;
+ele roda duas filas, para que uma transcrição longa nunca segure uma transcodificação. Tudo
+conversa pela rede overlay privada da pilha; só o Caddy publica porta. O Whisper, das legendas automáticas, também roda em container
+próprio, e é opcional (veja [Legendas automáticas em produção](#legendas-automáticas-em-produção)).
 
 ---
 
@@ -126,6 +213,28 @@ separado desde o primeiro dia.
    são pedidas à parte, por idioma (veja [Legendas](#legendas)).
 5. **Publicação** — estado `Ready`, vídeo disponível conforme sua visibilidade.
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Navegador
+    participant W as OpenTube.Web
+    participant S as MinIO
+    participant Q as PostgreSQL
+    participant K as Worker
+    B->>W: Novo vídeo
+    W->>Q: Vídeo em Draft
+    W-->>B: URLs assinadas de multipart
+    B->>S: Partes direto para originals
+    B->>W: Envio concluído
+    W->>Q: Trabalho de transcodificação
+    K->>Q: Retira da fila (FOR UPDATE SKIP LOCKED)
+    K->>S: Baixa o original
+    K->>K: ffprobe, escada FFmpeg de 360p a 1080p, miniatura, sprites
+    K->>S: Grava vod/{vídeo}/r-{geração}/
+    K->>Q: Ready, troca para a nova geração
+    K->>S: Apaga a geração anterior (trabalho RetireOutputs)
+```
+
 O original é preservado no bucket `originals` para permitir reprocessamento. Cada processamento
 grava numa pasta nova (`<vídeo>/r-<geração>/`) e só troca a versão em uso quando tudo foi
 enviado: reprocessar não tira o vídeo do ar, uma falha no meio mantém a versão anterior, e as
@@ -139,6 +248,28 @@ manifesto sai com URLs assinadas de curta duração, porque o navegador fala dir
 Na pilha local (`make up`) e na produção, o Caddy autoriza cada segmento com `forward_auth`: a
 aplicação decide, ele transporta os bytes. Revogar um acesso vale no segmento seguinte, em vez
 de esperar a assinatura vencer. O original continua indo por URL assinada, no caminho `/originals`.
+
+```mermaid
+sequenceDiagram
+    participant B as Navegador
+    participant C as Caddy
+    participant W as OpenTube.Web
+    participant S as MinIO
+    B->>C: GET da playlist principal
+    C->>W: Encaminha
+    W->>W: CanWatch, conta a visualização, emite o ticket da reprodução
+    W-->>B: Playlist
+    loop Cada segmento de 4 s
+        B->>C: GET /vod/...
+        C->>W: forward_auth /_authz
+        W-->>C: 200 ou 403
+        C->>S: Busca o segmento (só depois do 200)
+        S-->>B: Segmento
+    end
+    loop A cada 10 s
+        B->>W: Heartbeat com o intervalo assistido (sendBeacon)
+    end
+```
 
 Sobre proteção de conteúdo, sem rodeios: sem DRM, quem tem acesso legítimo consegue baixar. O que
 funciona na prática é token curto, limite de sessões simultâneas por usuário, marca d'água dinâmica
@@ -190,12 +321,16 @@ assistiram, 2 terminaram", que costuma ser a métrica que interessa de verdade. 
 A aba **Legendas** de cada vídeo, ao lado de Configuração e Audiência, lista uma legenda por idioma
 com a situação (pronta, processando, falhou) e a origem (enviada, automática, editada).
 
-- **Geração automática** com o Whisper, por idioma, em segundo plano no worker. A legenda fica
-  *processando* até terminar, e a página se atualiza sozinha. Um idioma em processamento não pode
-  ser pedido de novo — nem por dois pedidos no mesmo instante, que o índice único do banco
-  resolve. Envio e edição desse idioma também esperam, porque o resultado os sobrescreveria. A
-  falha só é registrada depois da última tentativa, com o motivo.
+- **Geração automática** com o Whisper, em segundo plano, **só quando o Whisper está disponível**.
+  O padrão é *Detectar automaticamente*: o Whisper descobre o idioma falado e a legenda o recebe
+  ao terminar (também dá para escolher o idioma à mão). Se esse idioma já tem uma legenda
+  automática, ela é atualizada; uma enviada ou corrigida à mão nunca é sobrescrita — o pedido
+  falha dizendo isso. A legenda fica *processando* até terminar, e a página se atualiza sozinha.
+  Um idioma em processamento não pode ser pedido de novo — nem por dois pedidos no mesmo instante,
+  que o índice único do banco resolve. Envio e edição desse idioma também esperam, porque o
+  resultado os sobrescreveria. A falha só é registrada depois da última tentativa, com o motivo.
 - **Envio** de WebVTT ou SRT; tudo é guardado como WebVTT, normalizado e ordenado.
+- **Escrever uma legenda**: cria uma legenda vazia num idioma e a abre no editor.
 - **Download** do arquivo, com o nome do vídeo e do idioma, para corrigir fora do sistema.
 - **Editor** no próprio webapp, no estilo de um editor de código: a primeira coluna numera as
   linhas, a segunda tem o tempo em que a legenda entra (e sai), a terceira o texto. Ao lado, o
@@ -203,9 +338,41 @@ com a situação (pronta, processando, falhou) e a origem (enviada, automática,
   botões e atalhos marcam início ou fim no tempo do vídeo, inserem e removem trechos e salvam
   (⌘/Ctrl+S). Tempos e texto são conferidos no navegador e de novo no servidor.
 
-O texto da legenda mais recente alimenta a busca. O Whisper é configurado no worker com
-`Transcription__Executable` e `Transcription__ModelPath`; sem eles, o pedido falha com uma
-mensagem clara em vez de ficar parado na fila.
+O texto da legenda mais recente alimenta a busca.
+
+**Disponibilidade.** A cada 30 s o worker confere o Whisper e registra a resposta no banco. A aba
+Legendas só mostra a geração automática (e os botões *Gerar de novo*) enquanto algum worker tiver
+informado o Whisper respondendo nos últimos dois minutos, junto com o que ele usa (por exemplo
+`whisper.cpp · CUDA · large-v3-turbo-q5_0`). Sem ele, a aba oferece envio e editor, e um pedido
+direto ao endpoint é recusado. As transcrições correm numa fila própria do worker: uma longa nunca
+segura a transcodificação de um vídeo recém-enviado.
+
+```mermaid
+sequenceDiagram
+    participant A as Administrador
+    participant W as OpenTube.Web
+    participant Q as PostgreSQL
+    participant K as Worker
+    participant H as Whisper
+    loop A cada 30 s
+        K->>H: GET /health e /info.json
+        K->>Q: Registra disponível e motor
+    end
+    A->>W: Abre a aba Legendas
+    W->>Q: O Whisper respondeu nos últimos 2 minutos?
+    W-->>A: Botão de gerar, ou só envio e editor
+    A->>W: Gerar, Detectar automaticamente
+    W->>Q: Legenda "auto" processando e trabalho de transcrição
+    K->>Q: Retira na fila de transcrição
+    K->>K: FFmpeg extrai o áudio mono de 16 kHz
+    K->>H: POST /inference (language=auto)
+    H-->>K: Trechos e idioma detectado
+    alt Idioma livre, ou a legenda dele é automática
+        K->>Q: A legenda recebe o idioma e fica pronta
+    else Idioma tem legenda enviada ou editada
+        K->>Q: Falha, com o motivo (nunca sobrescreve)
+    end
+```
 
 ---
 
@@ -230,6 +397,8 @@ estar ancorada a um instante do vídeo e é visível apenas ao autor e aos admin
 | Email | Abstração `IEmailSender`; Mailpit em desenvolvimento |
 | Busca | `tsvector` com dicionário português e `pg_trgm` |
 | Proxy | Caddy com TLS automático |
+| Legendas | whisper.cpp em container próprio (CPU ou CUDA), WebVTT |
+| Implantação | Docker Swarm, imagens no GHCR, GitHub Actions |
 
 ---
 
@@ -241,7 +410,8 @@ install.sh / uninstall.sh     produção em Docker Swarm
 docker-compose.yml            pilha inteira em container
 docker-compose.dev.yml        publica as portas das dependências no host
 Caddyfile
-scripts/                      geração do .env, ambiente do `dotnet watch`, entrypoint do Swarm
+scripts/                      geração do .env, ambiente do `dotnet watch`, entrypoint do Swarm, Whisper do dev
+docker/whisper/               imagem do servidor do Whisper (cpu e cuda), detecção de hardware, tabela de modelos
 src/
   OpenTube.Shared/            contratos e DTOs compartilhados
   OpenTube.Domain/            entidades e regras de acesso (sem dependência de infraestrutura)
@@ -301,6 +471,13 @@ de entrada cai no Mailpit. Ctrl+C encerra aplicação e worker. Os containers co
 
 `make watch-web` e `make watch-worker` sobem cada processo sozinho, com as dependências já no ar.
 
+**Legendas automáticas no desenvolvimento.** `make whisper` instala o whisper.cpp (`whisper-cli`,
+pelo Homebrew) e baixa um modelo para `.whisper/`, conferindo o SHA-256 publicado. A partir daí o
+`make watch` liga a transcrição sozinho e avisa na abertura. O modelo padrão é o `small-q5_1`
+(190 MB), bom para português e rápido no Apple Silicon; dá para escolher outro com
+`make whisper m=base` (mais rápido) ou `m=large-v3-turbo-q5_0` (o mais preciso). Reinicie o
+`make watch` depois de instalar.
+
 ### Pilha local (`make up`)
 
 Sobe tudo em container, também com `ASPNETCORE_ENVIRONMENT=Development`, mas sem recarregar
@@ -315,6 +492,9 @@ make up-d
 | Aplicação | https://localhost |
 | Mailpit | http://localhost:8025 |
 | Credenciais | `.env` |
+
+O Whisper fica de fora por padrão, porque a compilação demora. Para incluí-lo:
+`docker compose --profile whisper up -d --build`.
 
 O certificado de `localhost` é interno. O navegador avisa uma vez — é esperado. Aqui o
 administrador é `OPENTUBE_ADMIN_EMAIL` do `.env` (o gerador sugere `admin@localhost`), não o
@@ -378,8 +558,57 @@ publica `install.sh` e `uninstall.sh` no gist indicado pela variável de reposit
 Esse job precisa do segredo `GIST_TOKEN`, com o escopo `gist`. A primeira execução sem
 `GIST_ID` cria o gist e imprime o id para ser salvo nessa variável.
 
-A transcrição automática lê `Transcription__Executable` e `Transcription__ModelPath` no
-worker. Os dois vazios desligam o recurso, que é o padrão: é a etapa mais cara do pipeline.
+#### Legendas automáticas em produção
+
+O instalador pergunta se as legendas automáticas devem ser ligadas. Ligadas, o Whisper
+([whisper.cpp](https://github.com/ggml-org/whisper.cpp)) roda como o serviço `whisper` da pilha, e
+o worker fala com ele por HTTP dentro da rede privada.
+
+- **GPU ou CPU.** O instalador procura uma GPU NVIDIA (`nvidia-smi`). Havendo, oferece a imagem
+  `whisper:cuda`; como o Swarm não entrega GPU a um serviço diretamente, ele instala o NVIDIA
+  Container Toolkit se preciso e, depois de perguntar (o Docker reinicia), torna o `nvidia` o
+  runtime padrão do Docker. Sem GPU, ou sem o runtime, usa `whisper:cpu`. A imagem CUDA também
+  cai para a CPU sozinha se a GPU sumir.
+- **Otimizado para a máquina.** Ao subir, o container lê a memória da GPU, os núcleos e a memória
+  que pode usar (inclusive os limites do Swarm) e escolhe:
+
+  ```mermaid
+  flowchart TD
+      inicio(["Container sobe"]) --> gpu{"GPU NVIDIA respondendo<br/>dentro do container?"}
+      gpu -->|"sim, ≥ 3 GB"| large["large-v3-turbo-q5_0 · 4 threads"]
+      gpu -->|"sim, menos"| smallq["small-q5_1 · 4 threads"]
+      gpu -->|não| cpu{"Núcleos e memória<br/>(limites do cgroup)"}
+      cpu -->|"≥ 8 e ≥ 4 GB"| small["small · até 8 threads"]
+      cpu -->|"≥ 4 e ≥ 2 GB"| smallq2["small-q5_1 · núcleos"]
+      cpu -->|menor| base["base-q5_1 · núcleos"]
+      large & smallq & small & smallq2 & base --> tem{"Modelo já<br/>no volume?"}
+      tem -->|não| baixa["Baixa e confere o SHA-256"]
+      tem -->|sim| roda
+      baixa --> roda(["whisper-server -l auto<br/>publica /info.json"])
+  ```
+
+  | Hardware | Modelo | Threads |
+  | --- | --- | --- |
+  | GPU NVIDIA com ≥ 3 GB | `large-v3-turbo-q5_0` (574 MB), o mais preciso | 4 |
+  | GPU NVIDIA com menos | `small-q5_1` | 4 |
+  | CPU com ≥ 8 núcleos e ≥ 4 GB | `small` (488 MB) | até 8 |
+  | CPU com ≥ 4 núcleos e ≥ 2 GB | `small-q5_1` (190 MB) | núcleos |
+  | menor que isso | `base-q5_1` (60 MB) | núcleos |
+
+  A imagem de CPU traz código para várias gerações de processador x86-64 (de SSE a AVX2 e
+  AVX-512) e carrega a melhor ao iniciar. A escolha aparece na aba Legendas e em
+  `docker service logs <pilha>_whisper`.
+- **Modelos sob demanda.** O modelo é baixado no primeiro início para `/opt/<nome>/data/whisper`,
+  conferido pelo SHA-256 publicado, e fica lá. Todo modelo é multilíngue: reconhece e detecta os
+  99 idiomas do Whisper, sem nada a baixar por idioma. Trocar de modelo baixa só o novo. Para
+  forçar um modelo, rode o instalador com `WHISPER_MODEL=medium-q5_0` (lista em
+  `docker/whisper/modelos.txt`).
+- O botão de legenda aparece quando o modelo termina de carregar; até lá, e sempre que o container
+  estiver fora do ar, a aba oferece só envio e editor.
+
+As imagens são `ghcr.io/allanbarcelos/opentube/whisper:cpu` e `:cuda` (também
+`cpu-v1.9.4`/`cuda-v1.9.4`, a versão do whisper.cpp), geradas pelo workflow `Whisper` quando
+`docker/whisper/` muda. O `update.sh` baixa a que estiver em uso.
 
 > **Sobre a imagem do MinIO:** as imagens públicas do MinIO deixaram de ser distribuídas pelo Docker
 > Hub e pelo quay.io. O `docker-compose.yml` usa a última versão comunitária publicada, suficiente
@@ -398,7 +627,9 @@ make test p=Web      # um projeto: Domain, Infrastructure, Worker ou Web
 
 Os testes de integração sobem PostgreSQL e MinIO próprios (Testcontainers): precisam do Docker,
 mas não do `.env` nem das dependências do `make watch`. Os que usam FFmpeg são pulados quando ele
-não está instalado. Compilam em `.artifacts/test`, e não no `bin`/`obj` dos projetos, para poderem
+não está instalado, e os que transcrevem fala de verdade são pulados sem o Whisper (`make whisper`)
+e o `say` do macOS. `OPENTUBE_WHISPER_URL=http://…` os aponta para um servidor do Whisper já no ar —
+o container da imagem, por exemplo. Compilam em `.artifacts/test`, e não no `bin`/`obj` dos projetos, para poderem
 rodar enquanto o `make watch` recompila os mesmos projetos.
 
 Cada fase do roadmap só é considerada concluída com sua suíte verde. A lógica sensível vive em
@@ -436,6 +667,8 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | 4 | Analytics: coleta, agregação, painéis e exportação | **concluída** |
 | 5 | Suporte: conversas privadas por vídeo | **concluída** |
 | 6 | Refino: legendas automáticas, marca d'água, auditoria, autorização por segmento | **concluída** |
+| 7 | Produção: instalador no Swarm (modo Cloudflare), imagens no GHCR, proteção do player, marca d'água do acervo, interface em três idiomas | **concluída** |
+| 8 | Legendas: aba por idioma, editor, container dedicado do Whisper com detecção de GPU/CPU e do idioma falado | **concluída** |
 
 ---
 

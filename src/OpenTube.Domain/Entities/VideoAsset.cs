@@ -117,6 +117,27 @@ public class VideoAsset
         StatusChangedAt = now;
     }
 
+    /// <summary>Pedido com o idioma a detectar, ainda sem resposta da transcrição.</summary>
+    public bool IsLanguagePending => Kind is VideoAssetKind.Caption && string.Equals(Language, "auto", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Dá à legenda provisória o idioma que a transcrição detectou, com o arquivo e o rótulo
+    /// desse idioma.
+    /// </summary>
+    public void ResolveLanguage(string language, string storageKey, string label)
+    {
+        GarantirLegenda();
+        ArgumentException.ThrowIfNullOrWhiteSpace(language);
+        ArgumentException.ThrowIfNullOrWhiteSpace(storageKey);
+
+        if (!IsLanguagePending)
+            throw new InvalidOperationException("Only a caption waiting for language detection can take the detected language.");
+
+        Language = language.Trim().ToLowerInvariant();
+        StorageKey = storageKey;
+        Label = string.IsNullOrWhiteSpace(label) ? Language : label.Trim();
+    }
+
     public void Relabel(string? label)
     {
         if (!string.IsNullOrWhiteSpace(label))

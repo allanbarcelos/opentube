@@ -98,7 +98,8 @@ fi
 
 for image in \
   ghcr.io/allanbarcelos/opentube/app \
-  ghcr.io/allanbarcelos/opentube/worker
+  ghcr.io/allanbarcelos/opentube/worker \
+  ghcr.io/allanbarcelos/opentube/whisper
 do
   while read -r ref; do
     [[ -z "$ref" ]] && continue

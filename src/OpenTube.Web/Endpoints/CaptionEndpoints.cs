@@ -76,6 +76,31 @@ public static class CaptionEndpoints
             }
         });
 
+        // Legenda vazia, escrita no editor: o caminho sem transcrição automática.
+        administracao.MapPost("/new", async (
+            Guid videoId,
+            [FromForm] string idioma,
+            [FromForm] string? rotulo,
+            CaptionService legendas,
+            HttpContext contexto,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var legenda = await legendas.CreateEmptyAsync(videoId, idioma, rotulo, cancellationToken);
+
+                await contexto.RegistrarAsync(
+                    AuditActions.VideoAlterado, AuditEntities.Video, videoId,
+                    LocalText.Format("Caption {0} created", legenda.Language!), cancellationToken);
+
+                return Results.Redirect($"/admin/videos/{videoId}/captions/{legenda.Id}/edit");
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+            {
+                return Results.Redirect(Aba(videoId, "erro=" + Uri.EscapeDataString(Mensagem(e))));
+            }
+        });
+
         administracao.MapPost("/{assetId:guid}/delete", async (
             Guid videoId,
             Guid assetId,

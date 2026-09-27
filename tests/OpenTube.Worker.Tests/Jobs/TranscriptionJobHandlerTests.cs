@@ -293,4 +293,83 @@ public class TranscriptionJobHandlerTests(PostgresFixture postgres, MinioFixture
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => Criar(db, storage).HandleAsync(job));
     }
+
+    /// <summary>Legenda já existente no idioma, como se tivesse sido enviada ou gerada antes.</summary>
+    private async Task<VideoAsset> LegendaProntaAsync(IVideoStorage storage, Video video, string idioma, CaptionSource origem)
+    {
+        var chave = StorageKeys.Caption(video.Id, idioma);
+        await storage.PutTextAsync(StorageBucket.Vod, chave, "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nTexto antigo.\n", MediaTypes.WebVtt);
+
+        await using var db = postgres.CreateContext();
+        var legenda = VideoAsset.CaptionWithContent(video.Id, idioma, null, chave, origem, 60, Agora);
+        db.VideoAssets.Add(legenda);
+        await db.SaveChangesAsync();
+
+        return legenda;
+    }
+
+    [Fact]
+    public async Task Deteccao_automatica_da_a_legenda_o_idioma_falado()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PrepararVideoAsync(storage);
+        var pedido = await PedirAsync(video, "auto");
+        _transcritor.IdiomaDetectado = "en";
+
+        await using (var db = postgres.CreateContext())
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
+
+        Assert.Equal("auto", _transcritor.IdiomaPedido);
+
+        var legenda = await LegendaAsync(pedido.Id);
+        Assert.Equal("en", legenda.Language);
+        Assert.Equal(StorageKeys.Caption(video.Id, "en"), legenda.StorageKey);
+        Assert.Equal(CaptionLanguage.DisplayName("en"), legenda.Label);
+        Assert.Equal(CaptionStatus.Ready, legenda.Status);
+
+        var conteudo = await storage.GetTextAsync(StorageBucket.Vod, legenda.StorageKey);
+        Assert.Equal("Bom dia a todos.", CaptionDocument.Parse(conteudo).Cues.Single().Text);
+    }
+
+    [Fact]
+    public async Task Deteccao_automatica_atualiza_a_legenda_automatica_ja_existente_do_idioma()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PrepararVideoAsync(storage);
+        var anterior = await LegendaProntaAsync(storage, video, "pt", CaptionSource.Automatic);
+        var pedido = await PedirAsync(video, "auto");
+
+        await using (var db = postgres.CreateContext())
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
+
+        await using var leitura = postgres.CreateContext();
+        var legenda = await leitura.VideoAssets.SingleAsync();
+
+        // A provisória sai; a do idioma recebe o resultado.
+        Assert.Equal(anterior.Id, legenda.Id);
+        Assert.Equal(CaptionStatus.Ready, legenda.Status);
+
+        var conteudo = await storage.GetTextAsync(StorageBucket.Vod, legenda.StorageKey);
+        Assert.Equal("Bom dia a todos.", CaptionDocument.Parse(conteudo).Cues.Single().Text);
+    }
+
+    [Fact]
+    public async Task Deteccao_automatica_nunca_sobrescreve_legenda_corrigida_a_mao()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PrepararVideoAsync(storage);
+        var corrigida = await LegendaProntaAsync(storage, video, "pt", CaptionSource.Edited);
+        var pedido = await PedirAsync(video, "auto");
+
+        await using (var db = postgres.CreateContext())
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
+
+        var provisoria = await LegendaAsync(pedido.Id);
+        Assert.Equal(CaptionStatus.Failed, provisoria.Status);
+        Assert.Equal("The detected language already has a caption. Delete it or use Regenerate on it.", provisoria.Error);
+
+        var conteudo = await storage.GetTextAsync(StorageBucket.Vod, corrigida.StorageKey);
+        Assert.Equal("Texto antigo.", CaptionDocument.Parse(conteudo).Cues.Single().Text);
+        Assert.Equal(CaptionSource.Edited, (await LegendaAsync(corrigida.Id)).Source);
+    }
 }

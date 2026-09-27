@@ -42,4 +42,14 @@ public class CaptionLanguageTests
     {
         Assert.Equal(esperado, CaptionLanguage.DisplayName(codigo));
     }
+
+    [Theory]
+    [InlineData("auto")]
+    [InlineData(" AUTO ")]
+    public void Aceita_o_pedido_de_deteccao_automatica(string entrada)
+    {
+        Assert.Equal(CaptionLanguage.Auto, CaptionLanguage.Normalize(entrada));
+        Assert.True(CaptionLanguage.IsAuto(entrada));
+        Assert.Equal("auto", CaptionLanguage.TranscriptionCode(entrada));
+    }
 }

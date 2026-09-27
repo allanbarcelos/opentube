@@ -75,6 +75,7 @@ public static class DependencyInjection
         services.AddScoped<SupportService>();
         services.AddScoped<VideoCatalog>();
         services.AddScoped<WatermarkService>();
+        services.AddScoped<OpenTube.Infrastructure.Transcription.TranscriptionAvailability>();
 
         return services;
     }

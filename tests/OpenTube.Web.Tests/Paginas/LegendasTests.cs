@@ -27,6 +27,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
     public async Task InitializeAsync()
     {
         await postgres.ResetAsync();
+        await WhisperDeTeste.InformarAsync(postgres);
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();

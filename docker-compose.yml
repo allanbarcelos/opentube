@@ -86,11 +86,27 @@ services:
       Storage__SecretKey: ${MINIO_ROOT_PASSWORD}
       Security__TokenPepper: ${TOKEN_PEPPER}
       Security__IpHashPepper: ${IP_HASH_PEPPER}
+      # Sem o container do Whisper no ar, o worker informa a transcrição como indisponível
+      # e a aplicação esconde o botão de legenda automática.
+      Transcription__ServerUrl: http://whisper:8080
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
+
+  # Legendas automáticas. Opcional, porque a compilação demora: docker compose --profile whisper up
+  # Em máquina com GPU NVIDIA, troque o target para cuda e reserve a GPU (deploy.resources).
+  whisper:
+    profiles: [whisper]
+    build:
+      context: .
+      dockerfile: docker/whisper/Dockerfile
+      target: cpu
+    environment:
+      WHISPER_MODEL: ${WHISPER_MODEL:-auto}
+    volumes:
+      - whisper-models:/models
 
   caddy:
     image: caddy:2-alpine
@@ -111,3 +127,4 @@ volumes:
   minio-data:
   caddy-data:
   caddy-config:
+  whisper-models:

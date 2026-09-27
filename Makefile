@@ -1,5 +1,5 @@
 .PHONY: help up up-d down restart logs ps build clean shell _docker \
-        watch watch-web watch-worker deps-up deps-down test
+        watch watch-web watch-worker deps-up deps-down test whisper
 
 .DEFAULT_GOAL := help
 
@@ -56,12 +56,22 @@ watch: .env _docker deps-up ## Dev completo: deps em container + aplicação e w
 	@echo "  Banco     →  localhost:5432   usuário e senha no .env"
 	@echo "  MinIO     →  http://localhost:9000   console :9001   credenciais no .env"
 	@echo "  Mailpit   →  http://localhost:8025"
+	@if command -v whisper-cli >/dev/null 2>&1 && [ -f .whisper/modelo.bin ]; then \
+	  echo "  Legendas  →  transcrição com Whisper, modelo $$(readlink .whisper/modelo.bin)"; \
+	else \
+	  echo "  Legendas  →  transcrição desligada ('make whisper' instala o Whisper e o modelo)"; \
+	fi
 	@echo "  Ctrl+C encerra aplicação e worker. As deps seguem ('make deps-down' para pará-las)."
 	@echo ""
 	@trap 'kill 0' INT TERM; \
 	 $(MAKE) --no-print-directory watch-web & \
 	 $(MAKE) --no-print-directory watch-worker & \
 	 wait
+
+# Instala o whisper.cpp e baixa o modelo usado pelo worker do 'make watch'. O modelo pode ser
+# trocado: make whisper m=base (rápido) | small (melhor) | large-v3-turbo-q5_0 (o mais preciso).
+whisper: ## Liga a transcrição de legendas no make watch  →  make whisper  |  make whisper m=base
+	@bash scripts/whisper.sh $(m)
 
 # ── Stop ───────────────────────────────────────────────────────────────────────
 down: ## Para e remove os containers

@@ -4,6 +4,8 @@
 #
 #  Usage: sudo bash install.sh
 #
+#  Requires a 64-bit x86 (amd64) Linux server with apt (Ubuntu 22.04/24.04, Debian 12).
+#
 #  Same shape as the Archeo installer, limited to what this application needs:
 #    1. Interactive configuration (name, admin email, access, SMTP, disk)
 #    2. Packages (docker, openssl, ufw)
@@ -11,7 +13,10 @@
 #    4. User, password, and keys generated here — none of that lives in the repo
 #    5. Directory /opt/<name>
 #    6. Swarm secrets (not environment variables, and not written to disk)
-#    7. Images pulled from ghcr.io/allanbarcelos/opentube/{app,worker}
+#    7. Images pulled from ghcr.io/allanbarcelos/opentube/{app,worker,whisper}
+#       Automatic captions run Whisper in its own container: the CUDA image when
+#       an NVIDIA GPU is found (and the NVIDIA runtime is set up), the CPU one
+#       otherwise. The container picks the model for the hardware on its own.
 #    8. Stack file + Caddyfile
 #    9. docker stack deploy
 #   10. Firewall: UFW (22, and web access according to the mode). In Cloudflare
@@ -30,6 +35,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH
 
 APP_IMAGE="ghcr.io/allanbarcelos/opentube/app:latest"
 WORKER_IMAGE="ghcr.io/allanbarcelos/opentube/worker:latest"
+WHISPER_IMAGE_BASE="ghcr.io/allanbarcelos/opentube/whisper"
 
 # Re-exec from a real file when the script is piped (`curl … | sudo bash`).
 # Otherwise bash reads the script from the pipe while a later prompt blocks,
@@ -185,6 +191,14 @@ docker_user_delete_tagged() {
 
 port_in_use() { ss -ltnH "( sport = :$1 )" 2>/dev/null | grep -q .; }
 
+# NVIDIA GPU on the host, as the driver reports it. Empty when there is none.
+host_gpu_name() {
+  command -v nvidia-smi >/dev/null 2>&1 || return 0
+  nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null | head -1 || true
+}
+
+docker_default_runtime() { docker info --format '{{.DefaultRuntime}}' 2>/dev/null || true; }
+
 # Deletes every UFW rule whose comment contains the tag, from the top each time,
 # so the rule numbers stay valid.
 ufw_delete_tagged() {
@@ -197,6 +211,11 @@ ufw_delete_tagged() {
 }
 
 require_root
+# The published images (app, worker, whisper) are built for x86-64 only.
+case "$(uname -m)" in
+  x86_64|amd64) ;;
+  *) die "Unsupported architecture: $(uname -m). OpenTube runs in production on x86-64 (amd64) only." ;;
+esac
 command -v openssl >/dev/null 2>&1 || die "Install openssl before continuing."
 
 clear
@@ -322,6 +341,32 @@ if [[ "$CONFIGURE_SMTP" == "y" ]]; then
 fi
 echo ""
 
+echo -e "  ${BOLD}Automatic captions${NC} ${DIM}(Whisper in its own container; it detects the spoken language)${NC}"
+GPU_NAME="$(host_gpu_name)"
+_cores="$(nproc 2>/dev/null || echo '?')"
+_mem_gb="$(awk '/^MemTotal:/ { printf "%.0f", $2 / 1048576 }' /proc/meminfo 2>/dev/null || echo '?')"
+if [[ -n "$GPU_NAME" ]]; then
+  echo -e "  NVIDIA GPU found: ${CYAN}${GPU_NAME}${NC}"
+else
+  echo -e "  ${DIM}No NVIDIA GPU found: Whisper runs on the CPU (${_cores} cores, ${_mem_gb} GB of memory).${NC}"
+fi
+echo -e "  ${DIM}Without it, captions are uploaded or written in the application's editor.${NC}"
+_wh_default="$(read_conf "$INSTALL_CONF" WHISPER_ENABLED)"
+[[ -z "$_wh_default" ]] && _wh_default="y"
+ask_yn "Enable automatic captions?" WHISPER_ENABLED "$_wh_default"
+WHISPER_VARIANT="cpu"
+if [[ "$WHISPER_ENABLED" == "y" && -n "$GPU_NAME" ]]; then
+  _gpu_default="y"
+  [[ "$(read_conf "$INSTALL_CONF" WHISPER_VARIANT)" == "cpu" ]] && _gpu_default="n"
+  ask_yn "Use the GPU for transcription? (needs the NVIDIA Container Toolkit)" _USE_GPU "$_gpu_default"
+  [[ "$_USE_GPU" == "y" ]] && WHISPER_VARIANT="cuda"
+fi
+# Model: "auto" lets the container choose for the hardware. Override with
+# WHISPER_MODEL=small (for instance) in the environment of this script.
+WHISPER_MODEL="${WHISPER_MODEL:-$(read_conf "$INSTALL_CONF" WHISPER_MODEL)}"
+WHISPER_MODEL="${WHISPER_MODEL:-auto}"
+echo ""
+
 _EXISTING_MINIO="$(read_conf "$INSTALL_CONF" MINIO_DATA_DIR)"
 echo -e "  ${BOLD}MinIO disk${NC}"
 df -h -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null || true
@@ -348,6 +393,11 @@ if [[ -n "$SMTP_HOST" ]]; then
 else
   echo -e "  SMTP        : ${YELLOW}not configured${NC}"
 fi
+if [[ "$WHISPER_ENABLED" == "y" ]]; then
+  echo -e "  Captions    : ${CYAN}automatic (Whisper, ${WHISPER_VARIANT^^}, model ${WHISPER_MODEL})${NC}"
+else
+  echo -e "  Captions    : ${DIM}upload and editor only${NC}"
+fi
 sep
 echo ""
 read -rp "$(echo -e "  ${BOLD}Install?${NC} ${DIM}[Y/n]${NC}: ")" _CONFIRM </dev/tty
@@ -372,6 +422,49 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 docker info >/dev/null 2>&1 || die "Docker is not reachable."
 ok "Docker"
+
+# Swarm cannot hand a GPU to a service the way "docker run --gpus" does. What works
+# is the NVIDIA runtime as Docker's default: the container asks for the GPU with
+# NVIDIA_VISIBLE_DEVICES (the Whisper image already sets it). For containers that
+# do not ask, the runtime changes nothing.
+if [[ "$WHISPER_VARIANT" == "cuda" && "$(docker_default_runtime)" != "nvidia" ]]; then
+  if ! command -v nvidia-ctk >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+    ask_yn "The NVIDIA Container Toolkit is not installed. Install it now?" _INSTALL_CTK "y"
+    if [[ "$_INSTALL_CTK" == "y" ]]; then
+      info "Installing the NVIDIA Container Toolkit..."
+      apt-get install -y -qq gnupg >/dev/null
+      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+        | gpg --dearmor --yes -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+      curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+        | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+        > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+      apt-get update -qq
+      apt-get install -y -qq nvidia-container-toolkit >/dev/null
+      ok "NVIDIA Container Toolkit"
+    fi
+  fi
+
+  if command -v nvidia-ctk >/dev/null 2>&1; then
+    warn "Setting the NVIDIA runtime as Docker's default restarts Docker (running containers restart with it)."
+    ask_yn "Set it now?" _SET_RUNTIME "y"
+    if [[ "$_SET_RUNTIME" == "y" ]]; then
+      nvidia-ctk runtime configure --runtime=docker --set-as-default >/dev/null
+      systemctl restart docker
+      for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 2; done
+    fi
+  fi
+
+  if [[ "$(docker_default_runtime)" == "nvidia" ]]; then
+    ok "NVIDIA runtime is Docker's default"
+  else
+    warn "The NVIDIA runtime is not Docker's default — Whisper will run on the CPU."
+    WHISPER_VARIANT="cpu"
+  fi
+elif [[ "$WHISPER_VARIANT" == "cuda" ]]; then
+  ok "NVIDIA runtime is Docker's default"
+fi
+WHISPER_IMAGE=""
+[[ "$WHISPER_ENABLED" == "y" ]] && WHISPER_IMAGE="${WHISPER_IMAGE_BASE}:${WHISPER_VARIANT}"
 
 # ==============================================================================
 phase "PHASE 3 — Docker Swarm"
@@ -460,6 +553,11 @@ MINIO_UID="$(docker run --rm --entrypoint id bitnamilegacy/minio:latest -u 2>/de
 CADDY_UID="$(docker run --rm --entrypoint id caddy:2-alpine -u 2>/dev/null || echo 1000)"
 chown -R "${MINIO_UID}:${MINIO_UID}" "${MINIO_DATA_DIR}" || true
 chown -R "${CADDY_UID}:${CADDY_UID}" "${APP_DIR}/data/caddy" || true
+if [[ "$WHISPER_ENABLED" == "y" ]]; then
+  # Whisper models (60 to 600 MB each), downloaded by the container on first start.
+  mkdir -p "${APP_DIR}/data/whisper"
+  chown -R 1001:1001 "${APP_DIR}/data/whisper" || true
+fi
 ok "Directories ready"
 
 # ==============================================================================
@@ -501,6 +599,7 @@ ok "Authenticated with ghcr.io"
 info "Pulling images..."
 docker pull "$APP_IMAGE"
 docker pull "$WORKER_IMAGE"
+if [[ -n "$WHISPER_IMAGE" ]]; then docker pull "$WHISPER_IMAGE"; fi
 ok "Images pulled"
 
 # ==============================================================================
@@ -651,6 +750,31 @@ APP_MOUNTS="      - source: ${STACK_NAME}_connection_string
         mode: 0400
 ${SMTP_MOUNT}"
 
+WORKER_WHISPER_ENV=""
+WHISPER_SERVICE=""
+if [[ "$WHISPER_ENABLED" == "y" ]]; then
+  # The worker checks this server every 30 s and tells the application; the
+  # captions button only shows while Whisper answers.
+  WORKER_WHISPER_ENV="      Transcription__ServerUrl: http://whisper:8080"
+  WHISPER_SERVICE="
+  whisper:
+    image: ${WHISPER_IMAGE}
+    environment:
+      WHISPER_MODEL: \"${WHISPER_MODEL}\"
+    volumes:
+      - ${APP_DIR}/data/whisper:/models
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [\"node.role == manager\"]
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+"
+fi
+
 STACK_FILE="${APP_DIR}/docker-compose.prod.yml"
 cat > "$STACK_FILE" <<STACK
 # Stack generated by install.sh. No password in this file: only a secret reference.
@@ -754,6 +878,7 @@ ${APP_MOUNTS}
       Storage__Endpoint: http://minio:9000
       Storage__OriginalsBucket: originals
       Storage__VodBucket: vod
+${WORKER_WHISPER_ENV}
     secrets:
       - source: ${STACK_NAME}_connection_string
         target: ConnectionStrings__Default
@@ -792,7 +917,7 @@ ${APP_MOUNTS}
       restart_policy:
         condition: on-failure
         delay: 5s
-
+${WHISPER_SERVICE}
   caddy:
     image: caddy:2-alpine
     ports:
@@ -857,6 +982,10 @@ SMTP_USER='${SMTP_USER}'
 SMTP_FROM='${SMTP_FROM}'
 CERTBOT_EMAIL='${CERTBOT_EMAIL}'
 APP_PORT='${APP_PORT}'
+WHISPER_ENABLED='${WHISPER_ENABLED}'
+WHISPER_VARIANT='${WHISPER_VARIANT}'
+WHISPER_MODEL='${WHISPER_MODEL}'
+WHISPER_IMAGE='${WHISPER_IMAGE}'
 EOF
 chmod 600 "$INSTALL_CONF"
 
@@ -879,6 +1008,8 @@ set +a
 echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 docker pull ghcr.io/allanbarcelos/opentube/app:latest
 docker pull ghcr.io/allanbarcelos/opentube/worker:latest
+WHISPER_IMAGE="$(read_conf WHISPER_IMAGE)"
+if [[ -n "$WHISPER_IMAGE" ]]; then docker pull "$WHISPER_IMAGE"; fi
 docker stack deploy \
   --compose-file "${APP_DIR}/docker-compose.prod.yml" \
   --with-registry-auth \
@@ -1103,7 +1234,9 @@ info "Waiting for replicas (up to 3 minutes)..."
 ready="n"
 for _ in $(seq 1 30); do
   total="$(docker stack services "$STACK_NAME" --format '{{.Name}}' 2>/dev/null | wc -l | tr -d ' ')"
-  pending="$(docker stack services "$STACK_NAME" --format '{{.Replicas}}' 2>/dev/null | grep -vc '1/1' || true)"
+  # Whisper is left out: on the first start it downloads its model, which can take a while.
+  pending="$(docker stack services "$STACK_NAME" --format '{{.Name}} {{.Replicas}}' 2>/dev/null \
+    | grep -v "^${STACK_NAME}_whisper " | grep -vc ' 1/1' || true)"
   if [[ "${total:-0}" -ge 5 && "${pending:-1}" -eq 0 ]]; then
     ready="y"
     break
@@ -1129,6 +1262,13 @@ echo -e "  ${DIM}There is no administrator password. The code arrives by email (
 echo -e "  Directory : ${APP_DIR}"
 echo -e "  Update    : ${APP_DIR}/scripts/update.sh"
 echo -e "  Database  : ${POSTGRES_DB} / ${POSTGRES_USER}"
+if [[ "$WHISPER_ENABLED" == "y" ]]; then
+  echo -e "  Captions  : Whisper (${WHISPER_VARIANT^^}). On first start it picks and downloads its model;"
+  echo -e "              ${DIM}the button to generate captions appears once it answers.${NC}"
+  echo -e "              ${DIM}Follow it with: docker service logs -f ${STACK_NAME}_whisper${NC}"
+else
+  echo -e "  Captions  : upload or editor (run install.sh again to enable Whisper)"
+fi
 if [[ "$SECRETS_EXIST" == "n" ]]; then
   echo ""
   echo -e "  ${YELLOW}Copy this now. It is not kept on disk, and Swarm does not return the value.${NC}"

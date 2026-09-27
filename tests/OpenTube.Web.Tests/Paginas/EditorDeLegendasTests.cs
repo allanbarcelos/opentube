@@ -30,6 +30,7 @@ public class EditorDeLegendasTests(PostgresFixture postgres, MinioFixture minio)
     public async Task InitializeAsync()
     {
         await postgres.ResetAsync();
+        await WhisperDeTeste.InformarAsync(postgres);
         _app = new OpenTubeWebFactory(postgres, minio, Admin);
 
         using var cliente = _app.CreateBrowser();
@@ -317,5 +318,88 @@ public class EditorDeLegendasTests(PostgresFixture postgres, MinioFixture minio)
 
         using var storage = minio.CreateStorage();
         Assert.Contains("Bom dia a todos.", await storage.GetTextAsync(StorageBucket.Vod, legenda.StorageKey));
+    }
+
+    [Fact]
+    public async Task Com_whisper_disponivel_a_aba_oferece_a_deteccao_automatica()
+    {
+        var video = await VideoAsync();
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarComoAdminAsync(cliente);
+
+        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=captions");
+
+        Assert.Contains("data-transcricao=\"disponivel\"", html);
+        Assert.Contains("<option value=\"auto\" selected", html);
+        Assert.Contains("small-q5_1", html);
+    }
+
+    [Fact]
+    public async Task Sem_whisper_a_aba_so_oferece_envio_e_escrita()
+    {
+        await WhisperDeTeste.InformarAsync(postgres, disponivel: false);
+        var video = await VideoAsync();
+        await LegendaAsync(video.Id);
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarComoAdminAsync(cliente);
+
+        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=captions");
+
+        Assert.Contains("data-transcricao=\"indisponivel\"", html);
+        Assert.DoesNotContain("captions/transcribe", html);
+        Assert.Contains("captions/new", html);
+        Assert.Contains($"/admin/videos/{video.Id}/captions\"", html);
+
+        // E o pedido direto também é recusado, sem criar nada.
+        var resposta = await PedirTranscricaoAsync(cliente, video.Id, "auto");
+        Assert.Contains("erro=", resposta.Headers.Location!.OriginalString);
+
+        await using var db = postgres.CreateContext();
+        Assert.Equal(0, await db.ProcessingJobs.CountAsync(j => j.Kind == JobKind.Transcript));
+    }
+
+    [Fact]
+    public async Task Pedido_com_deteccao_automatica_mostra_a_legenda_provisoria()
+    {
+        var video = await VideoAsync();
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarComoAdminAsync(cliente);
+        await PedirTranscricaoAsync(cliente, video.Id, "auto");
+
+        var html = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=captions");
+
+        Assert.Contains("Detecting the spoken language", html);
+        var processando = Regex.Match(html, "<tr data-legenda=\"[^\"]+\" data-status=\"processing\">(.*?)</tr>", RegexOptions.Singleline).Value;
+        Assert.DoesNotContain("/edit", processando);
+    }
+
+    [Fact]
+    public async Task Nova_legenda_abre_o_editor_vazio()
+    {
+        await WhisperDeTeste.InformarAsync(postgres, disponivel: false);
+        var video = await VideoAsync();
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarComoAdminAsync(cliente);
+
+        var resposta = await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/videos/{video.Id}?tab=captions", $"/admin/videos/{video.Id}/captions/new",
+            new Dictionary<string, string> { ["idioma"] = "es", ["rotulo"] = "Español" });
+
+        var destino = resposta.Headers.Location!.OriginalString;
+        Assert.Matches($"/admin/videos/{video.Id}/captions/[0-9a-f-]+/edit$", destino);
+
+        var editor = await cliente.GetAsync(destino);
+        Assert.Equal(HttpStatusCode.OK, editor.StatusCode);
+
+        // O mesmo idioma de novo é recusado com o motivo.
+        var repetida = await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/videos/{video.Id}?tab=captions", $"/admin/videos/{video.Id}/captions/new",
+            new Dictionary<string, string> { ["idioma"] = "ES" });
+
+        Assert.Contains("erro=", repetida.Headers.Location!.OriginalString);
     }
 }

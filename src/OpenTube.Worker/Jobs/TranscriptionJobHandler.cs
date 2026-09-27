@@ -80,13 +80,33 @@ public class TranscriptionJobHandler(
             var documento = CaptionDocument.Parse(await File.ReadAllTextAsync(transcricao.VttPath, cancellationToken));
             var conteudo = documento.ToWebVtt();
 
-            await storage.PutTextAsync(StorageBucket.Vod, legenda.StorageKey, conteudo, MediaTypes.WebVtt, cancellationToken);
+            var destino = legenda;
 
-            legenda.CompleteTranscription(System.Text.Encoding.UTF8.GetByteCount(conteudo), clock.GetUtcNow());
+            if (legenda.IsLanguagePending)
+            {
+                destino = await DestinoDoIdiomaDetectadoAsync(legenda, video.Id, transcricao.Language, cancellationToken);
+                if (destino is null)
+                    return;
+            }
+
+            await storage.PutTextAsync(StorageBucket.Vod, destino.StorageKey, conteudo, MediaTypes.WebVtt, cancellationToken);
+
+            destino.CompleteTranscription(System.Text.Encoding.UTF8.GetByteCount(conteudo), clock.GetUtcNow());
             video.SetTranscript(documento.PlainText);
-            await db.SaveChangesAsync(cancellationToken);
 
-            logger.LogInformation("Legenda {Idioma} gerada para o vídeo {VideoId}", idioma, video.Id);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException e) when (e.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
+            {
+                // Alguém criou a legenda do idioma detectado enquanto esta transcrevia.
+                db.ChangeTracker.Clear();
+                await FalharAsync(legenda.Id, "A caption in the detected language was created meanwhile.");
+                return;
+            }
+
+            logger.LogInformation("Legenda {Idioma} gerada para o vídeo {VideoId}", destino.Language, video.Id);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -130,6 +150,47 @@ public class TranscriptionJobHandler(
         db.VideoAssets.Add(nova);
 
         return nova;
+    }
+
+    /// <summary>
+    /// Na detecção automática, a legenda provisória ("auto") vira a do idioma falado. Se esse
+    /// idioma já tem legenda gerada automaticamente, ela recebe o resultado e a provisória sai;
+    /// uma legenda enviada ou corrigida à mão nunca é sobrescrita, nem uma ainda em processamento.
+    /// </summary>
+    private async Task<VideoAsset?> DestinoDoIdiomaDetectadoAsync(
+        VideoAsset provisoria, Guid videoId, string detectado, CancellationToken cancellationToken)
+    {
+        var codigo = CaptionLanguage.Normalize(CaptionLanguage.IsAuto(detectado) ? opcoes.Value.Language : detectado);
+
+        var existente = await db.VideoAssets.FirstOrDefaultAsync(
+            a => a.VideoId == videoId && a.Kind == VideoAssetKind.Caption && a.Language == codigo && a.Id != provisoria.Id,
+            cancellationToken);
+
+        if (existente is null)
+        {
+            provisoria.ResolveLanguage(codigo, StorageKeys.Caption(videoId, codigo), CaptionLanguage.DisplayName(codigo));
+            return provisoria;
+        }
+
+        if (existente.IsProcessing || existente.Source is not CaptionSource.Automatic)
+        {
+            await FalharAsync(provisoria, existente.IsProcessing
+                ? "The detected language is already being transcribed."
+                : "The detected language already has a caption. Delete it or use Regenerate on it.");
+            return null;
+        }
+
+        db.VideoAssets.Remove(provisoria);
+
+        logger.LogInformation("Idioma detectado {Idioma}: a legenda automática existente recebe o resultado", codigo);
+        return existente;
+    }
+
+    private async Task FalharAsync(Guid legendaId, string motivo)
+    {
+        var legenda = await db.VideoAssets.FirstOrDefaultAsync(a => a.Id == legendaId, CancellationToken.None);
+        if (legenda is not null)
+            await FalharAsync(legenda, motivo);
     }
 
     /// <summary>Registra a falha mesmo com o desligamento já pedido: a marcação precisa ficar.</summary>

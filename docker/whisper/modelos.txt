@@ -1,0 +1,11 @@
+# Modelos oficiais do whisper.cpp (huggingface.co/ggerganov/whisper.cpp), com o SHA-256 publicado.
+# Um modelo fora desta lista é recusado: baixar sem conferir seria aceitar qualquer arquivo.
+# Todos são multilíngues: um só modelo reconhece e detecta os 99 idiomas do Whisper.
+#
+# nome                 sha256                                                            MB   memória-MB  uso
+base-q5_1            422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898   60    500  rápido, qualidade básica (CPU fraca)
+base                 60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe  148    600  rápido
+small-q5_1           ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb  190   1000  bom equilíbrio em CPU
+small                1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b  488   1300  melhor em CPU, mais lento
+medium-q5_0          19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f  539   1800  preciso, CPU forte
+large-v3-turbo-q5_0  394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2  574   2000  o mais preciso (GPU)

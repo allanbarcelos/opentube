@@ -10,3 +10,4 @@ storage/
 .env
 **/.env
 .artifacts/
+.whisper/

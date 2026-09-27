@@ -7,12 +7,23 @@ namespace OpenTube.Domain.Captions;
 public static partial class CaptionLanguage
 {
     /// <summary>
+    /// Pedido de transcrição sem idioma definido: o Whisper detecta. A legenda fica com este
+    /// código provisório até a transcrição dizer qual é o idioma.
+    /// </summary>
+    public const string Auto = "auto";
+
+    public static bool IsAuto(string? code) => string.Equals(code?.Trim(), Auto, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Forma guardada: minúsculas, que é também a do nome do arquivo. Recusa o que não parece um
     /// código, porque ele vira parte do caminho no storage e do atributo <c>srclang</c>.
     /// </summary>
     public static string Normalize(string? code)
     {
         var normalizado = (code ?? string.Empty).Trim().Replace('_', '-').ToLowerInvariant();
+
+        if (normalizado == Auto)
+            return Auto;
 
         return Codigo().IsMatch(normalizado)
             ? normalizado
@@ -23,11 +34,14 @@ public static partial class CaptionLanguage
     /// Código que a ferramenta de transcrição entende: só o idioma, sem a região. O Whisper
     /// reconhece "pt", não "pt-br".
     /// </summary>
-    public static string TranscriptionCode(string code) => Normalize(code).Split('-')[0];
+    public static string TranscriptionCode(string code) => IsAuto(code) ? Auto : Normalize(code).Split('-')[0];
 
     /// <summary>Nome do idioma na própria língua ("Português (Brasil)"), para o rótulo padrão.</summary>
     public static string DisplayName(string code)
     {
+        if (IsAuto(code))
+            return "Automatic detection";
+
         try
         {
             var nome = CultureInfo.GetCultureInfo(Normalize(code)).NativeName;

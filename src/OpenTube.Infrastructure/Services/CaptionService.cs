@@ -7,6 +7,7 @@ using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Storage;
+using OpenTube.Infrastructure.Transcription;
 
 namespace OpenTube.Infrastructure.Services;
 
@@ -32,6 +33,7 @@ public class CaptionService(
     OpenTubeDbContext db,
     IVideoStorage storage,
     IJobQueue fila,
+    TranscriptionAvailability disponibilidade,
     TimeProvider clock,
     ILogger<CaptionService> logger)
 {
@@ -98,7 +100,51 @@ public class CaptionService(
         var existente = await FindAsync(videoId, assetId, cancellationToken)
             ?? throw new InvalidOperationException("Caption not found.");
 
+        if (existente.IsLanguagePending)
+            throw new InvalidOperationException("Wait for the language to be detected.");
+
         return await GravarAsync(videoId, existente.Language!, null, legenda, CaptionSource.Edited, cancellationToken);
+    }
+
+    /// <summary>
+    /// Cria uma legenda vazia para ser escrita no editor: o caminho quando não há transcrição
+    /// automática, ou para um idioma que não é o falado no vídeo.
+    /// </summary>
+    public async Task<VideoAsset> CreateEmptyAsync(
+        Guid videoId, string language, string? label, CancellationToken cancellationToken = default)
+    {
+        var idioma = IdiomaEscolhido(language);
+
+        if (!await db.Videos.AnyAsync(v => v.Id == videoId, cancellationToken))
+            throw new InvalidOperationException("Video not found");
+
+        if (await db.VideoAssets.AnyAsync(
+                a => a.VideoId == videoId && a.Kind == VideoAssetKind.Caption && a.Language == idioma, cancellationToken))
+            throw new InvalidOperationException("This language already has a caption.");
+
+        var conteudo = CaptionDocument.FromCues([]).ToWebVtt();
+        var chave = StorageKeys.Caption(videoId, idioma);
+
+        await storage.PutTextAsync(StorageBucket.Vod, chave, conteudo, MediaTypes.WebVtt, cancellationToken);
+
+        var nova = VideoAsset.CaptionWithContent(
+            videoId, idioma, Rotulo(label, idioma), chave, CaptionSource.Edited,
+            System.Text.Encoding.UTF8.GetByteCount(conteudo), clock.GetUtcNow());
+
+        db.VideoAssets.Add(nova);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            throw new InvalidOperationException("This language already has a caption.");
+        }
+
+        logger.LogInformation("Legenda {Idioma} criada vazia no vídeo {VideoId}", idioma, videoId);
+
+        return nova;
     }
 
     /// <summary>
@@ -110,7 +156,12 @@ public class CaptionService(
     public async Task<Guid> RequestTranscriptionAsync(
         Guid videoId, string language, string? label = null, CancellationToken cancellationToken = default)
     {
+        // "auto" é aceito aqui: o Whisper detecta o idioma falado e a legenda o recebe ao terminar.
         var idioma = CaptionLanguage.Normalize(language);
+
+        // Sem Whisper respondendo, o pedido ficaria na fila sem ninguém para atendê-lo.
+        if (!(await disponibilidade.GetAsync(cancellationToken)).Available)
+            throw new InvalidOperationException("Automatic transcription is not available on this server.");
 
         var video = await db.Videos.AsNoTracking().FirstOrDefaultAsync(v => v.Id == videoId, cancellationToken)
             ?? throw new InvalidOperationException("Video not found");
@@ -216,7 +267,7 @@ public class CaptionService(
     private async Task<VideoAsset> GravarAsync(
         Guid videoId, string language, string? label, CaptionDocument legenda, CaptionSource origem, CancellationToken cancellationToken)
     {
-        var idioma = CaptionLanguage.Normalize(language);
+        var idioma = IdiomaEscolhido(language);
 
         var video = await db.Videos.FirstOrDefaultAsync(v => v.Id == videoId, cancellationToken)
             ?? throw new InvalidOperationException("Video not found");
@@ -256,6 +307,12 @@ public class CaptionService(
 
         return existente;
     }
+
+    /// <summary>Envio e edição precisam de um idioma de fato: "auto" só existe na transcrição.</summary>
+    private static string IdiomaEscolhido(string language) =>
+        CaptionLanguage.IsAuto(language)
+            ? throw new InvalidOperationException("Choose the caption language.")
+            : CaptionLanguage.Normalize(language);
 
     private static string Rotulo(string? label, string idioma) =>
         string.IsNullOrWhiteSpace(label) ? CaptionLanguage.DisplayName(idioma) : label.Trim();
