@@ -36,9 +36,12 @@
                 <div class="border rounded p-3 mb-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <span class="badge @SituacaoClasse(conversa)">@SituacaoTexto(conversa)</span>
+                        @* Conversas antigas guardavam o momento num campo à parte. *@
                         @if (conversa.TimestampSeconds is { } instante)
                         {
-                            <span class="small text-body-secondary">@T.Format("about {0}", Tempo(instante))</span>
+                            <span class="small text-body-secondary">
+                                <TextoComInstantes Texto="@T.Format("about {0}", Tempo(instante))" Duracao="Duracao" EnderecoDoVideo="@Destino" />
+                            </span>
                         }
                     </div>
 
@@ -51,7 +54,7 @@
                                     @mensagem.CreatedAt.ToLocalTime().ToString("g")
                                 </span>
                             </p>
-                            <p class="mb-0" style="white-space: pre-wrap">@mensagem.Body</p>
+                            <p class="mb-0" style="white-space: pre-wrap"><TextoComInstantes Texto="@mensagem.Body" Duracao="Duracao" EnderecoDoVideo="@Destino" /></p>
                         </div>
                     }
 
@@ -91,15 +94,9 @@
                               placeholder="@T["A question about the content, or a problem watching…"]"></textarea>
                 </div>
 
-                <div class="row g-2 align-items-end">
-                    <div class="col-sm-4">
-                        <label class="form-label small" for="instante">@T["Moment in the video"]</label>
-                        <input class="form-control form-control-sm" id="instante" name="instante"
-                               type="number" min="0" step="1" placeholder="@T["in seconds"]" />
-                    </div>
-                    <div class="col-sm-8">
-                        <button class="btn btn-primary" type="submit">@T["Send"]</button>
-                    </div>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <button class="btn btn-primary" type="submit">@T["Send"]</button>
+                    <span class="form-text m-0">@T["To point to a moment, write the time in the message, like 1:05:10: it becomes a link to that point of the video."]</span>
                 </div>
             </form>
 
@@ -117,9 +114,13 @@
     [Parameter, EditorRequired]
     public Guid VideoId { get; set; }
 
-    /// <summary>Endereço para onde os formulários voltam.</summary>
+    /// <summary>Endereço para onde os formulários voltam: a página do vídeo.</summary>
     [Parameter, EditorRequired]
     public string Destino { get; set; } = "/";
+
+    /// <summary>Duração do vídeo: só os tempos que cabem nele viram link.</summary>
+    [Parameter, EditorRequired]
+    public TimeSpan? Duracao { get; set; }
 
     [SupplyParameterFromQuery(Name = "conversa")]
     private string? ConversaBruta { get; set; }

@@ -192,6 +192,64 @@ window.openTubePlayer = (function () {
         }
     }
 
+    // O vídeo da página, se houver um montado.
+    function videoDaPagina() {
+        return document.querySelector('video[data-manifest][data-montado]');
+    }
+
+    // Leva o player a um instante e toca de lá, com o player à vista. Usado pelos tempos
+    // citados nas mensagens e pelo sumário do vídeo.
+    function irPara(segundos) {
+        const video = videoDaPagina();
+        if (!video || !isFinite(segundos)) {
+            return false;
+        }
+
+        const aplicar = function () {
+            video.currentTime = Math.max(0, segundos);
+            const tocando = video.play();
+            if (tocando && tocando.catch) {
+                tocando.catch(function () { /* o navegador pode exigir um clique para tocar */ });
+            }
+        };
+
+        if (video.readyState >= 1) {
+            aplicar();
+        } else {
+            video.addEventListener('loadedmetadata', aplicar, { once: true });
+        }
+
+        const caixa = video.getBoundingClientRect();
+        if (caixa.top < 0 || caixa.bottom > window.innerHeight) {
+            video.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return true;
+    }
+
+    // "?t=65" no endereço abre o vídeo naquele instante, como no YouTube.
+    function aplicarInicioDoEndereco(video) {
+        const t = parseInt(new URLSearchParams(window.location.search).get('t'), 10);
+        if (!isNaN(t) && t > 0) {
+            video.addEventListener('loadedmetadata', function () {
+                video.currentTime = t;
+            }, { once: true });
+        }
+    }
+
+    // Tempo citado numa mensagem: na página do vídeo, em vez de navegar, leva o player ao
+    // instante. Na captura, antes da navegação aprimorada do Blazor tratar o clique.
+    document.addEventListener('click', function (evento) {
+        const link = evento.target.closest && evento.target.closest('a[data-instante]');
+        if (!link || link.target === '_blank' || evento.ctrlKey || evento.metaKey || evento.shiftKey) {
+            return;
+        }
+
+        if (irPara(parseInt(link.dataset.instante, 10))) {
+            evento.preventDefault();
+            evento.stopImmediatePropagation();
+        }
+    }, true);
+
     // Monta os players descritos na página e encerra os que saíram dela. Roda na carga
     // inicial e a cada navegação aprimorada; montar duas vezes o mesmo vídeo não faz nada.
     function montar() {
@@ -210,6 +268,7 @@ window.openTubePlayer = (function () {
 
             video.dataset.montado = manifest;
             proteger(video);
+            aplicarInicioDoEndereco(video);
 
             if (video.canPlayType(TIPO_HLS)) {
                 iniciar(video.id, manifest, video.dataset.videoId);
@@ -236,5 +295,5 @@ window.openTubePlayer = (function () {
         window.Blazor.addEventListener('enhancedload', montar);
     }
 
-    return { iniciar: iniciar, encerrar: encerrar, montar: montar };
+    return { iniciar: iniciar, encerrar: encerrar, montar: montar, irPara: irPara };
 })();

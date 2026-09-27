@@ -721,9 +721,12 @@ sequenceDiagram
 
 ## Suporte por vídeo
 
-Os comentários funcionam como atendimento: cada conversa pertence a um par (vídeo, usuário), pode
-estar ancorada a um instante do vídeo e é visível apenas ao autor e aos administradores. Tem status
-(`aberto`, `respondido`, `fechado`) e notificação por email nos dois sentidos.
+Os comentários funcionam como atendimento: cada conversa pertence a um par (vídeo, usuário) e é
+visível apenas ao autor e aos administradores. Tem status (`aberto`, `respondido`, `fechado`) e
+notificação por email nos dois sentidos. Um tempo escrito na mensagem — `1:05:10`, `5:10` — vira
+link, como no YouTube: na página do vídeo leva o player àquele instante sem recarregar, e na
+administração abre o vídeo naquele ponto (`?t=` no endereço). Só conta o tempo que cabe no vídeo:
+"às 14:30" num vídeo de 10 minutos continua texto.
 
 ---
 

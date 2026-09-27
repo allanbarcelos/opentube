@@ -104,7 +104,8 @@ public class SuporteTests(PostgresFixture postgres, MinioFixture minio) : IAsync
 
         Assert.Contains("Não consigo ouvir o áudio", html);
         Assert.Contains("Waiting for a reply", html);
-        Assert.Contains("about 1:23", html);
+        Assert.Contains("about ", html);
+        Assert.Contains("data-instante=\"83\">1:23</a>", html);
     }
 
     [Fact]
@@ -292,5 +293,63 @@ public class SuporteTests(PostgresFixture postgres, MinioFixture minio) : IAsync
         var resposta = await admin.GetAsync($"/admin/support/{Guid.CreateVersion7()}");
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task O_formulario_nao_pede_mais_o_momento_do_video()
+    {
+        var video = await CriarVideoAsync();
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Pessoa);
+
+        var html = await cliente.GetStringAsync($"/watch/{video.Slug}");
+
+        Assert.DoesNotContain("name=\"instante\"", html);
+        Assert.Contains("like 1:05:10", html);
+    }
+
+    [Fact]
+    public async Task Tempo_escrito_na_mensagem_vira_link_para_o_instante()
+    {
+        // O vídeo de teste tem 2:05; "10:00" passa do fim e continua texto.
+        var video = await CriarVideoAsync();
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Pessoa);
+        await AbrirConversaAsync(cliente, video, "O áudio some em 1:05 e volta em 1:50, mas a reunião foi às 10:00");
+
+        var html = await cliente.GetStringAsync($"/watch/{video.Slug}");
+
+        Assert.Contains($"href=\"/watch/{video.Slug}?t=65\" data-instante=\"65\"", html);
+        Assert.Contains("data-instante=\"110\"", html);
+        Assert.DoesNotContain("data-instante=\"600\"", html);
+        Assert.Contains("foi às 10:00", html);
+
+        // Na administração, o mesmo tempo abre o vídeo naquele ponto, em outra aba.
+        using var admin = _app.CreateBrowser();
+        await EntrarAsync(admin, Admin);
+
+        Guid conversaId;
+        await using (var db = postgres.CreateContext())
+            conversaId = (await db.SupportThreads.SingleAsync()).Id;
+
+        var conversa = await admin.GetStringAsync($"/admin/support/{conversaId}");
+        Assert.Matches($"href=\"/watch/{video.Slug}\\?t=65\" data-instante=\"65\"\\s+target=\"_blank\"", conversa);
+    }
+
+    [Fact]
+    public async Task Conversa_antiga_com_momento_continua_mostrando_o_instante()
+    {
+        var video = await CriarVideoAsync();
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Pessoa);
+        await AbrirConversaAsync(cliente, video, "Pergunta antiga", "83");
+
+        var html = await cliente.GetStringAsync($"/watch/{video.Slug}");
+
+        Assert.Contains("about ", html);
+        Assert.Contains("data-instante=\"83\"", html);
     }
 }

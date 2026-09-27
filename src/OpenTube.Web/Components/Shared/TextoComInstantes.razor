@@ -1,0 +1,40 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@using OpenTube.Domain.Media
+
+@* Texto de uma mensagem com os tempos citados ("1:05:10", "5:10") virando links para o
+   instante do vídeo, como no YouTube. Na página do vídeo, o player.js intercepta o clique e
+   leva o player ao instante sem recarregar; fora dela, o link abre o vídeo naquele ponto. *@
+@foreach (var parte in VideoTimestamps.Split(Texto, Duracao))
+{
+    if (parte.Seconds is { } segundos)
+    {
+        <a class="instante-video" href="@Link(segundos)" data-instante="@segundos"
+           target="@(NovaAba ? "_blank" : null)" rel="@(NovaAba ? "noopener" : null)">@parte.Text</a>
+    }
+    else
+    {
+        @parte.Text
+    }
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public string? Texto { get; set; }
+
+    /// <summary>Duração do vídeo: só vira link o tempo que cabe nele.</summary>
+    [Parameter, EditorRequired]
+    public TimeSpan? Duracao { get; set; }
+
+    /// <summary>Endereço do vídeo, sem o instante; o link acrescenta <c>?t=</c>.</summary>
+    [Parameter, EditorRequired]
+    public string EnderecoDoVideo { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool NovaAba { get; set; }
+
+    private string Link(int segundos) => $"{EnderecoDoVideo}?t={segundos}";
+}

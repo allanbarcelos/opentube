@@ -67,7 +67,7 @@
                                         @mensagem.CreatedAt.ToLocalTime().ToString("g")
                                     </span>
                                 </p>
-                                <p class="mb-0" style="white-space: pre-wrap">@mensagem.Body</p>
+                                <p class="mb-0" style="white-space: pre-wrap"><TextoComInstantes Texto="@mensagem.Body" Duracao="DuracaoDoVideo" EnderecoDoVideo="@EnderecoDoVideo" NovaAba="true" /></p>
                             </div>
                         }
 
@@ -105,7 +105,8 @@
                         @if (Conversa.TimestampSeconds is { } instante)
                         {
                             <li class="list-group-item d-flex justify-content-between">
-                                <span>@T["Moment mentioned"]</span><span>@Tempo(instante)</span>
+                                <span>@T["Moment mentioned"]</span>
+                                <span><TextoComInstantes Texto="@Tempo(instante)" Duracao="DuracaoDoVideo" EnderecoDoVideo="@EnderecoDoVideo" NovaAba="true" /></span>
                             </li>
                         }
                         <li class="list-group-item d-flex justify-content-between">
@@ -164,6 +165,11 @@
 
     private string VideoTitulo = string.Empty;
 
+    /// <summary>Página do vídeo: os tempos citados nas mensagens abrem o vídeo naquele ponto.</summary>
+    private string EnderecoDoVideo = string.Empty;
+
+    private TimeSpan? DuracaoDoVideo;
+
     private string Texto => Conversa?.Status switch
     {
         SupportStatus.Answered => T["Answered"],
@@ -195,10 +201,14 @@
             .Select(u => u.Email)
             .FirstOrDefaultAsync(Http.RequestAborted) ?? T["unknown"];
 
-        VideoTitulo = await Db.Videos
+        var video = await Db.Videos
             .Where(v => v.Id == Conversa.VideoId)
-            .Select(v => v.Title)
-            .FirstOrDefaultAsync(Http.RequestAborted) ?? T["Removed video"];
+            .Select(v => new { v.Title, v.Slug, v.DurationSeconds })
+            .FirstOrDefaultAsync(Http.RequestAborted);
+
+        VideoTitulo = video?.Title ?? T["Removed video"];
+        EnderecoDoVideo = video is null ? string.Empty : $"/watch/{video.Slug}";
+        DuracaoDoVideo = video is null ? null : TimeSpan.FromSeconds(video.DurationSeconds);
 
         // Abrir a conversa já conta como leitura: o distintivo de pendência some da fila.
         await Servico.MarkReadAsync(ThreadId, espectador, Http.RequestAborted);

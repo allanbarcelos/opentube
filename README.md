@@ -724,9 +724,12 @@ sequenceDiagram
 
 ## Per-video support
 
-Comments work as a help desk: each conversation belongs to a (video, user) pair, can be anchored to
-a moment in the video, and is visible only to the author and to administrators. It has a status
-(`open`, `answered`, `closed`) and email notifications in both directions.
+Comments work as a help desk: each conversation belongs to a (video, user) pair and is visible only
+to the author and to administrators. It has a status (`open`, `answered`, `closed`) and email
+notifications in both directions. A time written in a message — `1:05:10`, `5:10` — becomes a link,
+as on YouTube: on the video page it takes the player to that moment without reloading, and in the
+administration it opens the video at that point (`?t=` in the address). Only times within the
+video's length count: "at 14:30" in a 10-minute video stays text.
 
 ---
 

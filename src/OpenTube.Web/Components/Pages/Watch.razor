@@ -84,7 +84,8 @@
                     </div>
                 }
 
-                <ConversasDoVideo VideoId="Video.Id" Destino="@($"/watch/{Video.Slug}")" />
+                <ConversasDoVideo VideoId="Video.Id" Destino="@($"/watch/{Video.Slug}")"
+                                  Duracao="@(Video.DurationSeconds is { } d ? TimeSpan.FromSeconds(d) : null)" />
             </div>
 
             <div class="col-lg-4">
