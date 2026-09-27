@@ -558,3 +558,33 @@
 .sumario-item.active .text-body-secondary {
     color: inherit !important;
 }
+
+/* Avaliação de utilidade: estrelas até a escolhida; ao passar o mouse, até a apontada. */
+.estrelas .estrela {
+    padding: 0 0.15rem;
+    border: 0;
+    background: none;
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--bs-secondary-bg);
+    cursor: pointer;
+    transition: color 0.1s ease-in-out;
+}
+
+.estrelas .estrela.marcada {
+    color: var(--bs-warning);
+}
+
+.estrelas:hover .estrela {
+    color: var(--bs-warning);
+}
+
+.estrelas .estrela:hover ~ .estrela {
+    color: var(--bs-secondary-bg);
+}
+
+.estrelas .estrela:focus-visible {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: 2px;
+    border-radius: 0.25rem;
+}

@@ -409,6 +409,7 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | Analytics | Quem assistiu, quando, de onde, em qual dispositivo e quanto de cada vídeo |
 | Suporte | Comentários privados por vídeo, visíveis apenas ao autor e ao administrador |
 | Coleções | Vídeos agrupados em coleções; o acesso pode ser dado por vídeo, por coleção ou ao acervo inteiro |
+| Utilidade | Quem assiste avalia de 1 a 5 o quanto o vídeo foi útil; só a administração vê as notas |
 | Capítulos | Sumário montado nas configurações do vídeo, mostrado ao lado dele e numa barra de capítulos sob o player |
 | Legendas | Aba por idioma: automáticas com o Whisper (idioma detectado sozinho), envio de arquivo e editor no próprio sistema |
 | Proteção | Marca d'água móvel com o email de quem assiste, marca d'água do acervo em PNG, sem download nem transmissão, limite de reproduções simultâneas |
@@ -654,6 +655,11 @@ que permite responder "ele pulou esse trecho?" e desenhar a curva de retenção 
 
 Um job periódico funde os intervalos por sessão (união de faixas, sem contar re-exibição duas vezes)
 e agrega em tabelas diárias, mantendo o painel instantâneo mesmo com milhões de eventos.
+
+**Utilidade.** Quem entrou com email responde "Este vídeo foi útil?" de 1 a 5, embaixo do vídeo;
+a nota é enviada sem recarregar a página, então o vídeo continua tocando, e pode ser trocada. Cada
+pessoa vê só a própria nota; a média, o total e a distribuição aparecem apenas para a
+administração, na página do vídeo.
 
 **Painéis:** por vídeo (retenção, conclusão, dispositivos, erros), por usuário (linha do tempo
 completa), por domínio e por convite — este último respondendo "convidei 12, 7 abriram, 5

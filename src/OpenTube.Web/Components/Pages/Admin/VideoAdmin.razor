@@ -10,6 +10,7 @@
 @inject AdminVideoService Admin
 @inject OpenTube.Infrastructure.Services.CaptionService Legendas
 @inject OpenTube.Infrastructure.Services.VideoChapterService Sumarios
+@inject OpenTube.Infrastructure.Services.VideoRatingService Avaliacoes
 @inject ShareLinkFlash Links
 @inject NavigationManager Navegacao
 
@@ -285,6 +286,40 @@
                     </div>
                 </div>
 
+                @* Avaliação de utilidade: só a administração vê o conjunto das notas. *@
+                <div class="card mb-3" id="avaliacoes" data-avaliacoes>
+                    <div class="card-header">@T["Usefulness"]</div>
+                    <div class="card-body">
+                        @if (Notas.Count == 0)
+                        {
+                            <p class="text-body-secondary mb-0">@T["No ratings yet."]</p>
+                        }
+                        else
+                        {
+                            <div class="d-flex align-items-baseline gap-2 mb-3">
+                                <span class="h3 mb-0" data-media>@Notas.Average!.Value.ToString("0.0")</span>
+                                <span class="text-warning">★</span>
+                                <span class="small text-body-secondary">@T.Format("{0} rating(s)", Notas.Count)</span>
+                            </div>
+                            @for (var nota = 5; nota >= 1; nota--)
+                            {
+                                var quantas = Notas.Distribution[nota - 1];
+                                var parte = Notas.Count == 0 ? 0 : quantas * 100 / Notas.Count;
+                                <div class="d-flex align-items-center gap-2 small mb-1" data-nota="@nota">
+                                    <span class="text-nowrap" style="width: 2.5rem">@nota ★</span>
+                                    <div class="progress flex-grow-1" role="progressbar" style="height: 0.5rem"
+                                         aria-valuenow="@parte" aria-valuemin="0" aria-valuemax="100"
+                                         aria-label="@T.Format("{0} of 5", nota)">
+                                        <div class="progress-bar bg-warning" style="width: @parte%"></div>
+                                    </div>
+                                    <span class="text-body-secondary text-end" style="width: 2rem">@quantas</span>
+                                </div>
+                            }
+                        }
+                        <p class="form-text mb-0 mt-2">@T["How useful the video was, from 1 to 5, according to who watched it. Viewers only see their own rating."]</p>
+                    </div>
+                </div>
+
                 @if (!Video.IsDeleted)
                 {
                     <div class="card border-danger">
@@ -379,6 +414,8 @@
 
     private int QuantasLegendas;
 
+    private OpenTube.Infrastructure.Services.RatingSummary Notas = OpenTube.Infrastructure.Services.RatingSummary.Empty;
+
     private string EstadoTexto => Video?.Status switch
     {
         VideoStatus.Draft => T["Waiting for the file"],
@@ -444,6 +481,8 @@
         }
 
         QuantasLegendas = (await Legendas.ListAsync(VideoId, Http.RequestAborted)).Count;
+
+        Notas = await Avaliacoes.SummaryAsync(VideoId, Http.RequestAborted);
 
         var capitulos = await Sumarios.ListAsync(VideoId, Http.RequestAborted);
         LinhasDoSumario = capitulos.Count > 0

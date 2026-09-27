@@ -1,0 +1,66 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@using OpenTube.Domain.Entities
+
+@* "Este vídeo foi útil?" de 1 a 5. Quem assiste vê só a própria nota; o conjunto, só a
+   administração. O avaliacao.js envia sem recarregar (o vídeo não para); sem script, o
+   formulário comum volta para a página. A página do vídeo busca a nota e a passa aqui: dois
+   componentes irmãos consultando o banco ao mesmo tempo disputariam o mesmo contexto. *@
+@if (Autenticado)
+{
+    <div class="card mt-4" id="avaliacao" data-avaliacao
+         data-texto-minha="@T["Your rating: {0} of 5. You can change it."]"
+         data-texto-erro="@T["Could not save the rating. Try again."]">
+        <div class="card-body d-flex flex-wrap align-items-center gap-3">
+            <span class="fw-semibold">@T["Was this video useful?"]</span>
+
+            <form method="post" action="/videos/@VideoId/rating" class="estrelas d-flex" data-avaliacao-form
+                  role="group" aria-label="@T["Rating from 1 to 5"]">
+                <AntiforgeryToken />
+                <input type="hidden" name="destino" value="@Destino" />
+                @for (var nota = VideoRating.MinScore; nota <= VideoRating.MaxScore; nota++)
+                {
+                    <button type="submit" name="nota" value="@nota"
+                            class="estrela @(Minha >= nota ? "marcada" : null)"
+                            aria-pressed="@(Minha == nota ? "true" : "false")"
+                            title="@T.Format("{0} of 5", nota)" aria-label="@T.Format("{0} of 5", nota)">★</button>
+                }
+            </form>
+
+            <span class="small text-body-secondary" data-avaliacao-situacao role="status">
+                @if (!string.IsNullOrWhiteSpace(ErroDaAvaliacao))
+                {
+                    <span class="text-danger">@ErroDaAvaliacao</span>
+                }
+                else if (Minha is { } nota)
+                {
+                    @T.Format("Your rating: {0} of 5. You can change it.", nota)
+                }
+            </span>
+        </div>
+        <div class="card-footer small text-body-secondary">@T["Only the administration sees the ratings."]</div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid VideoId { get; set; }
+
+    /// <summary>Página para onde o formulário volta, quando enviado sem script.</summary>
+    [Parameter, EditorRequired]
+    public string Destino { get; set; } = "/";
+
+    /// <summary>Só quem entrou com email avalia: é o que dá uma nota por pessoa.</summary>
+    [Parameter, EditorRequired]
+    public bool Autenticado { get; set; }
+
+    /// <summary>A nota que a pessoa já deu, se deu.</summary>
+    [Parameter]
+    public int? Minha { get; set; }
+
+    [SupplyParameterFromQuery(Name = "erro-avaliacao")]
+    private string? ErroDaAvaliacao { get; set; }
+}

@@ -95,12 +95,5 @@ public static class SupportEndpoints
     /// aceitar um endereço completo permitiria usar o formulário para redirecionar alguém
     /// para fora do site.
     /// </summary>
-    private static string Voltar(string? destino, string parametro)
-    {
-        var caminho = string.IsNullOrWhiteSpace(destino) || !destino.StartsWith('/') || destino.StartsWith("//")
-            ? "/"
-            : destino;
-
-        return caminho + (caminho.Contains('?') ? "&" : "?") + parametro;
-    }
+    private static string Voltar(string? destino, string parametro) => Retorno.Para(destino, parametro);
 }

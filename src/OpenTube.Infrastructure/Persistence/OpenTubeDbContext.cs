@@ -31,6 +31,7 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<PlayerWatermark> PlayerWatermarks => Set<PlayerWatermark>();
     public DbSet<TranscriptionWorker> TranscriptionWorkers => Set<TranscriptionWorker>();
     public DbSet<VideoChapter> VideoChapters => Set<VideoChapter>();
+    public DbSet<VideoRating> VideoRatings => Set<VideoRating>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

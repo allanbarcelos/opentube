@@ -409,6 +409,7 @@ testable without a database or network; the rest uses ephemeral containers.
 | Analytics | Who watched, when, from where, on which device, and how much of each video |
 | Support | Private comments per video, visible only to the author and the administrator |
 | Collections | Videos grouped into collections; access can be granted per video, collection, or the whole library |
+| Usefulness | Viewers rate from 1 to 5 how useful a video was; only the administration sees the ratings |
 | Chapters | Summary built in the video settings, shown next to the video and as a chapter bar under the player |
 | Captions | Per-language tab: automatic with Whisper (language detected on its own), upload, and an in-app editor |
 | Protection | Moving watermark with the viewer's email, library PNG watermark, no download or casting, limit on simultaneous playbacks |
@@ -656,6 +657,11 @@ second by second.
 A periodic job merges the intervals per session (a union of ranges, so rewatching is not counted
 twice) and aggregates them into daily tables, keeping the dashboard instant even with millions of
 events.
+
+**Usefulness.** Signed-in viewers answer "Was this video useful?" from 1 to 5 under the video; the
+rating is sent without reloading the page, so the video keeps playing, and it can be changed. Each
+viewer sees only their own rating; the average, the count, and the distribution appear only to the
+administration, on the video's page.
 
 **Dashboards:** per video (retention, completion, devices, errors), per user (full timeline), per
 domain, and per invitation — the last one answering "I invited 12, 7 opened, 5 watched, 2

@@ -12,6 +12,7 @@
 @inject OpenTube.Infrastructure.Branding.WatermarkService Marcas
 @inject OpenTube.Infrastructure.Services.CaptionService Legendas
 @inject OpenTube.Infrastructure.Services.VideoChapterService Sumarios
+@inject OpenTube.Infrastructure.Services.VideoRatingService Avaliacoes
 @inject Microsoft.Extensions.Options.IOptions<OpenTube.Infrastructure.Options.SecurityOptions> Seguranca
 @inject NavigationManager Navegacao
 
@@ -106,6 +107,9 @@
                     </div>
                 }
 
+                <AvaliacaoDoVideo VideoId="Video.Id" Destino="@($"/watch/{Video.Slug}")"
+                                  Autenticado="Espectador.IsAuthenticated" Minha="MinhaNota" />
+
                 <ConversasDoVideo VideoId="Video.Id" Destino="@($"/watch/{Video.Slug}")"
                                   Duracao="@(Video.DurationSeconds is { } d ? TimeSpan.FromSeconds(d) : null)" />
             </div>
@@ -174,6 +178,8 @@
 
     private IReadOnlyList<Chapter> Capitulos = [];
 
+    private int? MinhaNota;
+
     /// <summary>Pedaços da barra de capítulos; um trecho antes do primeiro capítulo fica sem título.</summary>
     private readonly List<(int Inicio, int Fim, int Duracao, string Titulo)> Segmentos = [];
 
@@ -203,6 +209,7 @@
         {
             ListaDeLegendas = await Legendas.ListPlayableAsync(Video.Id, Http.RequestAborted);
             Capitulos = await Sumarios.ListAsync(Video.Id, Http.RequestAborted);
+            MinhaNota = await Avaliacoes.GetMineAsync(Video.Id, Espectador, Http.RequestAborted);
             MontarSegmentos();
             Logo = await Marcas.GetInfoAsync(Http.RequestAborted);
         }

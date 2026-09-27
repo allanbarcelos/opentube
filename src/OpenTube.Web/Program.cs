@@ -125,6 +125,7 @@ app.MapAnalyticsEndpoints();
 app.MapExportEndpoints();
 app.MapSupportEndpoints();
 app.MapCaptionEndpoints();
+app.MapRatingEndpoints();
 app.MapSegmentAuthorization();
 app.MapWatermarkEndpoints();
 app.MapHealthChecks("/health");
