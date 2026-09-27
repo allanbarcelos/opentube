@@ -180,6 +180,47 @@ public static class AdminEndpoints
 
     private static void MapGerenciamento(IEndpointRouteBuilder rotas)
     {
+        // Fila de processamento: cancelar o que ainda não começou e tirar da lista o que falhou.
+        var fila = rotas.MapGroup("/admin/queue/{jobId:guid}").RequireAuthorization(Policies.Administrator);
+
+        fila.MapPost("/cancel", async (
+            Guid jobId, ProcessingQueueService trabalhos, HttpContext contexto, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var videoId = await trabalhos.CancelAsync(jobId, cancellationToken);
+
+                await contexto.RegistrarAsync(
+                    AuditActions.TrabalhoCancelado, AuditEntities.Video, videoId,
+                    LocalText.Get("Processing job cancelled"), cancellationToken);
+
+                return Results.Redirect("/admin?view=queued&cancelado=1");
+            }
+            catch (InvalidOperationException e)
+            {
+                return Results.Redirect($"/admin?view=queued&erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
+            }
+        });
+
+        fila.MapPost("/dismiss", async (
+            Guid jobId, ProcessingQueueService trabalhos, HttpContext contexto, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var videoId = await trabalhos.DismissAsync(jobId, cancellationToken);
+
+                await contexto.RegistrarAsync(
+                    AuditActions.TrabalhoDescartado, AuditEntities.Video, videoId,
+                    LocalText.Get("Failed job removed from the list"), cancellationToken);
+
+                return Results.Redirect("/admin?view=failed&descartado=1");
+            }
+            catch (InvalidOperationException e)
+            {
+                return Results.Redirect($"/admin?view=failed&erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
+            }
+        });
+
         var grupo = rotas.MapGroup("/admin/videos/{videoId:guid}")
             .RequireAuthorization(Policies.Administrator);
 

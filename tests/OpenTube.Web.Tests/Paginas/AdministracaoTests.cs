@@ -451,6 +451,95 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         Assert.Empty(await db.Collections.ToListAsync());
     }
 
+    [Fact]
+    public async Task Os_indicadores_do_painel_sao_links_e_o_acervo_e_o_padrao()
+    {
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Admin);
+
+        var html = await cliente.GetStringAsync("/admin");
+
+        Assert.Contains("href=\"/admin?view=queued\"", html);
+        Assert.Contains("href=\"/admin?view=processing\"", html);
+        Assert.Contains("href=\"/admin?view=failed\"", html);
+        Assert.Contains("href=\"/admin/support\"", html);
+        Assert.Matches("data-indicador=\"library\"\\s+aria-current=\"page\"", html);
+        Assert.Contains("role=\"search\"", html);
+    }
+
+    [Fact]
+    public async Task A_fila_mostra_o_que_esta_esperando_e_permite_cancelar()
+    {
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Admin);
+        cliente.DefaultRequestHeaders.Add("RequestVerificationToken",
+            await FormularioHelpers.TokenAntifalsificacaoAsync(cliente, "/admin/upload"));
+
+        var videoId = await EnviarPelaApiAsync(cliente, "Integração da equipe", "a.mp4", null);
+
+        var html = await cliente.GetStringAsync("/admin?view=queued");
+        Assert.Matches("data-indicador=\"queued\"\\s+aria-current=\"page\"", html);
+        Assert.Contains("data-fila=\"queued\"", html);
+        Assert.Contains("Video processing", html);
+        Assert.Contains("Integração da equipe", html);
+
+        await using var db = postgres.CreateContext();
+        var trabalho = await db.ProcessingJobs.SingleAsync(j => j.Kind == JobKind.Transcode);
+        Assert.Contains($"action=\"/admin/queue/{trabalho.Id}/cancel\"", html);
+
+        var resposta = await FormularioHelpers.EnviarFormularioAsync(
+            cliente, "/admin?view=queued", $"/admin/queue/{trabalho.Id}/cancel", new Dictionary<string, string>());
+        Assert.Contains("cancelado=1", resposta.Headers.Location!.OriginalString);
+
+        await using var leitura = postgres.CreateContext();
+        Assert.Equal(JobStatus.Cancelled, (await leitura.ProcessingJobs.SingleAsync(j => j.Id == trabalho.Id)).Status);
+        Assert.Equal(VideoStatus.Failed, (await leitura.Videos.SingleAsync(v => v.Id == videoId)).Status);
+        Assert.True(await leitura.AuditEntries.AnyAsync(a => a.Action == "fila.cancelado" && a.EntityId == videoId));
+
+        // Cancelar de novo explica por que não dá, em vez de fingir que deu.
+        var repetido = await FormularioHelpers.EnviarFormularioAsync(
+            cliente, "/admin?view=queued", $"/admin/queue/{trabalho.Id}/cancel", new Dictionary<string, string>());
+        Assert.Contains("erro=", repetido.Headers.Location!.OriginalString);
+
+        Assert.Contains("Nothing here.", await cliente.GetStringAsync("/admin?view=queued"));
+    }
+
+    [Fact]
+    public async Task Visao_desconhecida_cai_no_acervo()
+    {
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Admin);
+
+        var html = await cliente.GetStringAsync("/admin?view=qualquer-coisa");
+
+        Assert.Matches("data-indicador=\"library\"\\s+aria-current=\"page\"", html);
+        Assert.DoesNotContain("data-fila=", html);
+    }
+
+    [Fact]
+    public async Task Convidado_nao_cancela_trabalho_da_fila()
+    {
+        await CriarConvidadoAsync();
+        Guid trabalhoId;
+        await using (var db = postgres.CreateContext())
+        {
+            var job = OpenTube.Domain.Entities.ProcessingJob.Create(JobKind.Transcode, DateTimeOffset.UtcNow, Guid.CreateVersion7());
+            db.ProcessingJobs.Add(job);
+            await db.SaveChangesAsync();
+            trabalhoId = job.Id;
+        }
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Convidado);
+
+        var resposta = await cliente.PostAsync($"/admin/queue/{trabalhoId}/cancel", new FormUrlEncodedContent([]));
+
+        Assert.DoesNotContain("cancelado=1", resposta.Headers.Location?.OriginalString ?? string.Empty);
+
+        await using var leitura = postgres.CreateContext();
+        Assert.Equal(JobStatus.Pending, (await leitura.ProcessingJobs.SingleAsync(j => j.Id == trabalhoId)).Status);
+    }
+
     private sealed record ColecaoResposta(Guid ColecaoId, string Nome, string Destino);
 
     private sealed record ParteResposta(int Numero, string Url);

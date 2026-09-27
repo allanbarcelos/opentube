@@ -29,6 +29,8 @@ public static class AuditActions
     public const string MarcaDefinida = "marca.definida";
     public const string MarcaReposicionada = "marca.reposicionada";
     public const string MarcaRemovida = "marca.removida";
+    public const string TrabalhoCancelado = "fila.cancelado";
+    public const string TrabalhoDescartado = "fila.descartado";
 }
 
 /// <summary>Tipos de entidade sobre os quais uma ação recai.</summary>

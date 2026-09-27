@@ -11,6 +11,7 @@
 @inject AdminVideoService Admin
 @inject CurrentViewer Espectadores
 @inject OpenTube.Infrastructure.Support.SupportService Suporte
+@inject ProcessingQueueService Fila
 
 <PageTitle>@T["Administration — OpenTube"]</PageTitle>
 
@@ -40,29 +41,138 @@
     {
         <div class="alert alert-success" role="status">@T["Video deleted."]</div>
     }
+    @if (Cancelado)
+    {
+        <div class="alert alert-success" role="status">@T["Job cancelled."]</div>
+    }
+    @if (Descartado)
+    {
+        <div class="alert alert-success" role="status">@T["Job removed from the list."]</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(Erro))
+    {
+        <div class="alert alert-danger" role="alert">@Erro</div>
+    }
 
+    @* Cada indicador leva à lista do que ele conta; o selecionado fica destacado. *@
     <div class="row g-3 mb-4">
         @foreach (var indicador in Indicadores)
         {
-            <div class="col-6 col-lg-3">
-                <div class="card h-100">
+            var ativo = indicador.Visao is not null && indicador.Visao == Visao;
+            <div class="col-6 col-lg">
+                <a class="card h-100 text-decoration-none card-indicador @(ativo ? "border-primary border-2" : "")"
+                   href="@indicador.Destino" data-indicador="@(indicador.Visao ?? "support")"
+                   aria-current="@(ativo ? "page" : null)">
                     <div class="card-body">
                         <p class="text-body-secondary small mb-1">@indicador.Rotulo</p>
-                        <p class="h4 mb-0">@indicador.Valor</p>
+                        <p class="h4 mb-0 @indicador.Cor">@indicador.Valor</p>
                     </div>
-                </div>
+                </a>
             </div>
         }
     </div>
 
+    @if (Visao != VisaoAcervo)
+    {
+        <div class="card" data-fila="@Visao">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <span>@TituloDaFila</span>
+                <span class="small text-body-secondary">@T["Updates when the page is reloaded."]</span>
+            </div>
+
+            @if (Trabalhos.Count == 0)
+            {
+                <div class="card-body text-center text-body-secondary py-5">@T["Nothing here."]</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr class="small text-body-secondary">
+                                <th scope="col">@T["Job"]</th>
+                                <th scope="col">@T["Video"]</th>
+                                <th scope="col">@T["When"]</th>
+                                <th scope="col">@T["Attempts"]</th>
+                                <th scope="col">@T["Details"]</th>
+                                <th scope="col" class="text-end"><span class="visually-hidden">@T["Actions"]</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var trabalho in Trabalhos)
+                            {
+                                <tr data-trabalho="@trabalho.Id">
+                                    <td>
+                                        <span class="fw-semibold">@NomeDoTrabalho(trabalho)</span>
+                                        @if (!ProcessingQueueService.IsCancellable(trabalho.Kind))
+                                        {
+                                            <span class="d-block small text-body-secondary">@T["Automatic maintenance"]</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (trabalho.VideoId is { } videoId)
+                                        {
+                                            <a href="/admin/videos/@videoId" class="text-decoration-none">@trabalho.VideoTitle</a>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-body-secondary">—</span>
+                                        }
+                                    </td>
+                                    <td class="small">@Quando(trabalho)</td>
+                                    <td class="small">@trabalho.Attempts / @OpenTube.Domain.Entities.ProcessingJob.MaxAttempts</td>
+                                    <td class="small">
+                                        @if (trabalho.Status is JobStatus.Running && trabalho.LockedBy is not null)
+                                        {
+                                            <span class="text-body-secondary">@T["Worker"]: <code>@trabalho.LockedBy</code></span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(trabalho.LastError))
+                                        {
+                                            <span class="d-block text-danger text-truncate" style="max-width: 24rem" title="@trabalho.LastError">@trabalho.LastError</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (trabalho.CanCancel)
+                                        {
+                                            <form method="post" action="/admin/queue/@trabalho.Id/cancel" class="d-inline"
+                                                  onsubmit="return confirm(this.dataset.confirmar)"
+                                                  data-confirmar="@T["Cancel this job? It will not run."]">
+                                                <AntiforgeryToken />
+                                                <button class="btn btn-sm btn-outline-danger" type="submit">@T["Cancel"]</button>
+                                            </form>
+                                        }
+                                        @if (trabalho.Status is JobStatus.Failed)
+                                        {
+                                            <form method="post" action="/admin/queue/@trabalho.Id/dismiss" class="d-inline">
+                                                <AntiforgeryToken />
+                                                <button class="btn btn-sm btn-outline-secondary" type="submit">@T["Remove from the list"]</button>
+                                            </form>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (Trabalhos.Count >= ProcessingQueueService.ListLimit)
+                {
+                    <div class="card-footer small text-body-secondary">
+                        @T.Format("Showing the first {0}.", ProcessingQueueService.ListLimit)
+                    </div>
+                }
+            }
+        </div>
+    }
+    else
+    {
     <div class="card">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <span>Acervo</span>
+            <span>@T["Library"]</span>
 
             <form action="/admin" method="get" class="d-flex" role="search">
                 <input class="form-control form-control-sm" type="search" name="q" value="@Q"
-                       placeholder="Filtrar" aria-label="Filtrar o acervo" />
-                <button class="btn btn-sm btn-outline-secondary ms-2" type="submit">Filtrar</button>
+                       placeholder="@T["Filter"]" aria-label="@T["Filter the library"]" />
+                <button class="btn btn-sm btn-outline-secondary ms-2" type="submit">@T["Filter"]</button>
             </form>
         </div>
 
@@ -105,6 +215,7 @@
     </div>
 
     <Paginacao Resultado="Resultado" BasePath="/admin" Termo="Q" />
+    }
 </div>
 
 @code {
@@ -122,9 +233,46 @@
 
     private bool Excluido => ExcluidoBruto == "1";
 
+    [SupplyParameterFromQuery(Name = "view")]
+    private string? VisaoBruta { get; set; }
+
+    [SupplyParameterFromQuery(Name = "cancelado")]
+    private string? CanceladoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "descartado")]
+    private string? DescartadoBruto { get; set; }
+
+    [SupplyParameterFromQuery(Name = "erro")]
+    private string? Erro { get; set; }
+
+    private bool Cancelado => CanceladoBruto == "1";
+
+    private bool Descartado => DescartadoBruto == "1";
+
+    private const string VisaoAcervo = "library";
+
+    /// <summary>A visão pedida; qualquer outra coisa cai no acervo, que é o padrão.</summary>
+    private string Visao => VisaoBruta is "queued" or "processing" or "failed" ? VisaoBruta : VisaoAcervo;
+
+    private JobStatus StatusDaVisao => Visao switch
+    {
+        "processing" => JobStatus.Running,
+        "failed" => JobStatus.Failed,
+        _ => JobStatus.Pending
+    };
+
+    private string TituloDaFila => Visao switch
+    {
+        "processing" => T["Processing"],
+        "failed" => T["Failures"],
+        _ => T["Queued"]
+    };
+
     private PagedResult<VideoSummary> Resultado = PagedResult<VideoSummary>.Empty(VideoCatalog.DefaultPageSize);
 
-    private readonly List<(string Rotulo, int Valor)> Indicadores = [];
+    private IReadOnlyList<QueueItem> Trabalhos = [];
+
+    private readonly List<(string Rotulo, int Valor, string? Visao, string Destino, string Cor)> Indicadores = [];
 
     private int SuportePendente;
 
@@ -137,12 +285,44 @@
         var fila = await Admin.QueueSummaryAsync(Http.RequestAborted);
         SuportePendente = await Suporte.PendingCountAsync(Http.RequestAborted);
 
+        if (Visao != VisaoAcervo)
+            Trabalhos = await Fila.ListAsync(StatusDaVisao, Http.RequestAborted);
+
+        var falhas = fila.GetValueOrDefault(JobStatus.Failed);
+
         Indicadores.Clear();
-        Indicadores.Add((T["Videos in the library"], Resultado.Total));
-        Indicadores.Add((T["Queued"], fila.GetValueOrDefault(JobStatus.Pending)));
-        Indicadores.Add((T["Processing"], fila.GetValueOrDefault(JobStatus.Running)));
-        Indicadores.Add((T["Failures"], fila.GetValueOrDefault(JobStatus.Failed)));
-        Indicadores.Add((T["Support waiting"], SuportePendente));
+        Indicadores.Add((T["Videos in the library"], Resultado.Total, VisaoAcervo, "/admin", ""));
+        Indicadores.Add((T["Queued"], fila.GetValueOrDefault(JobStatus.Pending), "queued", "/admin?view=queued", ""));
+        Indicadores.Add((T["Processing"], fila.GetValueOrDefault(JobStatus.Running), "processing", "/admin?view=processing", ""));
+        Indicadores.Add((T["Failures"], falhas, "failed", "/admin?view=failed", falhas > 0 ? "text-danger" : ""));
+        Indicadores.Add((T["Support waiting"], SuportePendente, null, "/admin/support", ""));
+    }
+
+    private string NomeDoTrabalho(QueueItem trabalho) => trabalho.Kind switch
+    {
+        JobKind.Transcode => T["Video processing"],
+        JobKind.Transcript => string.IsNullOrWhiteSpace(trabalho.Language) || trabalho.Language == "auto"
+            ? T["Captions (automatic language)"]
+            : T.Format("Captions ({0})", trabalho.Language),
+        JobKind.AnalyticsRollup => T["Audience aggregation"],
+        JobKind.StorageCleanup => T["Storage cleanup"],
+        JobKind.RetireOutputs => T["Old versions cleanup"],
+        _ => trabalho.Kind.ToString()
+    };
+
+    private string Quando(QueueItem trabalho)
+    {
+        var agora = DateTimeOffset.UtcNow;
+
+        return trabalho.Status switch
+        {
+            JobStatus.Running when trabalho.StartedAt is { } inicio => T.Format("Started {0}", inicio.ToLocalTime().ToString("g")),
+            JobStatus.Pending when trabalho.RunAfter > agora && trabalho.Attempts > 0 =>
+                T.Format("Retry at {0}", trabalho.RunAfter.ToLocalTime().ToString("g")),
+            JobStatus.Pending when trabalho.RunAfter > agora => T.Format("Scheduled for {0}", trabalho.RunAfter.ToLocalTime().ToString("g")),
+            JobStatus.Pending => T.Format("Waiting since {0}", trabalho.CreatedAt.ToLocalTime().ToString("g")),
+            _ => (trabalho.StartedAt ?? trabalho.CreatedAt).ToLocalTime().ToString("g")
+        };
     }
 
     private string EstadoTexto(VideoSummary video) => (VideoStatus)video.Status switch
