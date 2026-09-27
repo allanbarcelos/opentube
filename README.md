@@ -15,6 +15,7 @@ domain, with optional expiration and a detailed record of who watched what.
 - [Architecture](#architecture)
 - [Video pipeline](#video-pipeline)
 - [Analytics](#analytics)
+- [Captions](#captions)
 - [Per-video support](#per-video-support)
 - [Stack](#stack)
 - [Repository layout](#repository-layout)
@@ -122,8 +123,8 @@ why it has lived in its own container from day one.
 2. **Probe** — `ffprobe` extracts duration, resolution, and codecs, and rejects invalid files early.
 3. **Transcode** — FFmpeg produces an adaptive ladder (360p to 1080p, never above the source
    resolution) in CMAF/fMP4, with 4 s segments and keyframes aligned across renditions.
-4. **Derivatives** — thumbnail, sprite sheet for seek-bar previews and, if a transcriber is
-   configured, automatic captions. Without the executable, this step is off.
+4. **Derivatives** — thumbnail and sprite sheet for seek-bar previews. Captions are requested
+   separately, per language (see [Captions](#captions)).
 5. **Publish** — state `Ready`, video available according to its visibility.
 
 The original is kept in the `originals` bucket so the video can be reprocessed. Each processing run
@@ -184,6 +185,30 @@ events.
 **Dashboards:** per video (retention, completion, devices, errors), per user (full timeline), per
 domain, and per invitation — the last one answering "I invited 12, 7 opened, 5 watched, 2
 finished", which is usually the metric that actually matters. CSV export.
+
+---
+
+## Captions
+
+The **Captions** tab of each video, next to Configuration and Audience, lists one caption per
+language with its status (ready, processing, failed) and source (uploaded, automatic, edited).
+
+- **Automatic generation** with Whisper, per language, in the background on the worker. The
+  caption stays *processing* until it finishes, and the page updates itself. A language that is
+  processing cannot be requested again — not even by two requests at the same moment, which the
+  database's unique index settles. Uploads and edits of that language also wait, since the
+  result would overwrite them. A failure is recorded only after the last attempt, with the reason.
+- **Upload** of WebVTT or SRT; everything is stored as WebVTT, normalized and sorted.
+- **Download** of the file, named after the video and the language, to fix it elsewhere.
+- **Editor** in the web app, in the style of a code editor: the first column numbers the lines,
+  the second has the time the caption enters (and leaves), the third the text. Next to it, the
+  video: the cue being played is highlighted and its text shows over the video as you type;
+  buttons and shortcuts set the start or end at the video time, insert and remove cues, and save
+  (⌘/Ctrl+S). Times and text are checked in the browser and again on the server.
+
+The text of the most recent caption feeds the search. Whisper is configured on the worker with
+`Transcription__Executable` and `Transcription__ModelPath`; without them, a request fails with a
+clear message instead of staying queued.
 
 ---
 

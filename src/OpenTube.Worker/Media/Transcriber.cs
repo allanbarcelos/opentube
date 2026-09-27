@@ -15,7 +15,8 @@ public interface ITranscriber
     /// <summary>Se a ferramenta está configurada nesta instalação.</summary>
     bool IsAvailable { get; }
 
-    Task<Transcription> TranscribeAsync(string mediaPath, string workDirectory, CancellationToken cancellationToken = default);
+    /// <param name="language">Código do idioma falado, no formato da ferramenta (<c>pt</c>, <c>en</c>).</param>
+    Task<Transcription> TranscribeAsync(string mediaPath, string workDirectory, string language, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Ajustes da transcrição automática.</summary>
@@ -38,6 +39,7 @@ public class TranscriptionOptions
     /// <summary>Caminho do modelo, quando a ferramenta precisar de um.</summary>
     public string? ModelPath { get; set; }
 
+    /// <summary>Idioma usado quando o pedido não traz um (trabalhos antigos na fila).</summary>
     public string Language { get; set; } = "pt";
 
     /// <summary>Tempo máximo de uma transcrição.</summary>
@@ -60,8 +62,10 @@ public class CommandLineTranscriber(
     public bool IsAvailable => !string.IsNullOrWhiteSpace(_options.Executable);
 
     public async Task<Transcription> TranscribeAsync(
-        string mediaPath, string workDirectory, CancellationToken cancellationToken = default)
+        string mediaPath, string workDirectory, string language, CancellationToken cancellationToken = default)
     {
+        var idioma = string.IsNullOrWhiteSpace(language) ? _options.Language : language.Trim();
+
         ArgumentException.ThrowIfNullOrWhiteSpace(mediaPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(workDirectory);
 
@@ -88,7 +92,7 @@ public class CommandLineTranscriber(
         limite.CancelAfter(_options.Timeout);
 
         var resultado = await runner.RunAsync(
-            _options.Executable!, MontarArgumentos(audio, saida), limite.Token);
+            _options.Executable!, MontarArgumentos(audio, saida, idioma), limite.Token);
 
         if (!resultado.Succeeded)
             throw new InvalidOperationException($"Falha na transcrição: {resultado.ShortError()}");
@@ -100,17 +104,17 @@ public class CommandLineTranscriber(
 
         logger.LogInformation("Transcrição concluída com {Caracteres} caracteres de fala", conteudo.Length);
 
-        return new Transcription(vtt, VttParser.ExtractText(conteudo), _options.Language);
+        return new Transcription(vtt, VttParser.ExtractText(conteudo), idioma);
     }
 
     /// <summary>Substitui os marcadores pelos caminhos reais, um argumento por vez.</summary>
-    public IReadOnlyList<string> MontarArgumentos(string entrada, string saida) =>
+    public IReadOnlyList<string> MontarArgumentos(string entrada, string saida, string? idioma = null) =>
         [.. _options.Arguments
             .Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .Select(argumento => argumento
                 .Replace("{entrada}", entrada, StringComparison.Ordinal)
                 .Replace("{saida}", saida, StringComparison.Ordinal)
-                .Replace("{idioma}", _options.Language, StringComparison.Ordinal)
+                .Replace("{idioma}", string.IsNullOrWhiteSpace(idioma) ? _options.Language : idioma, StringComparison.Ordinal)
                 .Replace("{modelo}", _options.ModelPath ?? string.Empty, StringComparison.Ordinal))];
 
     /// <summary>

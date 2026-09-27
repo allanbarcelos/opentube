@@ -28,7 +28,7 @@ public class TranscriberTests
         var transcritor = Criar(new TranscriptionOptions());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            transcritor.TranscribeAsync("/tmp/a.mp4", "/tmp"));
+            transcritor.TranscribeAsync("/tmp/a.mp4", "/tmp", "pt"));
     }
 
     [Fact]
@@ -47,6 +47,20 @@ public class TranscriberTests
         Assert.Equal(
             ["-m", "/modelos/ggml-medium.bin", "-f", "/trabalho/audio.wav", "-l", "pt", "-ovtt", "-of", "/trabalho/legenda"],
             argumentos);
+    }
+
+    [Fact]
+    public void O_idioma_do_pedido_substitui_o_da_configuracao()
+    {
+        var transcritor = Criar(new TranscriptionOptions
+        {
+            Executable = "whisper",
+            Arguments = "-l {idioma} -f {entrada}",
+            Language = "pt"
+        });
+
+        Assert.Equal(["-l", "en", "-f", "/a.wav"], transcritor.MontarArgumentos("/a.wav", "/b", "en"));
+        Assert.Equal(["-l", "pt", "-f", "/a.wav"], transcritor.MontarArgumentos("/a.wav", "/b", null));
     }
 
     [Fact]
@@ -76,7 +90,7 @@ public class TranscriberTests
     {
         var transcritor = Criar(new TranscriptionOptions { Executable = "whisper" });
 
-        await Assert.ThrowsAnyAsync<ArgumentException>(() => transcritor.TranscribeAsync(caminho, "/tmp"));
-        await Assert.ThrowsAnyAsync<ArgumentException>(() => transcritor.TranscribeAsync("/tmp/a.mp4", caminho));
+        await Assert.ThrowsAnyAsync<ArgumentException>(() => transcritor.TranscribeAsync(caminho, "/tmp", "pt"));
+        await Assert.ThrowsAnyAsync<ArgumentException>(() => transcritor.TranscribeAsync("/tmp/a.mp4", caminho, "pt"));
     }
 }

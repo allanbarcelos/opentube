@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using OpenTube.Domain.Captions;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Persistence;
@@ -12,16 +14,20 @@ namespace OpenTube.Worker.Jobs;
 /// <summary>Parâmetros da transcrição.</summary>
 /// <param name="VideoId">Vídeo a transcrever.</param>
 /// <param name="OriginalKey">Arquivo de origem.</param>
-public sealed record TranscriptionPayload(Guid VideoId, string OriginalKey);
+/// <param name="Language">Idioma pedido (<c>pt-br</c>). Ausente em trabalhos antigos na fila.</param>
+/// <param name="AssetId">Legenda que recebe o resultado. Ausente em trabalhos antigos na fila.</param>
+public sealed record TranscriptionPayload(Guid VideoId, string OriginalKey, string? Language = null, Guid? AssetId = null);
 
 /// <summary>
-/// Gera a legenda a partir da fala e alimenta a busca com o texto. Procurar por uma frase dita
-/// no vídeo é o que torna um acervo grande realmente navegável.
+/// Gera a legenda de um idioma a partir da fala e alimenta a busca com o texto. A legenda
+/// pedida fica "processando" até aqui terminar: pronta com o resultado, ou com a falha
+/// registrada depois da última tentativa.
 /// </summary>
 public class TranscriptionJobHandler(
     OpenTubeDbContext db,
     IVideoStorage storage,
     ITranscriber transcritor,
+    IOptions<TranscriptionOptions> opcoes,
     TimeProvider clock,
     ILogger<TranscriptionJobHandler> logger) : IJobHandler
 {
@@ -31,23 +37,31 @@ public class TranscriptionJobHandler(
     {
         ArgumentNullException.ThrowIfNull(job);
 
-        if (!transcritor.IsAvailable)
-        {
-            logger.LogInformation("Transcrição não configurada; trabalho descartado");
-            return;
-        }
-
         var payload = job.PayloadAs<TranscriptionPayload>()
             ?? throw new InvalidOperationException("Parâmetros de transcrição ausentes.");
 
-        var video = await db.Videos
-            .Include(v => v.Assets)
-            .FirstOrDefaultAsync(v => v.Id == payload.VideoId, cancellationToken)
+        var video = await db.Videos.FirstOrDefaultAsync(v => v.Id == payload.VideoId, cancellationToken)
             ?? throw new InvalidOperationException($"Vídeo {payload.VideoId} não encontrado.");
+
+        var idioma = CaptionLanguage.Normalize(payload.Language ?? opcoes.Value.Language);
+        var legenda = await LegendaDoPedidoAsync(payload, video.Id, idioma, cancellationToken);
+
+        if (legenda is null)
+        {
+            logger.LogInformation("Legenda do pedido {JobId} foi removida; transcrição descartada", job.Id);
+            return;
+        }
 
         if (video.IsDeleted)
         {
-            logger.LogInformation("Vídeo {VideoId} foi excluído; transcrição descartada", video.Id);
+            await FalharAsync(legenda, "The video was deleted.");
+            return;
+        }
+
+        // Sem a ferramenta, tentar de novo não adianta: a falha é registrada de uma vez.
+        if (!transcritor.IsAvailable)
+        {
+            await FalharAsync(legenda, "Automatic transcription is not configured on this server.");
             return;
         }
 
@@ -58,26 +72,29 @@ public class TranscriptionJobHandler(
             var original = Path.Combine(trabalho.FullName, "original" + StorageKeys.SafeExtension(payload.OriginalKey));
             await storage.GetFileAsync(StorageBucket.Originals, payload.OriginalKey, original, cancellationToken);
 
-            var transcricao = await transcritor.TranscribeAsync(original, trabalho.FullName, cancellationToken);
+            var transcricao = await transcritor.TranscribeAsync(
+                original, trabalho.FullName, CaptionLanguage.TranscriptionCode(idioma), cancellationToken);
 
-            var chave = StorageKeys.Caption(video.Id, transcricao.Language);
-            await storage.PutFileAsync(StorageBucket.Vod, chave, transcricao.VttPath, MediaTypes.WebVtt, cancellationToken);
+            // O que a ferramenta produziu passa pelo mesmo leitor do editor e do envio: o que
+            // fica guardado é sempre um WebVTT válido e ordenado.
+            var documento = CaptionDocument.Parse(await File.ReadAllTextAsync(transcricao.VttPath, cancellationToken));
+            var conteudo = documento.ToWebVtt();
 
-            // Substitui a legenda automática anterior em vez de acumular uma por execução.
-            var existente = video.Assets.FirstOrDefault(a =>
-                a.Kind == VideoAssetKind.Caption && a.StorageKey == chave);
+            await storage.PutTextAsync(StorageBucket.Vod, legenda.StorageKey, conteudo, MediaTypes.WebVtt, cancellationToken);
 
-            if (existente is null)
-            {
-                db.VideoAssets.Add(VideoAsset.Create(
-                    video.Id, VideoAssetKind.Caption, chave, clock.GetUtcNow(),
-                    transcricao.Language, "Legenda automática"));
-            }
-
-            video.SetTranscript(transcricao.Text);
+            legenda.CompleteTranscription(System.Text.Encoding.UTF8.GetByteCount(conteudo), clock.GetUtcNow());
+            video.SetTranscript(documento.PlainText);
             await db.SaveChangesAsync(cancellationToken);
 
-            logger.LogInformation("Legenda gerada para o vídeo {VideoId}", video.Id);
+            logger.LogInformation("Legenda {Idioma} gerada para o vídeo {VideoId}", idioma, video.Id);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // Antes da última tentativa a legenda continua "processando": a fila tenta de novo.
+            if (job.Attempts >= ProcessingJob.MaxAttempts)
+                await FalharAsync(legenda, e.Message);
+
+            throw;
         }
         finally
         {
@@ -91,5 +108,36 @@ public class TranscriptionJobHandler(
                 logger.LogWarning(e, "Não foi possível limpar a pasta de trabalho da transcrição");
             }
         }
+    }
+
+    /// <summary>
+    /// Legenda que recebe o resultado. Trabalhos antigos na fila não traziam a legenda: ela é
+    /// encontrada pelo idioma, ou criada já em processamento.
+    /// </summary>
+    private async Task<VideoAsset?> LegendaDoPedidoAsync(
+        TranscriptionPayload payload, Guid videoId, string idioma, CancellationToken cancellationToken)
+    {
+        if (payload.AssetId is { } id)
+            return await db.VideoAssets.FirstOrDefaultAsync(a => a.Id == id && a.Kind == VideoAssetKind.Caption, cancellationToken);
+
+        var existente = await db.VideoAssets.FirstOrDefaultAsync(
+            a => a.VideoId == videoId && a.Kind == VideoAssetKind.Caption && a.Language == idioma, cancellationToken);
+
+        if (existente is not null)
+            return existente;
+
+        var nova = VideoAsset.CaptionTranscriptionRequest(videoId, idioma, null, StorageKeys.Caption(videoId, idioma), clock.GetUtcNow());
+        db.VideoAssets.Add(nova);
+
+        return nova;
+    }
+
+    /// <summary>Registra a falha mesmo com o desligamento já pedido: a marcação precisa ficar.</summary>
+    private async Task FalharAsync(VideoAsset legenda, string motivo)
+    {
+        legenda.FailTranscription(motivo, clock.GetUtcNow());
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        logger.LogWarning("Transcrição da legenda {LegendaId} falhou: {Motivo}", legenda.Id, motivo);
     }
 }

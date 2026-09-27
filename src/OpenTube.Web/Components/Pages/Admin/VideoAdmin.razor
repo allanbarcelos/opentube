@@ -49,15 +49,19 @@
         {
             <div class="alert alert-success" role="status">@T["Access revoked."]</div>
         }
-        @if (LegendaEnviada)
+        @if (Legenda == "enviada")
         {
             <div class="alert alert-success" role="status">@T["Caption uploaded."]</div>
         }
-        @if (Transcrevendo)
+        @if (Legenda == "pedida")
         {
             <div class="alert alert-success" role="status">
                 @T["Transcription is queued. The caption shows up here when it finishes."]
             </div>
+        }
+        @if (Legenda == "removida")
+        {
+            <div class="alert alert-success" role="status">@T["Caption removed."]</div>
         }
         @if (!string.IsNullOrWhiteSpace(LinkCriado))
         {
@@ -84,7 +88,16 @@
 
         <ul class="nav nav-tabs mb-4">
             <li class="nav-item">
-                <a class="nav-link @(MostrarAudiencia ? "" : "active")" href="/admin/videos/@Video.Id">@T["Configuration"]</a>
+                <a class="nav-link @(Aba is null or "" ? "active" : "")" href="/admin/videos/@Video.Id">@T["Configuration"]</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link @(MostrarLegendas ? "active" : "")" href="/admin/videos/@Video.Id?tab=captions">
+                    @T["Captions"]
+                    @if (QuantasLegendas > 0)
+                    {
+                        <span class="badge rounded-pill text-bg-secondary ms-1">@QuantasLegendas</span>
+                    }
+                </a>
             </li>
             <li class="nav-item">
                 <a class="nav-link @(MostrarAudiencia ? "active" : "")" href="/admin/videos/@Video.Id?tab=audience">@T["Audience"]</a>
@@ -94,6 +107,10 @@
         @if (MostrarAudiencia)
         {
             <PainelDeAudiencia VideoId="Video.Id" />
+        }
+        else if (MostrarLegendas)
+        {
+            <PainelDeLegendas VideoId="Video.Id" />
         }
         else
         {
@@ -192,69 +209,6 @@
                     </div>
                 </div>
 
-                <div class="card mb-3">
-                    <div class="card-header">@T["Captions"]</div>
-
-                    @if (ListaDeLegendas.Count == 0)
-                    {
-                        <div class="card-body text-body-secondary small">
-                            @T["No captions yet. Upload a file or generate one from the speech."]
-                        </div>
-                    }
-                    else
-                    {
-                        <ul class="list-group list-group-flush">
-                            @foreach (var legenda in ListaDeLegendas)
-                            {
-                                <li class="list-group-item d-flex justify-content-between align-items-center">
-                                    <span>
-                                        @legenda.Label
-                                        <span class="d-block small text-body-secondary">@legenda.Language</span>
-                                    </span>
-                                    <form method="post" action="/admin/videos/@Video.Id/captions/@legenda.Id/delete">
-                                        <AntiforgeryToken />
-                                        <button class="btn btn-sm btn-outline-secondary" type="submit">@T["Remove"]</button>
-                                    </form>
-                                </li>
-                            }
-                        </ul>
-                    }
-
-                    <div class="card-body border-top">
-                        <form method="post" action="/admin/videos/@Video.Id/captions" enctype="multipart/form-data">
-                            <AntiforgeryToken />
-
-                            <div class="mb-2">
-                                <label class="form-label small" for="arquivo-legenda">@T["WebVTT file"]</label>
-                                <input class="form-control form-control-sm" id="arquivo-legenda" name="arquivo"
-                                       type="file" accept=".vtt,text/vtt" required />
-                            </div>
-
-                            <div class="row g-2 mb-2">
-                                <div class="col-6">
-                                    <label class="form-label small" for="idioma">@T["Language"]</label>
-                                    <input class="form-control form-control-sm" id="idioma" name="idioma"
-                                           value="pt-BR" maxlength="20" required />
-                                </div>
-                                <div class="col-6">
-                                    <label class="form-label small" for="rotulo">@T["Label"]</label>
-                                    <input class="form-control form-control-sm" id="rotulo" name="rotulo"
-                                           placeholder="@T["English"]" maxlength="120" />
-                                </div>
-                            </div>
-
-                            <button class="btn btn-sm btn-outline-primary w-100" type="submit">@T["Upload caption"]</button>
-                        </form>
-
-                        <form method="post" action="/admin/videos/@Video.Id/captions/transcribe" class="mt-2">
-                            <AntiforgeryToken />
-                            <button class="btn btn-sm btn-outline-secondary w-100" type="submit">
-                                @T["Generate from the speech"]
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
                 @if (!Video.IsDeleted)
                 {
                     <div class="card border-danger">
@@ -317,16 +271,13 @@
     [SupplyParameterFromQuery(Name = "tab")]
     private string? Aba { get; set; }
 
+    /// <summary>Resultado da última ação nas legendas: enviada, pedida ou removida.</summary>
     [SupplyParameterFromQuery(Name = "legenda")]
-    private string? LegendaBruta { get; set; }
-
-    [SupplyParameterFromQuery(Name = "transcrevendo")]
-    private string? TranscrevendoBruto { get; set; }
-
-    private bool LegendaEnviada => LegendaBruta == "1";
-    private bool Transcrevendo => TranscrevendoBruto == "1";
+    private string? Legenda { get; set; }
 
     private bool MostrarAudiencia => Aba == "audience";
+
+    private bool MostrarLegendas => Aba == "captions";
 
     private int Convidados => ConvidadosBruto ?? 0;
     private bool DominioLiberado => DominioBruto == "1";
@@ -339,7 +290,7 @@
 
     private Video? Video;
 
-    private IReadOnlyList<VideoAsset> ListaDeLegendas = [];
+    private int QuantasLegendas;
 
     private string EstadoTexto => Video?.Status switch
     {
@@ -405,6 +356,6 @@
             return;
         }
 
-        ListaDeLegendas = await Legendas.ListAsync(VideoId, Http.RequestAborted);
+        QuantasLegendas = (await Legendas.ListAsync(VideoId, Http.RequestAborted)).Count;
     }
 }

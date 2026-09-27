@@ -1,0 +1,188 @@
+@using OpenTube.Domain.Captions
+@using OpenTube.Domain.Entities
+@inject OpenTube.Infrastructure.Services.CaptionService Legendas
+
+@* Aba de legendas do vídeo. Enquanto alguma estiver processando, o legendas.js consulta a
+   situação e recarrega a página quando ela muda. *@
+<div class="row g-4" data-legendas-status="/admin/videos/@VideoId/captions/status"
+     data-legendas-processando="@(Lista.Any(l => l.IsProcessing) ? "true" : "false")">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>@T["Captions"]</span>
+                @if (Lista.Any(l => l.IsProcessing))
+                {
+                    <span class="small text-body-secondary">
+                        <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+                        @T["This page updates when the processing finishes."]
+                    </span>
+                }
+            </div>
+
+            @if (Lista.Count == 0)
+            {
+                <div class="card-body text-body-secondary">
+                    @T["No captions yet. Generate one from the speech or upload a file."]
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr class="small text-body-secondary">
+                                <th scope="col">@T["Language"]</th>
+                                <th scope="col">@T["Status"]</th>
+                                <th scope="col">@T["Source"]</th>
+                                <th scope="col" class="text-end">@T["Actions"]</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var legenda in Lista)
+                            {
+                                <tr data-legenda="@legenda.Id" data-status="@legenda.Status.ToString().ToLowerInvariant()">
+                                    <td>
+                                        <span class="fw-semibold">@legenda.Label</span>
+                                        <code class="d-block small">@legenda.Language</code>
+                                    </td>
+                                    <td>
+                                        @switch (legenda.Status)
+                                        {
+                                            case CaptionStatus.Processing:
+                                                <span class="badge text-bg-info">
+                                                    <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>@T["Processing"]
+                                                </span>
+                                                break;
+                                            case CaptionStatus.Failed:
+                                                <span class="badge text-bg-danger">@T["Failed"]</span>
+                                                <span class="d-block small text-danger mt-1">@T[legenda.Error ?? "Transcription failed."]</span>
+                                                break;
+                                            default:
+                                                <span class="badge text-bg-success">@T["Ready"]</span>
+                                                break;
+                                        }
+                                        @if (legenda.ContentUpdatedAt is { } quando)
+                                        {
+                                            <span class="d-block small text-body-secondary mt-1">@quando.ToLocalTime().ToString("g")</span>
+                                        }
+                                    </td>
+                                    <td class="small">@Origem(legenda)</td>
+                                    <td class="text-end">
+                                        <div class="d-inline-flex flex-wrap gap-1 justify-content-end">
+                                            @if (!legenda.IsProcessing)
+                                            {
+                                                <a class="btn btn-sm btn-primary" href="/admin/videos/@VideoId/captions/@legenda.Id/edit">@T["Edit"]</a>
+                                            }
+                                            @if (legenda.HasContent)
+                                            {
+                                                <a class="btn btn-sm btn-outline-secondary" href="/admin/videos/@VideoId/captions/@legenda.Id/download">@T["Download"]</a>
+                                            }
+                                            @if (!legenda.IsProcessing)
+                                            {
+                                                <form method="post" action="/admin/videos/@VideoId/captions/transcribe" class="d-inline">
+                                                    <AntiforgeryToken />
+                                                    <input type="hidden" name="idioma" value="@legenda.Language" />
+                                                    <button class="btn btn-sm btn-outline-secondary" type="submit"
+                                                            title="@T["Generate again from the speech, replacing the current text"]">
+                                                        @(legenda.HasContent ? T["Regenerate"] : T["Try again"])
+                                                    </button>
+                                                </form>
+                                            }
+                                            <form method="post" action="/admin/videos/@VideoId/captions/@legenda.Id/delete" class="d-inline">
+                                                <AntiforgeryToken />
+                                                <button class="btn btn-sm btn-outline-danger" type="submit">@T["Remove"]</button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header">@T["Generate automatically"]</div>
+            <div class="card-body">
+                <form method="post" action="/admin/videos/@VideoId/captions/transcribe">
+                    <AntiforgeryToken />
+                    <div class="mb-2">
+                        <label class="form-label small" for="idioma-transcricao">@T["Spoken language"]</label>
+                        <input class="form-control form-control-sm" id="idioma-transcricao" name="idioma" value="pt-BR"
+                               list="idiomas-comuns" maxlength="20" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small" for="rotulo-transcricao">@T["Label"]</label>
+                        <input class="form-control form-control-sm" id="rotulo-transcricao" name="rotulo" maxlength="120"
+                               placeholder="@T["Language name, if empty"]" />
+                    </div>
+                    <button class="btn btn-sm btn-primary w-100" type="submit">@T["Generate from the speech"]</button>
+                </form>
+                <p class="form-text mb-0 mt-2">
+                    @T["Runs in the background with Whisper and can take a few minutes. A language that is processing cannot be requested again until it finishes."]
+                </p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">@T["Upload a file"]</div>
+            <div class="card-body">
+                <form method="post" action="/admin/videos/@VideoId/captions" enctype="multipart/form-data">
+                    <AntiforgeryToken />
+                    <div class="mb-2">
+                        <label class="form-label small" for="arquivo-legenda">@T["WebVTT or SRT file"]</label>
+                        <input class="form-control form-control-sm" id="arquivo-legenda" name="arquivo"
+                               type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" required />
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small" for="idioma-envio">@T["Language"]</label>
+                            <input class="form-control form-control-sm" id="idioma-envio" name="idioma" value="pt-BR"
+                                   list="idiomas-comuns" maxlength="20" required />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small" for="rotulo-envio">@T["Label"]</label>
+                            <input class="form-control form-control-sm" id="rotulo-envio" name="rotulo" maxlength="120" />
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-primary w-100" type="submit">@T["Upload caption"]</button>
+                </form>
+                <p class="form-text mb-0 mt-2">@T["A file for a language that already exists replaces its text."]</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<datalist id="idiomas-comuns">
+    @foreach (var codigo in IdiomasComuns)
+    {
+        <option value="@codigo">@CaptionLanguage.DisplayName(codigo)</option>
+    }
+</datalist>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid VideoId { get; set; }
+
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    private IReadOnlyList<VideoAsset> Lista = [];
+
+    /// <summary>Sugestões do campo de idioma; qualquer código BCP 47 é aceito.</summary>
+    private static readonly string[] IdiomasComuns =
+        ["pt-BR", "pt-PT", "en", "es", "fr", "de", "it", "nl", "ja", "zh", "ko", "ru", "ar", "hi"];
+
+    private string Origem(VideoAsset legenda) => legenda.Source switch
+    {
+        CaptionSource.Automatic => T["Automatic"],
+        CaptionSource.Edited => T["Edited"],
+        _ => T["Uploaded"]
+    };
+
+    protected override async Task OnInitializedAsync() =>
+        Lista = await Legendas.ListAsync(VideoId, Http.RequestAborted);
+}

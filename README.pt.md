@@ -15,6 +15,7 @@ de email inteiro, com validade opcional e registro detalhado de quem assistiu o 
 - [Arquitetura](#arquitetura)
 - [Pipeline de vídeo](#pipeline-de-vídeo)
 - [Analytics](#analytics)
+- [Legendas](#legendas)
 - [Suporte por vídeo](#suporte-por-vídeo)
 - [Stack](#stack)
 - [Estrutura do repositório](#estrutura-do-repositório)
@@ -121,8 +122,8 @@ separado desde o primeiro dia.
 2. **Análise** — `ffprobe` extrai duração, resolução e codecs, e rejeita arquivo inválido cedo.
 3. **Transcodificação** — FFmpeg gera um ladder adaptativo (360p a 1080p, nunca acima da resolução
    original) em CMAF/fMP4, segmentos de 4 s com keyframes alinhados entre as versões.
-4. **Derivados** — thumbnail, folha de sprites para prévia na barra de progresso e, se um
-   transcritor estiver configurado, legenda automática. Sem executável, essa etapa fica desligada.
+4. **Derivados** — thumbnail e folha de sprites para prévia na barra de progresso. As legendas
+   são pedidas à parte, por idioma (veja [Legendas](#legendas)).
 5. **Publicação** — estado `Ready`, vídeo disponível conforme sua visibilidade.
 
 O original é preservado no bucket `originals` para permitir reprocessamento. Cada processamento
@@ -181,6 +182,30 @@ e agrega em tabelas diárias, mantendo o painel instantâneo mesmo com milhões 
 **Painéis:** por vídeo (retenção, conclusão, dispositivos, erros), por usuário (linha do tempo
 completa), por domínio e por convite — este último respondendo "convidei 12, 7 abriram, 5
 assistiram, 2 terminaram", que costuma ser a métrica que interessa de verdade. Exportação em CSV.
+
+---
+
+## Legendas
+
+A aba **Legendas** de cada vídeo, ao lado de Configuração e Audiência, lista uma legenda por idioma
+com a situação (pronta, processando, falhou) e a origem (enviada, automática, editada).
+
+- **Geração automática** com o Whisper, por idioma, em segundo plano no worker. A legenda fica
+  *processando* até terminar, e a página se atualiza sozinha. Um idioma em processamento não pode
+  ser pedido de novo — nem por dois pedidos no mesmo instante, que o índice único do banco
+  resolve. Envio e edição desse idioma também esperam, porque o resultado os sobrescreveria. A
+  falha só é registrada depois da última tentativa, com o motivo.
+- **Envio** de WebVTT ou SRT; tudo é guardado como WebVTT, normalizado e ordenado.
+- **Download** do arquivo, com o nome do vídeo e do idioma, para corrigir fora do sistema.
+- **Editor** no próprio webapp, no estilo de um editor de código: a primeira coluna numera as
+  linhas, a segunda tem o tempo em que a legenda entra (e sai), a terceira o texto. Ao lado, o
+  vídeo: o trecho em exibição fica destacado e o texto aparece sobre ele enquanto se digita;
+  botões e atalhos marcam início ou fim no tempo do vídeo, inserem e removem trechos e salvam
+  (⌘/Ctrl+S). Tempos e texto são conferidos no navegador e de novo no servidor.
+
+O texto da legenda mais recente alimenta a busca. O Whisper é configurado no worker com
+`Transcription__Executable` e `Transcription__ModelPath`; sem eles, o pedido falha com uma
+mensagem clara em vez de ficar parado na fila.
 
 ---
 

@@ -149,7 +149,7 @@
 
         if (Video is not null)
         {
-            ListaDeLegendas = await Legendas.ListAsync(Video.Id, Http.RequestAborted);
+            ListaDeLegendas = await Legendas.ListPlayableAsync(Video.Id, Http.RequestAborted);
             Logo = await Marcas.GetInfoAsync(Http.RequestAborted);
         }
 

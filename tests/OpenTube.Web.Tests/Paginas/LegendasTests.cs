@@ -80,7 +80,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var resposta = await EnviarLegendaAsync(cliente, video.Id, Vtt);
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
-        Assert.Contains("legenda=1", resposta.Headers.Location!.ToString());
+        Assert.Contains("legenda=enviada", resposta.Headers.Location!.ToString());
 
         var pagina = await cliente.GetStringAsync($"/watch/{video.Slug}");
 
@@ -133,7 +133,7 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
     }
 
     [Fact]
-    public async Task Arquivo_que_nao_e_webvtt_e_recusado()
+    public async Task Arquivo_srt_e_aceito_e_guardado_como_webvtt()
     {
         using var storage = minio.CreateStorage();
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
@@ -143,7 +143,28 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         var resposta = await EnviarLegendaAsync(cliente, video.Id, "1\n00:00:01,000 --> 00:00:02,000\nfala");
 
-        Assert.Contains("erro=", resposta.Headers.Location!.ToString());
+        Assert.Contains("legenda=enviada", resposta.Headers.Location!.ToString());
+
+        await using var db = postgres.CreateContext();
+        var legenda = await db.VideoAssets.SingleAsync();
+        Assert.Equal("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nfala\n",
+            await storage.GetTextAsync(StorageBucket.Vod, legenda.StorageKey));
+    }
+
+    [Fact]
+    public async Task Arquivo_que_nao_e_legenda_e_recusado_com_o_motivo()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarComoAdminAsync(cliente);
+
+        var resposta = await EnviarLegendaAsync(cliente, video.Id, "isto não é uma legenda");
+        var destino = resposta.Headers.Location!.ToString();
+
+        Assert.Contains("tab=captions", destino);
+        Assert.Contains("The file must be WebVTT", await cliente.GetStringAsync(destino));
 
         await using var db = postgres.CreateContext();
         Assert.Empty(await db.VideoAssets.ToListAsync());
@@ -183,10 +204,10 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         await EntrarComoAdminAsync(cliente);
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/captions/transcribe",
-            new Dictionary<string, string>());
+            cliente, $"/admin/videos/{video.Id}?tab=captions", $"/admin/videos/{video.Id}/captions/transcribe",
+            new Dictionary<string, string> { ["idioma"] = "pt-BR" });
 
-        Assert.Contains("transcrevendo=1", resposta.Headers.Location!.ToString());
+        Assert.Contains("legenda=pedida", resposta.Headers.Location!.ToString());
 
         await using var db = postgres.CreateContext();
         Assert.Equal(1, await db.ProcessingJobs.CountAsync(j => j.Kind == JobKind.Transcript));
@@ -202,8 +223,8 @@ public class LegendasTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         await EntrarComoAdminAsync(cliente);
 
         var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/captions/transcribe",
-            new Dictionary<string, string>());
+            cliente, $"/admin/videos/{video.Id}?tab=captions", $"/admin/videos/{video.Id}/captions/transcribe",
+            new Dictionary<string, string> { ["idioma"] = "pt-BR" });
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
     }

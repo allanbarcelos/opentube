@@ -247,3 +247,252 @@
 .marca-opcao-center { grid-area: c; justify-self: center; }
 .marca-opcao-bottom-left { grid-area: bl; }
 .marca-opcao-bottom-right { grid-area: br; justify-self: end; }
+
+/* Editor de legendas ------------------------------------------------------ */
+
+/* Estilo de editor de código: medianiz numerada, tempos em fonte monoespaçada e o texto ao
+   lado. Cores escuras de editor, independentes do tema da página. */
+.editor-legendas {
+    --ed-fundo: #1e1f22;
+    --ed-medianiz: #2b2d30;
+    --ed-borda: #393b40;
+    --ed-texto: #dfe1e5;
+    --ed-apagado: #868a91;
+    --ed-tempo: #6fb7ff;
+    --ed-ativa: #2e3036;
+    --ed-tocando: #ffc66d;
+    --ed-erro: #f75464;
+    --ed-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+
+    border: 1px solid var(--ed-borda);
+    border-radius: var(--bs-border-radius-lg);
+    background: var(--ed-fundo);
+    color: var(--ed-texto);
+    overflow: hidden;
+}
+
+.editor-barra {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--ed-medianiz);
+    border-bottom: 1px solid var(--ed-borda);
+}
+
+.editor-barra kbd {
+    background: rgba(255, 255, 255, 0.15);
+    font-size: 0.7em;
+}
+
+.editor-situacao {
+    font-size: 0.8rem;
+    color: var(--ed-apagado);
+}
+
+.editor-situacao.salvo {
+    color: #6fcf97;
+}
+
+.editor-contagem {
+    font-family: var(--ed-mono);
+    font-size: 0.75rem;
+    color: var(--ed-apagado);
+}
+
+.editor-grade {
+    max-height: 70vh;
+    overflow-y: auto;
+    font-family: var(--ed-mono);
+    font-size: 0.875rem;
+}
+
+.editor-cabecalho,
+.editor-linha {
+    display: grid;
+    grid-template-columns: 3.25rem 8.5rem minmax(0, 1fr) auto;
+    align-items: stretch;
+}
+
+.editor-cabecalho {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--ed-medianiz);
+    border-bottom: 1px solid var(--ed-borda);
+    color: var(--ed-apagado);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.editor-cabecalho span {
+    padding: 0.35rem 0.6rem;
+}
+
+.editor-cabecalho span:first-child {
+    text-align: right;
+}
+
+.editor-linha {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.editor-linha.ativa {
+    background: var(--ed-ativa);
+}
+
+/* A linha em exibição no vídeo ganha uma marca na medianiz. */
+.editor-linha.tocando .editor-numero {
+    color: var(--ed-tocando);
+    box-shadow: inset 3px 0 0 var(--ed-tocando);
+}
+
+.editor-numero {
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+    border: 0;
+    background: var(--ed-medianiz);
+    color: var(--ed-apagado);
+    padding: 0.35rem 0.6rem 0 0;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.editor-numero:hover {
+    color: var(--ed-texto);
+}
+
+.editor-tempo {
+    display: flex;
+    flex-direction: column;
+    padding: 0.2rem 0.25rem;
+    border-right: 1px solid var(--ed-borda);
+}
+
+.editor-tempo input,
+.editor-texto {
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    outline: none;
+}
+
+.editor-tempo input {
+    width: 100%;
+    padding: 0.1rem 0.35rem;
+    color: var(--ed-tempo);
+    font-variant-numeric: tabular-nums;
+}
+
+/* O tempo de saída fica abaixo, mais discreto: o de entrada é o que se lê primeiro. */
+.editor-tempo .editor-fim {
+    color: var(--ed-apagado);
+    font-size: 0.78rem;
+}
+
+.editor-texto {
+    width: 100%;
+    min-height: 2.2rem;
+    padding: 0.4rem 0.6rem;
+    resize: none;
+    overflow: hidden;
+    line-height: 1.45;
+}
+
+.editor-tempo input:focus,
+.editor-texto:focus {
+    border-color: #3574f0;
+    background: rgba(53, 116, 240, 0.08);
+}
+
+.editor-legendas .invalido {
+    border-color: var(--ed-erro) !important;
+    background: rgba(247, 84, 100, 0.1) !important;
+}
+
+.editor-acoes {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.1rem;
+    padding: 0.3rem 0.4rem;
+    opacity: 0.25;
+    transition: opacity 0.15s ease;
+}
+
+.editor-linha:hover .editor-acoes,
+.editor-linha.ativa .editor-acoes {
+    opacity: 1;
+}
+
+.editor-acoes button {
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--ed-apagado);
+    width: 1.6rem;
+    height: 1.6rem;
+    line-height: 1;
+}
+
+.editor-acoes button:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--ed-texto);
+}
+
+.editor-acoes button[data-acao="remover"]:hover {
+    color: var(--ed-erro);
+}
+
+.editor-erros {
+    margin: 0;
+    padding: 0.6rem 0.75rem 0.6rem 2rem;
+    border-top: 1px solid var(--ed-borda);
+    background: var(--ed-medianiz);
+    font-size: 0.8rem;
+    max-height: 9rem;
+    overflow-y: auto;
+}
+
+.editor-erros .erro {
+    color: var(--ed-erro);
+}
+
+.editor-erros .aviso {
+    color: var(--ed-tocando);
+}
+
+.editor-previa {
+    position: sticky;
+    top: 1rem;
+}
+
+/* Texto da legenda em exibição, sobre o vídeo, atualizado enquanto se digita. */
+.editor-legenda-atual {
+    position: absolute;
+    left: 50%;
+    bottom: 16%;
+    transform: translateX(-50%);
+    max-width: 90%;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.72);
+    color: #fff;
+    font-size: clamp(0.8rem, 2.2vw, 1.15rem);
+    text-align: center;
+    white-space: pre-line;
+    pointer-events: none;
+}
+
+.editor-legenda-atual:empty {
+    display: none;
+}
+
+.editor-atalhos li {
+    margin-bottom: 0.25rem;
+}

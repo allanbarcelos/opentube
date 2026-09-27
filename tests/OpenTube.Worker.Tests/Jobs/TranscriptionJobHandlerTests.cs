@@ -1,12 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using OpenTube.Domain.Captions;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Storage;
 using OpenTube.TestSupport;
 using OpenTube.Worker.Jobs;
+using OpenTube.Worker.Media;
 using OpenTube.Worker.Tests.Support;
 
 namespace OpenTube.Worker.Tests.Jobs;
@@ -28,7 +30,8 @@ public class TranscriptionJobHandlerTests(PostgresFixture postgres, MinioFixture
     public Task DisposeAsync() => Task.CompletedTask;
 
     private TranscriptionJobHandler Criar(OpenTube.Infrastructure.Persistence.OpenTubeDbContext db, IVideoStorage storage) =>
-        new(db, storage, _transcritor, _relogio, NullLogger<TranscriptionJobHandler>.Instance);
+        new(db, storage, _transcritor, Microsoft.Extensions.Options.Options.Create(new TranscriptionOptions()),
+            _relogio, NullLogger<TranscriptionJobHandler>.Instance);
 
     private async Task<Video> PrepararVideoAsync(IVideoStorage storage)
     {
@@ -50,27 +53,62 @@ public class TranscriptionJobHandlerTests(PostgresFixture postgres, MinioFixture
         return video;
     }
 
-    private static QueuedJob Job(Video video) =>
+    /// <summary>Pedido como a aplicação faz: a legenda já existe, em processamento.</summary>
+    private async Task<VideoAsset> PedirAsync(Video video, string idioma = "pt-br")
+    {
+        await using var db = postgres.CreateContext();
+        var legenda = VideoAsset.CaptionTranscriptionRequest(video.Id, idioma, null, StorageKeys.Caption(video.Id, idioma), Agora);
+        db.VideoAssets.Add(legenda);
+        await db.SaveChangesAsync();
+
+        return legenda;
+    }
+
+    private static QueuedJob Job(Video video, VideoAsset legenda, int tentativa = 1) =>
         new(Guid.CreateVersion7(), JobKind.Transcript, video.Id,
-            System.Text.Json.JsonSerializer.Serialize(new TranscriptionPayload(video.Id, video.OriginalKey)), 1);
+            System.Text.Json.JsonSerializer.Serialize(
+                new TranscriptionPayload(video.Id, video.OriginalKey, legenda.Language, legenda.Id)), tentativa);
+
+    private async Task<VideoAsset> LegendaAsync(Guid id)
+    {
+        await using var db = postgres.CreateContext();
+        return await db.VideoAssets.SingleAsync(a => a.Id == id);
+    }
 
     [Fact]
-    public async Task Gera_a_legenda_e_alimenta_a_busca()
+    public async Task Gera_a_legenda_no_idioma_pedido_e_marca_pronta()
     {
         using var storage = minio.CreateStorage();
         var video = await PrepararVideoAsync(storage);
+        var pedido = await PedirAsync(video, "en");
 
         await using (var db = postgres.CreateContext())
-            await Criar(db, storage).HandleAsync(Job(video));
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
 
-        await using var leitura = postgres.CreateContext();
-        var gravado = await leitura.Videos.SingleAsync(v => v.Id == video.Id);
-        var legenda = await leitura.VideoAssets.SingleAsync(a => a.Kind == VideoAssetKind.Caption);
+        // A ferramenta recebe só o idioma, sem região: é o que o Whisper entende.
+        Assert.Equal("en", _transcritor.IdiomaPedido);
 
-        Assert.Equal("Bom dia a todos.", gravado.Transcript);
-        Assert.Equal("pt", legenda.Language);
-        Assert.Equal(StorageKeys.Caption(video.Id, "pt"), legenda.StorageKey);
-        Assert.True(await storage.ExistsAsync(StorageBucket.Vod, legenda.StorageKey));
+        var legenda = await LegendaAsync(pedido.Id);
+        Assert.Equal(CaptionStatus.Ready, legenda.Status);
+        Assert.Equal(CaptionSource.Automatic, legenda.Source);
+        Assert.True(legenda.HasContent);
+
+        var conteudo = await storage.GetTextAsync(StorageBucket.Vod, legenda.StorageKey);
+        Assert.Equal("Bom dia a todos.", CaptionDocument.Parse(conteudo).Cues.Single().Text);
+    }
+
+    [Fact]
+    public async Task Regiao_do_idioma_fica_so_na_legenda()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PrepararVideoAsync(storage);
+        var pedido = await PedirAsync(video, "pt-br");
+
+        await using (var db = postgres.CreateContext())
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
+
+        Assert.Equal("pt", _transcritor.IdiomaPedido);
+        Assert.Equal("pt-br", (await LegendaAsync(pedido.Id)).Language);
     }
 
     [Fact]
@@ -79,50 +117,125 @@ public class TranscriptionJobHandlerTests(PostgresFixture postgres, MinioFixture
         using var storage = minio.CreateStorage();
         var video = await PrepararVideoAsync(storage);
 
-        _transcritor.Vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nVamos falar do orçamento anual.\n";
-
         await using (var db = postgres.CreateContext())
-            await Criar(db, storage).HandleAsync(Job(video));
+            await Criar(db, storage).HandleAsync(Job(video, await PedirAsync(video)));
 
         await using var leitura = postgres.CreateContext();
-        var conexao = leitura.Database.GetDbConnection();
-
-        var achou = await Dapper.SqlMapper.ExecuteScalarAsync<bool>(conexao,
-            "SELECT search_vector @@ plainto_tsquery('portuguese_unaccent', 'orcamento') FROM videos WHERE id = @Id",
-            new { Id = video.Id });
-
-        Assert.True(achou, "a fala transcrita deveria entrar no índice de busca");
+        Assert.Equal("Bom dia a todos.", (await leitura.Videos.SingleAsync()).Transcript);
     }
 
     [Fact]
-    public async Task Transcrever_de_novo_substitui_a_legenda_anterior()
+    public async Task O_resultado_da_ferramenta_e_guardado_normalizado()
     {
         using var storage = minio.CreateStorage();
         var video = await PrepararVideoAsync(storage);
+        var pedido = await PedirAsync(video);
+
+        // Fora de ordem e com tempo sem horas: sai ordenado e no formato completo.
+        _transcritor.Vtt = "WEBVTT\n\n00:05.000 --> 00:06.000\nDepois\n\n00:01.000 --> 00:02.000\nAntes\n";
 
         await using (var db = postgres.CreateContext())
-            await Criar(db, storage).HandleAsync(Job(video));
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
+
+        var conteudo = await storage.GetTextAsync(StorageBucket.Vod, (await LegendaAsync(pedido.Id)).StorageKey);
+        Assert.Equal("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nAntes\n\n00:00:05.000 --> 00:00:06.000\nDepois\n", conteudo);
+    }
+
+    [Fact]
+    public async Task Transcrever_de_novo_substitui_o_conteudo_sem_criar_outra_legenda()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PrepararVideoAsync(storage);
+        var pedido = await PedirAsync(video);
+
+        await using (var db = postgres.CreateContext())
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
+
+        await using (var db = postgres.CreateContext())
+        {
+            var legenda = await db.VideoAssets.SingleAsync();
+            legenda.StartTranscription(Agora);
+            await db.SaveChangesAsync();
+        }
 
         _transcritor.Vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nTexto corrigido.\n";
 
         await using (var db = postgres.CreateContext())
-            await Criar(db, storage).HandleAsync(Job(video));
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
 
         await using var leitura = postgres.CreateContext();
-
         Assert.Equal(1, await leitura.VideoAssets.CountAsync(a => a.Kind == VideoAssetKind.Caption));
         Assert.Equal("Texto corrigido.", (await leitura.Videos.SingleAsync()).Transcript);
     }
 
     [Fact]
-    public async Task Sem_a_ferramenta_configurada_o_trabalho_e_descartado()
+    public async Task Falha_antes_da_ultima_tentativa_mantem_processando()
     {
         using var storage = minio.CreateStorage();
         var video = await PrepararVideoAsync(storage);
+        var pedido = await PedirAsync(video);
+        _transcritor.Falha = new InvalidOperationException("modelo não encontrado");
+
+        await using (var db = postgres.CreateContext())
+            await Assert.ThrowsAsync<InvalidOperationException>(() => Criar(db, storage).HandleAsync(Job(video, pedido, tentativa: 1)));
+
+        Assert.Equal(CaptionStatus.Processing, (await LegendaAsync(pedido.Id)).Status);
+    }
+
+    [Fact]
+    public async Task Falha_na_ultima_tentativa_registra_o_motivo()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PrepararVideoAsync(storage);
+        var pedido = await PedirAsync(video);
+        _transcritor.Falha = new InvalidOperationException("modelo não encontrado");
+
+        await using (var db = postgres.CreateContext())
+        {
+            var erro = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                Criar(db, storage).HandleAsync(Job(video, pedido, tentativa: ProcessingJob.MaxAttempts)));
+
+            Assert.Contains("modelo não encontrado", erro.Message);
+        }
+
+        var legenda = await LegendaAsync(pedido.Id);
+        Assert.Equal(CaptionStatus.Failed, legenda.Status);
+        Assert.Equal("modelo não encontrado", legenda.Error);
+    }
+
+    [Fact]
+    public async Task Sem_a_ferramenta_configurada_a_falha_e_registrada_de_uma_vez()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PrepararVideoAsync(storage);
+        var pedido = await PedirAsync(video);
         _transcritor.IsAvailable = false;
 
         await using (var db = postgres.CreateContext())
-            await Criar(db, storage).HandleAsync(Job(video));
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
+
+        Assert.Equal(0, _transcritor.Chamadas);
+
+        var legenda = await LegendaAsync(pedido.Id);
+        Assert.Equal(CaptionStatus.Failed, legenda.Status);
+        Assert.Equal("Automatic transcription is not configured on this server.", legenda.Error);
+    }
+
+    [Fact]
+    public async Task Legenda_removida_durante_a_espera_descarta_o_resultado()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PrepararVideoAsync(storage);
+        var pedido = await PedirAsync(video);
+
+        await using (var db = postgres.CreateContext())
+        {
+            db.VideoAssets.Remove(await db.VideoAssets.SingleAsync());
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = postgres.CreateContext())
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
 
         Assert.Equal(0, _transcritor.Chamadas);
 
@@ -135,6 +248,7 @@ public class TranscriptionJobHandlerTests(PostgresFixture postgres, MinioFixture
     {
         using var storage = minio.CreateStorage();
         var video = await PrepararVideoAsync(storage);
+        var pedido = await PedirAsync(video);
 
         await using (var db = postgres.CreateContext())
         {
@@ -144,23 +258,29 @@ public class TranscriptionJobHandlerTests(PostgresFixture postgres, MinioFixture
         }
 
         await using (var db = postgres.CreateContext())
-            await Criar(db, storage).HandleAsync(Job(video));
+            await Criar(db, storage).HandleAsync(Job(video, pedido));
 
         Assert.Equal(0, _transcritor.Chamadas);
+        Assert.Equal(CaptionStatus.Failed, (await LegendaAsync(pedido.Id)).Status);
     }
 
     [Fact]
-    public async Task A_falha_da_ferramenta_propaga_para_a_fila()
+    public async Task Trabalho_antigo_sem_legenda_no_pedido_ainda_e_atendido()
     {
         using var storage = minio.CreateStorage();
         var video = await PrepararVideoAsync(storage);
-        _transcritor.Falha = new InvalidOperationException("modelo não encontrado");
 
-        await using var db = postgres.CreateContext();
+        var antigo = new QueuedJob(Guid.CreateVersion7(), JobKind.Transcript, video.Id,
+            System.Text.Json.JsonSerializer.Serialize(new { video.Id, VideoId = video.Id, video.OriginalKey }), 1);
 
-        var erro = await Assert.ThrowsAsync<InvalidOperationException>(() => Criar(db, storage).HandleAsync(Job(video)));
+        await using (var db = postgres.CreateContext())
+            await Criar(db, storage).HandleAsync(antigo);
 
-        Assert.Contains("modelo não encontrado", erro.Message);
+        await using var leitura = postgres.CreateContext();
+        var legenda = await leitura.VideoAssets.SingleAsync();
+
+        Assert.Equal("pt", legenda.Language);
+        Assert.Equal(CaptionStatus.Ready, legenda.Status);
     }
 
     [Fact]

@@ -1,0 +1,197 @@
+@page "/admin/videos/{videoId:guid}/captions/{assetId:guid}/edit"
+@using OpenTube.Domain.Captions
+@using OpenTube.Domain.Entities
+@using OpenTube.Infrastructure.Services
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject AdminVideoService Admin
+@inject CaptionService Legendas
+@inject NavigationManager Navegacao
+
+<PageTitle>@T.Format("Caption editor — {0}", Legenda?.Label ?? "")</PageTitle>
+
+@* Navegação completa a partir daqui: a do Blazor troca a página sem o aviso de alterações não salvas. *@
+<div class="container-fluid px-lg-4 py-4" data-enhance-nav="false">
+    @if (Video is not null && Legenda is not null)
+    {
+        <nav aria-label="@T["Breadcrumb"]">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
+                <li class="breadcrumb-item"><a href="/admin/videos/@Video.Id">@Video.Title</a></li>
+                <li class="breadcrumb-item"><a href="/admin/videos/@Video.Id?tab=captions">@T["Captions"]</a></li>
+                <li class="breadcrumb-item active" aria-current="page">@Legenda.Label <code>@Legenda.Language</code></li>
+            </ol>
+        </nav>
+
+        @if (Legenda.IsProcessing)
+        {
+            <div class="alert alert-info">@T["This caption is being generated. Editing opens when the processing finishes."]</div>
+        }
+        else if (ErroDeLeitura is not null)
+        {
+            <div class="alert alert-danger">
+                @ErroDeLeitura
+                <a class="alert-link ms-1" href="/admin/videos/@Video.Id/captions/@Legenda.Id/download">@T["Download the file"]</a>
+            </div>
+        }
+        else
+        {
+            <div class="row g-4">
+                <div class="col-xl-7">
+                    @* Editor no estilo código: número da linha, tempo de entrada (e de saída) e texto.
+                       O editor-de-legendas.js cuida da edição, da validação e da gravação. *@
+                    <div class="editor-legendas" id="editor-legendas"
+                         data-salvar="/admin/videos/@Video.Id/captions/@Legenda.Id/content"
+                         data-msg-salvo="@T["Saved at {0}."]"
+                         data-msg-alterado="@T["Unsaved changes"]"
+                         data-msg-salvando="@T["Saving…"]"
+                         data-msg-sair="@T["There are unsaved changes."]"
+                         data-msg-tempo="@T["Line {0}: use a time like 00:01:02.500."]"
+                         data-msg-ordem="@T["Line {0}: the end must come after the start."]"
+                         data-msg-vazio="@T["Line {0}: the text is empty."]"
+                         data-msg-seta="@T["Line {0}: the text cannot contain the arrow -->."]"
+                         data-msg-sobreposto="@T["Line {0} starts before line {1} ends."]"
+                         data-msg-falha="@T["Could not save. Check the connection and try again."]">
+                        <form class="d-none"><AntiforgeryToken /></form>
+
+                        <div class="editor-barra">
+                            <button class="btn btn-sm btn-primary" type="button" data-acao="salvar">
+                                @T["Save"] <kbd class="ms-1">⌘S</kbd>
+                            </button>
+                            <button class="btn btn-sm btn-outline-light" type="button" data-acao="adicionar">+ @T["Add cue"]</button>
+                            <span class="editor-situacao ms-auto" role="status" aria-live="polite"></span>
+                            <span class="editor-contagem" aria-live="polite">@T.Format("{0} cues", Documento.Cues.Count)</span>
+                        </div>
+
+                        <div class="editor-grade" role="grid" aria-label="@T["Caption cues"]">
+                            <div class="editor-cabecalho" role="row">
+                                <span role="columnheader">#</span>
+                                <span role="columnheader">@T["Time"]</span>
+                                <span role="columnheader">@T["Text"]</span>
+                            </div>
+                            <div class="editor-linhas">
+                                @foreach (var (trecho, indice) in Documento.Cues.Select((c, i) => (c, i)))
+                                {
+                                    <div class="editor-linha" role="row" data-ajustes="@trecho.Settings">
+                                        <button class="editor-numero" type="button" data-acao="ir" tabindex="-1"
+                                                title="@T["Go to this cue in the video"]">@(indice + 1)</button>
+                                        <div class="editor-tempo">
+                                            <input class="editor-inicio" value="@CaptionDocument.FormatTime(trecho.Start)"
+                                                   aria-label="@T["Start"]" spellcheck="false" autocomplete="off" />
+                                            <input class="editor-fim" value="@CaptionDocument.FormatTime(trecho.End)"
+                                                   aria-label="@T["End"]" spellcheck="false" autocomplete="off" />
+                                        </div>
+                                        <textarea class="editor-texto" rows="1" aria-label="@T["Text"]" spellcheck="true">@trecho.Text</textarea>
+                                        <div class="editor-acoes">
+                                            <button type="button" data-acao="tocar" title="@T["Play from this cue"]">▶</button>
+                                            <button type="button" data-acao="marcar-inicio" title="@T["Set the start to the video time"]">⇤</button>
+                                            <button type="button" data-acao="marcar-fim" title="@T["Set the end to the video time"]">⇥</button>
+                                            <button type="button" data-acao="inserir" title="@T["Insert a cue after this one"]">+</button>
+                                            <button type="button" data-acao="remover" title="@T["Remove this cue"]">✕</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <ul class="editor-erros" hidden></ul>
+                    </div>
+                </div>
+
+                <div class="col-xl-5">
+                    <div class="editor-previa">
+                        <div class="player-shell rounded overflow-hidden shadow-sm position-relative">
+                            @* Sem data-video-id: a prévia do editor não conta como audiência. *@
+                            <video id="editor-video" controls playsinline preload="metadata"
+                                   data-manifest="/api/videos/@Video.Id/master.m3u8"
+                                   data-unsupported="@T["This browser cannot play the video."]"></video>
+                            <div class="editor-legenda-atual" aria-live="off"></div>
+                        </div>
+
+                        <div class="card mt-3">
+                            <div class="card-body small">
+                                <p class="fw-semibold mb-2">@T["Shortcuts"]</p>
+                                <ul class="list-unstyled mb-0 editor-atalhos">
+                                    <li><kbd>⌘/Ctrl</kbd> + <kbd>S</kbd> — @T["save"]</li>
+                                    <li><kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd> — @T["new cue after the current one"]</li>
+                                    <li><kbd>Alt</kbd> + <kbd>↑</kbd>/<kbd>↓</kbd> — @T["previous or next cue"]</li>
+                                    <li><kbd>Alt</kbd> + <kbd>[</kbd> / <kbd>]</kbd> — @T["start or end at the video time"]</li>
+                                    <li><kbd>Alt</kbd> + <kbd>P</kbd> — @T["play or pause the video"]</li>
+                                </ul>
+                                <p class="text-body-secondary mt-2 mb-0">
+                                    @T["Times use hours:minutes:seconds.milliseconds. The cue being played is highlighted, and its text shows over the video as you type."]
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <template id="editor-modelo-linha">
+                <div class="editor-linha" role="row">
+                    <button class="editor-numero" type="button" data-acao="ir" tabindex="-1" title="@T["Go to this cue in the video"]"></button>
+                    <div class="editor-tempo">
+                        <input class="editor-inicio" aria-label="@T["Start"]" spellcheck="false" autocomplete="off" />
+                        <input class="editor-fim" aria-label="@T["End"]" spellcheck="false" autocomplete="off" />
+                    </div>
+                    <textarea class="editor-texto" rows="1" aria-label="@T["Text"]" spellcheck="true"></textarea>
+                    <div class="editor-acoes">
+                        <button type="button" data-acao="tocar" title="@T["Play from this cue"]">▶</button>
+                        <button type="button" data-acao="marcar-inicio" title="@T["Set the start to the video time"]">⇤</button>
+                        <button type="button" data-acao="marcar-fim" title="@T["Set the end to the video time"]">⇥</button>
+                        <button type="button" data-acao="inserir" title="@T["Insert a cue after this one"]">+</button>
+                        <button type="button" data-acao="remover" title="@T["Remove this cue"]">✕</button>
+                    </div>
+                </div>
+            </template>
+        }
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext Http { get; set; } = default!;
+
+    [Parameter]
+    public Guid VideoId { get; set; }
+
+    [Parameter]
+    public Guid AssetId { get; set; }
+
+    private Video? Video;
+
+    private VideoAsset? Legenda;
+
+    private CaptionDocument Documento = CaptionDocument.FromCues([]);
+
+    private string? ErroDeLeitura;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Video = await Admin.FindAsync(VideoId, Http.RequestAborted);
+        Legenda = Video is null ? null : await Legendas.FindAsync(VideoId, AssetId, Http.RequestAborted);
+
+        if (Video is null || Legenda is null)
+        {
+            Navegacao.NotFound();
+            return;
+        }
+
+        if (Legenda.IsProcessing)
+            return;
+
+        // Uma legenda que falhou na primeira transcrição ainda não tem arquivo: o editor
+        // abre vazio, e dá para escrever do zero.
+        var conteudo = await Legendas.ReadAsync(AssetId, Http.RequestAborted);
+        if (conteudo is null)
+            return;
+
+        try
+        {
+            Documento = CaptionDocument.Parse(conteudo.Value.Content);
+        }
+        catch (CaptionFormatException e)
+        {
+            ErroDeLeitura = T.Format(e.Key, [.. e.Args]);
+        }
+    }
+}
