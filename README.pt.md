@@ -24,6 +24,7 @@ de email inteiro, com validade opcional e registro detalhado de quem assistiu o 
 - [Testes](#testes)
 - [Segurança e privacidade](#segurança-e-privacidade)
 - [Roadmap](#roadmap)
+- [Uso de IA no desenvolvimento](#uso-de-ia-no-desenvolvimento)
 
 ---
 
@@ -523,8 +524,8 @@ são feitas no terminal mesmo quando o script chega pelo pipe.
 
 As imagens publicadas são `ghcr.io/allanbarcelos/opentube/app` e
 `ghcr.io/allanbarcelos/opentube/worker` (`latest`, o SHA do commit e `app-vA.B.C.D` /
-`worker-vA.B.C.D`). O instalador pede um usuário do GitHub e um token com o escopo
-`read:packages` e baixa essas imagens. Nada é compilado no servidor.
+`worker-vA.B.C.D`), além da `whisper`, das legendas automáticas. São públicas: o instalador as
+baixa sem conta nem token do GitHub, e nada é compilado no servidor.
 
 O instalador oferece três modos de acesso:
 
@@ -669,6 +670,13 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | 6 | Refino: legendas automáticas, marca d'água, auditoria, autorização por segmento | **concluída** |
 | 7 | Produção: instalador no Swarm (modo Cloudflare), imagens no GHCR, proteção do player, marca d'água do acervo, interface em três idiomas | **concluída** |
 | 8 | Legendas: aba por idioma, editor, container dedicado do Whisper com detecção de GPU/CPU e do idioma falado | **concluída** |
+
+---
+
+## Uso de IA no desenvolvimento
+
+Ferramentas de IA foram usadas apenas para gerar os READMEs e demais textos, para o início dos
+testes unitários e para análise de segurança. Todo o código foi revisado e/ou feito por humano.
 
 ---
 

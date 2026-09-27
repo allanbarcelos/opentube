@@ -14,6 +14,7 @@
 #    5. Directory /opt/<name>
 #    6. Swarm secrets (not environment variables, and not written to disk)
 #    7. Images pulled from ghcr.io/allanbarcelos/opentube/{app,worker,whisper}
+#       (public images: no GitHub account or token needed)
 #       Automatic captions run Whisper in its own container: the CUDA image when
 #       an NVIDIA GPU is found (and the NVIDIA runtime is set up), the CPU one
 #       otherwise. The container picks the model for the hardware on its own.
@@ -239,16 +240,6 @@ echo ""
 _admin_default="$(read_conf "$INSTALL_CONF" ADMIN_EMAIL)"
 ask "Administrator email (signs in with a code, no password)" "$_admin_default" ADMIN_EMAIL
 [[ "$ADMIN_EMAIL" == *@*.* ]] || die "Invalid email: ${ADMIN_EMAIL}"
-echo ""
-
-sep
-echo -e "  ${BOLD}GitHub Container Registry (GHCR)${NC}"
-echo -e "  ${DIM}Images: ${APP_IMAGE} and ${WORKER_IMAGE}${NC}"
-echo ""
-_ghcr_default="$(read_conf "$INSTALL_CONF" GHCR_USER)"
-[[ -z "$_ghcr_default" ]] && _ghcr_default="allanbarcelos"
-ask "GitHub username" "$_ghcr_default" GHCR_USER
-ask_secret "GitHub personal access token (read:packages scope)" GHCR_TOKEN
 echo ""
 
 _mode_default="$(read_conf "$INSTALL_CONF" INSTALL_MODE)"
@@ -585,21 +576,19 @@ fi
 phase "PHASE 7 — Images"
 # ==============================================================================
 
-GHCR_CREDS="${APP_DIR}/etc/.ghcr-credentials"
-cat > "$GHCR_CREDS" <<EOF
-GHCR_USER='${GHCR_USER}'
-GHCR_TOKEN='${GHCR_TOKEN}'
-EOF
-chmod 600 "$GHCR_CREDS"
-
-info "Logging in to ghcr.io..."
-echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-ok "Authenticated with ghcr.io"
+# The images are public. A login left by an older installation is removed: once
+# its token expires, Docker would send it anyway and even public pulls would fail.
+rm -f "${APP_DIR}/etc/.ghcr-credentials"
+docker logout ghcr.io >/dev/null 2>&1 || true
 
 info "Pulling images..."
 docker pull "$APP_IMAGE"
 docker pull "$WORKER_IMAGE"
-if [[ -n "$WHISPER_IMAGE" ]]; then docker pull "$WHISPER_IMAGE"; fi
+if [[ -n "$WHISPER_IMAGE" ]] && ! docker pull "$WHISPER_IMAGE"; then
+  warn "Could not pull ${WHISPER_IMAGE} — continuing without automatic captions."
+  WHISPER_ENABLED="n"
+  WHISPER_IMAGE=""
+fi
 ok "Images pulled"
 
 # ==============================================================================
@@ -972,7 +961,6 @@ INSTALL_MODE='${INSTALL_MODE}'
 PUBLIC_HOST='${PUBLIC_HOST}'
 PUBLIC_URL='${PUBLIC_URL}'
 ADMIN_EMAIL='${ADMIN_EMAIL}'
-GHCR_USER='${GHCR_USER}'
 POSTGRES_DB='${POSTGRES_DB}'
 POSTGRES_USER='${POSTGRES_USER}'
 MINIO_DATA_DIR='${MINIO_DATA_DIR}'
@@ -996,23 +984,18 @@ cat > "${APP_DIR}/scripts/update.sh" <<'UPD'
 set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CONF="${APP_DIR}/etc/install.conf"
-CREDS="${APP_DIR}/etc/.ghcr-credentials"
 read_conf() { grep -m1 "^${1}=" "$CONF" | cut -d= -f2- | sed "s/^'//;s/'\$//" || true; }
 STACK="$(read_conf STACK_NAME)"
 [[ -n "$STACK" ]] || { echo "Missing STACK_NAME in ${CONF}" >&2; exit 1; }
-[[ -f "$CREDS" ]] || { echo "Missing ${CREDS}. Run install.sh again." >&2; exit 1; }
-set -a
-# shellcheck disable=SC1090
-. "$CREDS"
-set +a
-echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+# Public images: no login. An old login is dropped so an expired token cannot block the pull.
+rm -f "${APP_DIR}/etc/.ghcr-credentials"
+docker logout ghcr.io >/dev/null 2>&1 || true
 docker pull ghcr.io/allanbarcelos/opentube/app:latest
 docker pull ghcr.io/allanbarcelos/opentube/worker:latest
 WHISPER_IMAGE="$(read_conf WHISPER_IMAGE)"
 if [[ -n "$WHISPER_IMAGE" ]]; then docker pull "$WHISPER_IMAGE"; fi
 docker stack deploy \
   --compose-file "${APP_DIR}/docker-compose.prod.yml" \
-  --with-registry-auth \
   --resolve-image always \
   --prune \
   "$STACK"
@@ -1024,7 +1007,7 @@ ok "Stack, Caddy, and update.sh"
 phase "PHASE 9 — Deploy"
 # ==============================================================================
 
-docker stack deploy --compose-file "$STACK_FILE" --with-registry-auth --resolve-image always --prune "$STACK_NAME"
+docker stack deploy --compose-file "$STACK_FILE" --resolve-image always --prune "$STACK_NAME"
 ok "Stack ${STACK_NAME} published"
 
 # ==============================================================================

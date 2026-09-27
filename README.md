@@ -24,6 +24,7 @@ domain, with optional expiration and a detailed record of who watched what.
 - [Tests](#tests)
 - [Security and privacy](#security-and-privacy)
 - [Roadmap](#roadmap)
+- [Use of AI in development](#use-of-ai-in-development)
 
 ---
 
@@ -528,8 +529,8 @@ asked on the terminal even when the script arrives through the pipe.
 
 The published images are `ghcr.io/allanbarcelos/opentube/app` and
 `ghcr.io/allanbarcelos/opentube/worker` (`latest`, the commit SHA, and `app-vA.B.C.D` /
-`worker-vA.B.C.D`). The installer asks for a GitHub username and a token with the `read:packages`
-scope, then pulls those images. It does not build on the server.
+`worker-vA.B.C.D`), plus `whisper` for automatic captions. They are public: the installer pulls
+them with no GitHub account or token, and does not build anything on the server.
 
 The installer offers three access modes:
 
@@ -675,6 +676,13 @@ testable without a database or network; the rest uses ephemeral containers.
 | 6 | Polish: automatic captions, watermark, audit, per-segment authorization | **done** |
 | 7 | Production: Swarm installer (Cloudflare mode), GHCR images, player protection, library watermark, interface in three languages | **done** |
 | 8 | Captions: per-language tab, editor, dedicated Whisper container with GPU/CPU detection and language detection | **done** |
+
+---
+
+## Use of AI in development
+
+AI tools were used only to generate the READMEs and other texts, to start the unit tests, and for
+security analysis. All code was reviewed and/or written by a human.
 
 ---
 
