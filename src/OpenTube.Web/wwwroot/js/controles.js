@@ -16,17 +16,19 @@ window.openTubeControles = (function () {
     const VELOCIDADES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
     const VOLUME = 'opentube.volume';
 
-    // Ícones no desenho dos players comuns (caminhos SVG de 24×24).
+    // Ícones do bootstrap-icons, os mesmos do resto da aplicação.
     const ICONES = {
-        tocar: 'M8 5v14l11-7z',
-        pausar: 'M6 5h4v14H6zm8 0h4v14h-4z',
-        som: 'M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z',
-        somBaixo: 'M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4z',
-        mudo: 'M16.5 12A4.5 4.5 0 0 0 14 8v2.2l2.5 2.4v-.6zM19 12a7 7 0 0 1-.6 2.8l1.5 1.5A9 9 0 0 0 14 3.2v2.1a7 7 0 0 1 5 6.7zM4.3 3 3 4.3 7.7 9H3v6h4l5 5v-6.7l4.3 4.3a7 7 0 0 1-2.3 1.2v2.1a9 9 0 0 0 3.7-1.8l2 2 1.3-1.3-9-9zM12 4 9.9 6.1 12 8.2z',
-        cheia: 'M7 14H5v5h5v-2H7zm-2-4h2V7h3V5H5zm12 7h-3v2h5v-5h-2zM14 5v2h3v3h2V5z',
-        sairDaCheia: 'M5 16h3v3h2v-5H5zm3-8H5v2h5V5H8zm6 11h2v-3h3v-2h-5zm2-11V5h-2v5h5V8z',
-        pip: 'M19 7h-8v6h8zm2-4H3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H3V5h18z',
-        ajustes: 'M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.3 7.3 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.3 7.3 0 0 0-1.7 1l-2.5-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.3 7.3 0 0 0 1.7-1l2.5 1 2-3.5zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z'
+        tocar: 'play-fill',
+        pausar: 'pause-fill',
+        som: 'volume-up-fill',
+        somBaixo: 'volume-down-fill',
+        mudo: 'volume-mute-fill',
+        cheia: 'fullscreen',
+        sairDaCheia: 'fullscreen-exit',
+        pip: 'pip',
+        ajustes: 'gear-fill',
+        legendas: 'badge-cc',
+        legendasLigadas: 'badge-cc-fill'
     };
 
     function icone(b, nome) {
@@ -34,7 +36,7 @@ window.openTubeControles = (function () {
             return;
         }
         b.dataset.icone = nome;
-        b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="' + ICONES[nome] + '"/></svg>';
+        b.innerHTML = '<i class="bi bi-' + ICONES[nome] + '" aria-hidden="true"></i>';
     }
 
     function formatar(segundos) {
@@ -140,7 +142,7 @@ window.openTubeControles = (function () {
         capituloAtual.hidden = true;
 
         const legendas = botao('ctl-legendas', rotulo('captions', 'Captions'), direita);
-        legendas.textContent = 'CC';
+        icone(legendas, 'legendas');
         const ajustes = botao('ctl-ajustes', rotulo('settings', 'Settings'), direita);
         icone(ajustes, 'ajustes');
 
@@ -262,7 +264,12 @@ window.openTubeControles = (function () {
                 ultimoCapitulo = atual;
                 pedacos.forEach(function (p) { p.el.classList.toggle('atual', p === atual); });
                 capituloAtual.hidden = !(atual && atual.titulo);
-                capituloAtual.textContent = atual && atual.titulo ? atual.titulo : '';
+                capituloAtual.textContent = '';
+                if (atual && atual.titulo) {
+                    const titulo = elemento('span', 'ctl-capitulo-titulo', capituloAtual);
+                    titulo.textContent = atual.titulo;
+                    elemento('i', 'bi bi-chevron-right', capituloAtual).setAttribute('aria-hidden', 'true');
+                }
             }
         }
 
@@ -302,7 +309,9 @@ window.openTubeControles = (function () {
         function atualizarLegendas() {
             const lista = legendasDe(video);
             legendas.hidden = lista.length === 0;
-            legendas.classList.toggle('ligado', lista.some(function (t) { return t.mode === 'showing'; }));
+            const ligada = lista.some(function (t) { return t.mode === 'showing'; });
+            legendas.classList.toggle('ligado', ligada);
+            icone(legendas, ligada ? 'legendasLigadas' : 'legendas');
         }
 
         function atualizarTelaCheia() {
@@ -462,7 +471,9 @@ window.openTubeControles = (function () {
             b.type = 'button';
             b.setAttribute('role', 'menuitemradio');
             b.setAttribute('aria-checked', marcada ? 'true' : 'false');
-            b.textContent = texto;
+            const marca = elemento('i', 'bi bi-check2 ctl-opcao-marca', b);
+            marca.setAttribute('aria-hidden', 'true');
+            elemento('span', null, b).textContent = texto;
             b.addEventListener('click', function () {
                 acao();
                 fecharMenu();

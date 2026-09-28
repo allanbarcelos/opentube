@@ -695,10 +695,9 @@
     outline-offset: -2px;
 }
 
-.ctl-botao svg {
-    width: 24px;
-    height: 24px;
-    fill: currentColor;
+.ctl-botao .bi {
+    font-size: 20px;
+    line-height: 1;
 }
 
 .ctl-volume {
@@ -732,27 +731,23 @@
 .ctl-capitulo {
     width: auto;
     min-width: 0;
-    padding: 0 8px;
+    flex-shrink: 1;
     overflow: hidden;
+    gap: 2px;
+    padding: 0 8px;
     font-weight: 400;
     font-size: 13px;
+}
+
+.ctl-capitulo-titulo {
+    overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    display: block;
-    line-height: 36px;
 }
 
-.ctl-capitulo::before {
-    content: "• ";
-}
-
-.ctl-capitulo::after {
-    content: " ›";
-}
-
-.ctl-legendas {
-    font-size: 13px;
-    letter-spacing: 0.5px;
+.ctl-capitulo .bi {
+    flex-shrink: 0;
+    font-size: 12px;
 }
 
 .ctl-legendas.ligado {
@@ -797,10 +792,14 @@
     outline: none;
 }
 
-.ctl-opcao[aria-checked="true"]::before {
-    content: "✓";
+.ctl-opcao-marca {
     position: absolute;
-    left: 14px;
+    left: 12px;
+    visibility: hidden;
+}
+
+.ctl-opcao[aria-checked="true"] .ctl-opcao-marca {
+    visibility: visible;
 }
 
 /* Botão grande no meio enquanto o vídeo está parado. */
@@ -820,9 +819,8 @@
     background: var(--ctl-cor);
 }
 
-.ctl-grande svg {
-    width: 32px;
-    height: 32px;
+.ctl-grande .bi {
+    font-size: 30px;
 }
 
 .ctl-carregando {
@@ -904,4 +902,53 @@
     outline: 2px solid var(--bs-primary);
     outline-offset: 2px;
     border-radius: 0.25rem;
+}
+
+/* Barra superior: a busca ocupa todo o espaço entre a marca e os botões, com a lupa dentro. */
+.barra-superior .busca {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 12rem;
+}
+
+.barra-superior .busca .form-control {
+    padding-right: 2.75rem;
+}
+
+.barra-superior .busca-botao {
+    position: absolute;
+    top: 50%;
+    right: 0.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    color: var(--bs-secondary-color);
+    transform: translateY(-50%);
+}
+
+.barra-superior .busca-botao:hover,
+.barra-superior .busca-botao:focus-visible {
+    background-color: var(--bs-secondary-bg);
+    color: var(--bs-body-color);
+}
+
+/* O campo de busca do navegador põe um "x" próprio que colidiria com a lupa. */
+.barra-superior .busca input::-webkit-search-cancel-button {
+    display: none;
+}
+
+.barra-superior .barra-usuario {
+    max-width: 14rem;
+}
+
+@media (max-width: 767.98px) {
+    .barra-superior .barra-usuario {
+        max-width: none;
+        padding: 0.25rem 0;
+    }
 }

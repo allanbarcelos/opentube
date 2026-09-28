@@ -780,7 +780,7 @@ administração abre o vídeo naquele ponto (`?t=` no endereço). Só conta o te
 | Camada | Tecnologia |
 | --- | --- |
 | Aplicação | .NET 10, Blazor Web App (SSR + `InteractiveServer` na área administrativa) |
-| Interface | Bootstrap 5.3 com a paleta padrão |
+| Interface | Bootstrap 5.3 com a paleta padrão; ícones só do Bootstrap Icons |
 | Banco | PostgreSQL 17, EF Core para o domínio e Dapper para agregações |
 | Storage | MinIO (API S3), buckets `originals` e `vod` |
 | Mídia | FFmpeg em worker próprio, HLS/CMAF, player `hls.js` |
@@ -900,7 +900,7 @@ Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/op
 A licença MIT exige que esse aviso seja mantido em qualquer cópia ou parte relevante do código;
 apagá-lo de arquivos copiados descumpre a licença. O `make headers` o acrescenta em arquivos
 novos, e o CI recusa uma mudança que traga arquivo sem ele. Código de terceiros (Bootstrap,
-hls.js) mantém os próprios avisos.
+Bootstrap Icons, hls.js) mantém os próprios avisos.
 
 Se você usa, faz um fork ou constrói sobre o OpenTube, mantenha também o link **Feito com
 OpenTube** no rodapé e cite o projeto original com um link. A licença não obriga, mas é assim que

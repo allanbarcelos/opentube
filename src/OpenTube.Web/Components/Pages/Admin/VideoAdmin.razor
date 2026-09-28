@@ -212,7 +212,7 @@
                                         </div>
                                         <div class="col-auto">
                                             <button class="btn btn-sm btn-outline-secondary" type="button" data-sumario-remover
-                                                    title="@T["Remove"]" aria-label="@T["Remove"]">✕</button>
+                                                    title="@T["Remove"]" aria-label="@T["Remove"]"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
                                         </div>
                                     </div>
                                 }
@@ -231,13 +231,13 @@
                                     </div>
                                     <div class="col-auto">
                                         <button class="btn btn-sm btn-outline-secondary" type="button" data-sumario-remover
-                                                title="@T["Remove"]" aria-label="@T["Remove"]">✕</button>
+                                                title="@T["Remove"]" aria-label="@T["Remove"]"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
                                     </div>
                                 </div>
                             </template>
 
                             <div class="d-flex flex-wrap gap-2">
-                                <button class="btn btn-sm btn-outline-primary" type="button" data-sumario-acrescentar>+ @T["Add chapter"]</button>
+                                <button class="btn btn-sm btn-outline-primary" type="button" data-sumario-acrescentar><i class="bi bi-plus-lg" aria-hidden="true"></i> @T["Add chapter"]</button>
                                 <button class="btn btn-sm btn-primary" type="submit">@T["Save chapters"]</button>
                             </div>
                         </form>
@@ -289,7 +289,7 @@
                         {
                             <div class="d-flex align-items-baseline gap-2 mb-3">
                                 <span class="h3 mb-0" data-media>@Notas.Average!.Value.ToString("0.0")</span>
-                                <span class="text-warning">★</span>
+                                <i class="bi bi-star-fill text-warning" aria-hidden="true"></i>
                                 <span class="small text-body-secondary">@T.Format("{0} rating(s)", Notas.Count)</span>
                             </div>
                             @for (var nota = 5; nota >= 1; nota--)
@@ -297,7 +297,7 @@
                                 var quantas = Notas.Distribution[nota - 1];
                                 var parte = Notas.Count == 0 ? 0 : quantas * 100 / Notas.Count;
                                 <div class="d-flex align-items-center gap-2 small mb-1" data-nota="@nota">
-                                    <span class="text-nowrap" style="width: 2.5rem">@nota ★</span>
+                                    <span class="text-nowrap" style="width: 2.5rem">@nota <i class="bi bi-star-fill text-warning" aria-hidden="true"></i></span>
                                     <div class="progress flex-grow-1" role="progressbar" style="height: 0.5rem"
                                          aria-valuenow="@parte" aria-valuemin="0" aria-valuemax="100"
                                          aria-label="@T.Format("{0} of 5", nota)">

@@ -19,6 +19,7 @@ ASKED AS A COURTESY
 
 Third-party components keep their own licenses and notices:
   Bootstrap (MIT)          src/OpenTube.Web/wwwroot/lib/bootstrap
+  Bootstrap Icons (MIT)    src/OpenTube.Web/wwwroot/lib/bootstrap-icons
   hls.js (Apache-2.0)      src/OpenTube.Web/wwwroot/lib/hlsjs
   whisper.cpp (MIT)        built into the whisper image (docker/whisper)
   FFmpeg (LGPL/GPL)        installed in the worker image from distribution packages

@@ -5,58 +5,91 @@
 
 @using Microsoft.AspNetCore.Components.Authorization
 
-<nav class="navbar navbar-expand-md bg-body border-bottom sticky-top">
-    <div class="container">
-        <a class="navbar-brand fw-semibold" href="/">OpenTube</a>
+<nav class="navbar navbar-expand-md bg-body border-bottom sticky-top barra-superior">
+    <div class="container gap-2">
+        <a class="navbar-brand fw-semibold d-flex align-items-center gap-2 me-0" href="/">
+            <i class="bi bi-play-btn-fill text-danger fs-4" aria-hidden="true"></i>
+            <span>OpenTube</span>
+        </a>
 
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu-principal"
                 aria-controls="menu-principal" aria-expanded="false" aria-label="@T["Open the menu"]">
             <span class="navbar-toggler-icon"></span>
         </button>
 
-        <div class="collapse navbar-collapse" id="menu-principal">
-            <form class="d-flex ms-md-3 me-auto my-2 my-md-0 flex-grow-1" action="/" method="get" role="search">
-                <input class="form-control" type="search" name="q" value="@Termo"
+        <div class="collapse navbar-collapse gap-2" id="menu-principal">
+            @* A lupa fica dentro do campo e é o próprio botão de buscar. *@
+            <form class="busca mx-md-3 my-2 my-md-0" action="/" method="get" role="search">
+                <input class="form-control rounded-pill" type="search" name="q" value="@Termo"
                        placeholder="@T["Search videos"]" aria-label="@T["Search videos"]" />
-                <button class="btn btn-outline-secondary ms-2" type="submit">@T["Search"]</button>
+                <button class="btn busca-botao" type="submit" title="@T["Search"]" aria-label="@T["Search"]">
+                    <i class="bi bi-search" aria-hidden="true"></i>
+                </button>
             </form>
 
-            <ul class="navbar-nav align-items-md-center gap-md-2">
-                <li class="nav-item">
-                    <div class="btn-group btn-group-sm" role="group" aria-label="@T["Language"]">
-                        @foreach (var idioma in Idiomas)
-                        {
-                            <form action="/language" method="post">
-                                <AntiforgeryToken />
-                                <input type="hidden" name="idioma" value="@idioma" />
-                                <input type="hidden" name="voltar" value="@Voltar" />
-                                <button class="btn @(idioma == Atual ? "btn-secondary" : "btn-outline-secondary")" type="submit">@idioma</button>
-                            </form>
-                        }
-                    </div>
+            <ul class="navbar-nav align-items-md-center gap-1 gap-md-2 ms-md-0">
+                <li class="nav-item dropdown">
+                    @* Um formulário só: cada idioma é um botão que envia o próprio valor. *@
+                    <form action="/language" method="post">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="voltar" value="@Voltar" />
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-inline-flex align-items-center gap-1"
+                                type="button" data-bs-toggle="dropdown" aria-expanded="false"
+                                title="@T["Language"]" aria-label="@T["Language"]: @NomeDe(Atual)" data-idioma-atual="@Atual">
+                            <i class="bi bi-translate" aria-hidden="true"></i>
+                            <span class="text-uppercase">@Atual</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-md-end">
+                            @foreach (var idioma in Idiomas)
+                            {
+                                <li>
+                                    <button class="dropdown-item d-flex align-items-center justify-content-between gap-3 @(idioma == Atual ? "active" : "")"
+                                            type="submit" name="idioma" value="@idioma" lang="@idioma"
+                                            aria-current="@(idioma == Atual ? "true" : null)">
+                                        <span>@NomeDe(idioma)</span>
+                                        <span class="small text-uppercase opacity-75">@idioma</span>
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    </form>
                 </li>
 
                 <AuthorizeView Policy="@Policies.Administrator">
                     <li class="nav-item">
-                        <a class="nav-link" href="/admin">@T["Administration"]</a>
+                        @* Em telas médias ficam só os ícones, para sobrar espaço para a busca. *@
+                        <a class="nav-link d-flex align-items-center gap-1" href="/admin"
+                           title="@T["Administration"]" aria-label="@T["Administration"]">
+                            <i class="bi bi-gear" aria-hidden="true"></i>
+                            <span class="d-md-none d-lg-inline">@T["Administration"]</span>
+                        </a>
                     </li>
                 </AuthorizeView>
 
                 <AuthorizeView>
                     <Authorized>
-                        <li class="nav-item text-body-secondary small d-none d-md-block">
-                            @context.User.Identity?.Name
+                        <li class="nav-item d-flex align-items-center gap-1 text-body-secondary small text-truncate barra-usuario"
+                            title="@context.User.Identity?.Name">
+                            <i class="bi bi-person-circle" aria-hidden="true"></i>
+                            <span class="text-truncate d-md-none d-xl-inline">@context.User.Identity?.Name</span>
                         </li>
                         <li class="nav-item">
                             <form action="/sign-out" method="post">
                                 <AntiforgeryToken />
-                                <button class="btn btn-sm btn-outline-secondary" type="submit">@T["Sign out"]</button>
+                                <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-2" type="submit"
+                                        title="@T["Sign out"]" aria-label="@T["Sign out"]" data-sair>
+                                    <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                                    <span class="d-md-none">@T["Sign out"]</span>
+                                </button>
                             </form>
                         </li>
                     </Authorized>
                     <NotAuthorized>
                         <li class="nav-item">
-                            <a class="btn btn-sm btn-primary" href="/sign-in">@T["Sign in"]</a>
+                            <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-2" href="/sign-in">
+                                <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
+                                <span>@T["Sign in"]</span>
+                            </a>
                         </li>
                     </NotAuthorized>
                 </AuthorizeView>
@@ -67,6 +100,14 @@
 
 @code {
     private static readonly string[] Idiomas = ["en", "pt", "fr"];
+
+    /// <summary>Cada idioma no próprio nome, para quem não lê o atual achar o seu.</summary>
+    private static string NomeDe(string idioma) => idioma switch
+    {
+        "pt" => "Português",
+        "fr" => "Français",
+        _ => "English"
+    };
 
     [CascadingParameter]
     private HttpContext? Http { get; set; }

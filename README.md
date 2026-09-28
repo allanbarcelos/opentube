@@ -783,7 +783,7 @@ video's length count: "at 14:30" in a 10-minute video stays text.
 | Layer | Technology |
 | --- | --- |
 | Application | .NET 10, Blazor Web App (SSR + `InteractiveServer` in the admin area) |
-| UI | Bootstrap 5.3 with the default palette |
+| UI | Bootstrap 5.3 with the default palette; icons only from Bootstrap Icons |
 | Database | PostgreSQL 17, EF Core for the domain and Dapper for aggregations |
 | Storage | MinIO (S3 API), `originals` and `vod` buckets |
 | Media | FFmpeg in a dedicated worker, HLS/CMAF, `hls.js` player |
@@ -902,7 +902,7 @@ Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/op
 
 The MIT License requires that notice to stay in any copy or substantial portion of the code, so
 removing it from copied files does not comply with the license. `make headers` adds it to new
-files, and CI refuses a change that brings a file without it. Third-party code (Bootstrap, hls.js)
+files, and CI refuses a change that brings a file without it. Third-party code (Bootstrap, Bootstrap Icons, hls.js)
 keeps its own notices.
 
 If you run, fork, or build on OpenTube, please also keep the **Powered by OpenTube** link in the

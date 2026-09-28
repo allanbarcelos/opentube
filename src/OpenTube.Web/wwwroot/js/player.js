@@ -173,7 +173,7 @@ window.openTubePlayer = (function () {
             const botao = document.createElement('button');
             botao.type = 'button';
             botao.className = 'player-tela-cheia';
-            botao.textContent = '⛶';
+            botao.innerHTML = '<i class="bi bi-arrows-fullscreen" aria-hidden="true"></i>';
             botao.title = shell.dataset.fullscreenLabel || 'Full screen';
             botao.setAttribute('aria-label', botao.title);
             botao.addEventListener('click', function () {

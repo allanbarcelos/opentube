@@ -62,7 +62,7 @@
                             <button class="btn btn-sm btn-primary" type="button" data-acao="salvar">
                                 @T["Save"] <kbd class="ms-1">⌘S</kbd>
                             </button>
-                            <button class="btn btn-sm btn-outline-light" type="button" data-acao="adicionar">+ @T["Add cue"]</button>
+                            <button class="btn btn-sm btn-outline-light" type="button" data-acao="adicionar"><i class="bi bi-plus-lg" aria-hidden="true"></i> @T["Add cue"]</button>
                             <span class="editor-situacao ms-auto" role="status" aria-live="polite"></span>
                             <span class="editor-contagem" aria-live="polite">@T.Format("{0} cues", Documento.Cues.Count)</span>
                         </div>
@@ -87,11 +87,11 @@
                                         </div>
                                         <textarea class="editor-texto" rows="1" aria-label="@T["Text"]" spellcheck="true">@trecho.Text</textarea>
                                         <div class="editor-acoes">
-                                            <button type="button" data-acao="tocar" title="@T["Play from this cue"]">▶</button>
-                                            <button type="button" data-acao="marcar-inicio" title="@T["Set the start to the video time"]">⇤</button>
-                                            <button type="button" data-acao="marcar-fim" title="@T["Set the end to the video time"]">⇥</button>
-                                            <button type="button" data-acao="inserir" title="@T["Insert a cue after this one"]">+</button>
-                                            <button type="button" data-acao="remover" title="@T["Remove this cue"]">✕</button>
+                                            <button type="button" data-acao="tocar" title="@T["Play from this cue"]" aria-label="@T["Play from this cue"]"><i class="bi bi-play-fill" aria-hidden="true"></i></button>
+                                            <button type="button" data-acao="marcar-inicio" title="@T["Set the start to the video time"]" aria-label="@T["Set the start to the video time"]"><i class="bi bi-align-start" aria-hidden="true"></i></button>
+                                            <button type="button" data-acao="marcar-fim" title="@T["Set the end to the video time"]" aria-label="@T["Set the end to the video time"]"><i class="bi bi-align-end" aria-hidden="true"></i></button>
+                                            <button type="button" data-acao="inserir" title="@T["Insert a cue after this one"]" aria-label="@T["Insert a cue after this one"]"><i class="bi bi-plus-lg" aria-hidden="true"></i></button>
+                                            <button type="button" data-acao="remover" title="@T["Remove this cue"]" aria-label="@T["Remove this cue"]"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
                                         </div>
                                     </div>
                                 }
@@ -140,11 +140,11 @@
                     </div>
                     <textarea class="editor-texto" rows="1" aria-label="@T["Text"]" spellcheck="true"></textarea>
                     <div class="editor-acoes">
-                        <button type="button" data-acao="tocar" title="@T["Play from this cue"]">▶</button>
-                        <button type="button" data-acao="marcar-inicio" title="@T["Set the start to the video time"]">⇤</button>
-                        <button type="button" data-acao="marcar-fim" title="@T["Set the end to the video time"]">⇥</button>
-                        <button type="button" data-acao="inserir" title="@T["Insert a cue after this one"]">+</button>
-                        <button type="button" data-acao="remover" title="@T["Remove this cue"]">✕</button>
+                        <button type="button" data-acao="tocar" title="@T["Play from this cue"]" aria-label="@T["Play from this cue"]"><i class="bi bi-play-fill" aria-hidden="true"></i></button>
+                        <button type="button" data-acao="marcar-inicio" title="@T["Set the start to the video time"]" aria-label="@T["Set the start to the video time"]"><i class="bi bi-align-start" aria-hidden="true"></i></button>
+                        <button type="button" data-acao="marcar-fim" title="@T["Set the end to the video time"]" aria-label="@T["Set the end to the video time"]"><i class="bi bi-align-end" aria-hidden="true"></i></button>
+                        <button type="button" data-acao="inserir" title="@T["Insert a cue after this one"]" aria-label="@T["Insert a cue after this one"]"><i class="bi bi-plus-lg" aria-hidden="true"></i></button>
+                        <button type="button" data-acao="remover" title="@T["Remove this cue"]" aria-label="@T["Remove this cue"]"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
                     </div>
                 </div>
             </template>
