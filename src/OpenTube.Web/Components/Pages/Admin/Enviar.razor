@@ -43,24 +43,32 @@
                   data-sair="@T["Uploads in progress will be lost."]"
                   data-falha-servidor="@T["Could not reach the server."]"
                   data-falha-pedaco="@T["A part of the file failed to upload."]"
-                  data-falha-storage="@T["Storage did not confirm the part."]">
+                  data-falha-storage="@T["Storage did not confirm the part."]"
+                  data-falha-leitura="@T["Could not read the dropped files."]">
 
-                <div class="card mb-3">
-                    <div class="card-body">
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label" for="arquivos">@T["Video files"]</label>
-                                <input class="form-control" id="arquivos" type="file" accept="video/*" multiple />
-                                <div class="form-text">@T["One or more videos, as many times as you like: each choice adds to the list. The title of each one is its file name, and can be changed below."]</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="pasta">@T["Or a whole folder"]</label>
-                                <input class="form-control" id="pasta" type="file" webkitdirectory multiple />
-                                <div class="form-text">@T["The folder becomes a collection with its name, and its videos (subfolders included) go into it."]</div>
-                            </div>
-                        </div>
+                @* Uma área só: clicar escolhe vídeos, o link escolhe uma pasta, e arrastar aceita os
+                   dois. Os campos de arquivo ficam escondidos: o navegador não tem uma janela que
+                   escolha arquivos e pastas ao mesmo tempo, então cada um abre a sua. *@
+                <div class="area-de-envio card mb-3" id="area-de-envio" data-soltar tabindex="0" role="button"
+                     aria-describedby="ajuda-envio" aria-label="@T["Choose videos to upload"]">
+                    <div class="card-body text-center py-5">
+                        <i class="bi bi-cloud-arrow-up display-5 text-primary" aria-hidden="true"></i>
+                        <p class="fs-5 mt-2 mb-1 area-de-envio-normal">@T["Drag videos or a folder here"]</p>
+                        <p class="fs-5 mt-2 mb-1 area-de-envio-soltando">@T["Drop to add to the list"]</p>
+                        <p class="text-body-secondary mb-3">
+                            @T["or"]
+                            <button class="btn btn-link p-0 align-baseline" type="button" data-escolher="arquivos">@T["choose videos"]</button>
+                            ·
+                            <button class="btn btn-link p-0 align-baseline" type="button" data-escolher="pasta">@T["choose a folder"]</button>
+                        </p>
+                        <p class="small text-body-secondary mb-0 mx-auto" id="ajuda-envio" style="max-width: 36rem">
+                            @T["Videos add to the list, as many times as you like; the title of each one is its file name, and can be changed below. A folder becomes a collection with its name, and its videos (subfolders included) go into it."]
+                        </p>
                     </div>
                 </div>
+                @* Fora da área: o clique que o script dá neles não pode voltar para ela. *@
+                <input class="d-none" id="arquivos" type="file" accept="video/*" multiple tabindex="-1" aria-hidden="true" />
+                <input class="d-none" id="pasta" type="file" webkitdirectory multiple tabindex="-1" aria-hidden="true" />
 
                 <div class="card mb-3 d-none" id="bloco-colecao">
                     <div class="card-body">

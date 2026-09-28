@@ -952,3 +952,36 @@
         padding: 0.25rem 0;
     }
 }
+
+/* Área de envio: clicar escolhe vídeos, arrastar aceita vídeos e pastas. */
+.area-de-envio {
+    border: 2px dashed var(--bs-border-color);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.area-de-envio:hover,
+.area-de-envio:focus-visible {
+    border-color: var(--bs-primary);
+    outline: none;
+}
+
+.area-de-envio.soltando {
+    border-color: var(--bs-primary);
+    background-color: var(--bs-primary-bg-subtle);
+}
+
+.area-de-envio .area-de-envio-soltando,
+.area-de-envio.soltando .area-de-envio-normal {
+    display: none;
+}
+
+.area-de-envio.soltando .area-de-envio-soltando {
+    display: block;
+}
+
+/* Enquanto os arquivos sobem, a área não aceita mais nada. */
+.area-de-envio.travada {
+    cursor: not-allowed;
+    opacity: 0.6;
+}

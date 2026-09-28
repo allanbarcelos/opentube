@@ -315,6 +315,10 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
 
         Assert.Matches("id=\"arquivos\"[^>]*multiple", html);
         Assert.Matches("id=\"pasta\"[^>]*webkitdirectory", html);
+        // Uma área só na tela; os dois campos ficam escondidos, abertos por ela.
+        Assert.Contains("id=\"area-de-envio\" data-soltar", html);
+        Assert.Contains("data-escolher=\"arquivos\"", html);
+        Assert.Contains("data-escolher=\"pasta\"", html);
         Assert.Contains("id=\"modelo-linha-envio\"", html);
         // A descrição é preenchida depois, nas configurações de cada vídeo.
         Assert.DoesNotContain("id=\"descricao\"", html);

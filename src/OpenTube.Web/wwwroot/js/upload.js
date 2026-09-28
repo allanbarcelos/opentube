@@ -4,9 +4,11 @@
 // Envio de vídeos direto do navegador para o storage, em pedaços assinados pela aplicação.
 // O servidor nunca recebe os bytes do vídeo: só coordena o envio.
 //
-// Aceita vários arquivos ou uma pasta inteira. Cada vídeo ganha como título o nome do arquivo
-// sem a extensão (editável na fila). Uma pasta vira uma coleção com o nome dela, e cada vídeo
-// entra na coleção ao terminar de subir. Os arquivos sobem um por vez, na ordem da fila.
+// Uma área só recebe tudo: clicar escolhe vídeos, o link escolhe uma pasta, e arrastar (para a
+// área ou para qualquer ponto da página) aceita vídeos, pastas ou os dois. Cada vídeo ganha como
+// título o nome do arquivo sem a extensão (editável na fila). Uma pasta sozinha vira uma coleção
+// com o nome dela, e cada vídeo entra na coleção ao terminar de subir; várias pastas, ou pastas
+// junto com arquivos, entram como vídeos soltos. Os arquivos sobem um por vez, na ordem da fila.
 //
 // Carregado para todas as páginas no App.razor; monta-se sozinho quando a página de envio
 // aparece, inclusive pela navegação aprimorada do Blazor.
@@ -51,6 +53,92 @@ window.envioDeVideos = (function () {
         return numero + ' ' + unidades[i];
     }
 
+    // Uma pasta solta: todos os arquivos dela, subpastas incluídas, com o caminho a partir dela.
+    // O navegador entrega o conteúdo em lotes; lê até vir um lote vazio.
+    async function lerPasta(entrada) {
+        const arquivos = [];
+        const leitor = entrada.createReader();
+
+        for (;;) {
+            const lote = await new Promise((resolve, reject) => leitor.readEntries(resolve, reject));
+            if (lote.length === 0) {
+                break;
+            }
+            for (const item of lote) {
+                if (item.isDirectory) {
+                    arquivos.push(...await lerPasta(item));
+                } else if (item.isFile) {
+                    const arquivo = await new Promise((resolve, reject) => item.file(resolve, reject));
+                    arquivos.push({ arquivo: arquivo, caminho: item.fullPath.replace(/^\//, '') });
+                }
+            }
+        }
+
+        return arquivos;
+    }
+
+    // O que foi solto: as entradas precisam ser pegas durante o evento; o conteúdo, depois.
+    function entradasSoltas(dados) {
+        const itens = Array.from(dados.items || []).filter(item => item.kind === 'file');
+        const entradas = itens.map(item => item.webkitGetAsEntry ? item.webkitGetAsEntry() : null);
+
+        if (entradas.length > 0 && entradas.every(Boolean)) {
+            return entradas;
+        }
+
+        // Navegador sem acesso a pastas no arrastar: só os arquivos.
+        return Array.from(dados.files || []).map(arquivo => ({ isFile: true, arquivoPronto: arquivo }));
+    }
+
+    // Quem trata o que for solto na página de envio montada agora. Os ouvintes do documento são
+    // instalados uma vez só; sem a página, não interferem no arrastar do resto do site.
+    let soltarNaPagina = null;
+
+    function arrastandoArquivos(evento) {
+        return soltarNaPagina && soltarNaPagina.ativo()
+            && evento.dataTransfer && Array.from(evento.dataTransfer.types || []).includes('Files');
+    }
+
+    let camadas = 0;
+
+    document.addEventListener('dragenter', function (evento) {
+        if (!arrastandoArquivos(evento)) {
+            return;
+        }
+        evento.preventDefault();
+        camadas++;
+        soltarNaPagina.destacar(true);
+    });
+
+    document.addEventListener('dragover', function (evento) {
+        if (!arrastandoArquivos(evento)) {
+            return;
+        }
+        // Sem isto o navegador abriria o vídeo no lugar da página, perdendo a fila.
+        evento.preventDefault();
+        evento.dataTransfer.dropEffect = soltarNaPagina.travada() ? 'none' : 'copy';
+    });
+
+    document.addEventListener('dragleave', function (evento) {
+        if (!arrastandoArquivos(evento)) {
+            return;
+        }
+        camadas = Math.max(0, camadas - 1);
+        if (camadas === 0) {
+            soltarNaPagina.destacar(false);
+        }
+    });
+
+    document.addEventListener('drop', function (evento) {
+        if (!arrastandoArquivos(evento)) {
+            return;
+        }
+        evento.preventDefault();
+        camadas = 0;
+        soltarNaPagina.destacar(false);
+        soltarNaPagina.receber(entradasSoltas(evento.dataTransfer));
+    });
+
     function montar() {
         const formulario = document.getElementById('formulario-envio');
         if (!formulario || formulario.dataset.montado === '1') {
@@ -65,6 +153,7 @@ window.envioDeVideos = (function () {
 
         const campoArquivos = document.getElementById('arquivos');
         const campoPasta = document.getElementById('pasta');
+        const area = document.getElementById('area-de-envio');
         const blocoColecao = document.getElementById('bloco-colecao');
         const campoColecao = document.getElementById('nome-colecao');
         const blocoFila = document.getElementById('bloco-fila');
@@ -184,10 +273,11 @@ window.envioDeVideos = (function () {
             });
         }
 
+        // Cada entrada da fila é { arquivo, caminho }: o caminho vem da pasta escolhida ou solta.
         // Mesmo arquivo escolhido de novo não entra duas vezes na fila.
-        const chave = arquivo => [arquivo.webkitRelativePath || arquivo.name, arquivo.size, arquivo.lastModified].join('|');
+        const chave = entrada => [entrada.caminho, entrada.arquivo.size, entrada.arquivo.lastModified].join('|');
 
-        function montarFila(arquivos, acrescentar) {
+        function montarFila(entradas, acrescentar) {
             if (!acrescentar) {
                 fila = [];
                 colecao = null;
@@ -197,34 +287,37 @@ window.envioDeVideos = (function () {
             mostrarErro('');
             conclusao.classList.add('d-none');
 
-            const naFila = new Set(fila.map(item => chave(item.arquivo)));
+            const naFila = new Set(fila.map(item => chave(item)));
 
             const videos = [];
             const outros = [];
-            for (const arquivo of arquivos) {
+            for (const entrada of entradas) {
+                const arquivo = entrada.arquivo;
                 // Arquivos ocultos (.DS_Store, Thumbs.db) não interessam nem como aviso.
                 if (arquivo.name.startsWith('.') || arquivo.name === 'Thumbs.db') {
                     continue;
                 }
-                if (naFila.has(chave(arquivo))) {
+                if (naFila.has(chave(entrada))) {
                     continue;
                 }
-                (ehVideo(arquivo) ? videos : outros).push(arquivo);
+                naFila.add(chave(entrada));
+                (ehVideo(arquivo) ? videos : outros).push(entrada);
             }
 
-            const caminho = arquivo => arquivo.webkitRelativePath || arquivo.name;
+            const caminho = entrada => entrada.caminho;
             videos.sort((a, b) => ordenar.compare(caminho(a), caminho(b)));
 
-            for (const arquivo of videos) {
+            for (const entrada of videos) {
+                const arquivo = entrada.arquivo;
                 const linha = modelo.content.firstElementChild.cloneNode(true);
-                const item = { arquivo: arquivo, linha: linha, concluido: false };
+                const item = { arquivo: arquivo, caminho: entrada.caminho, linha: linha, concluido: false };
 
                 const titulo = linha.querySelector('[data-campo="titulo"]');
                 titulo.value = tituloDoArquivo(arquivo.name, limiteTitulo);
 
                 const onde = linha.querySelector('[data-campo="caminho"]');
-                onde.textContent = caminho(arquivo);
-                onde.title = caminho(arquivo);
+                onde.textContent = entrada.caminho;
+                onde.title = entrada.caminho;
 
                 linha.querySelector('[data-campo="tamanho"]').textContent = tamanhoLegivel(arquivo.size);
 
@@ -258,37 +351,100 @@ window.envioDeVideos = (function () {
             return videos.length;
         }
 
-        // Depois de escolhidos, os arquivos já estão na fila: o campo volta a ficar vazio, pronto
-        // para acrescentar mais. Uma fila de pasta, ou já toda enviada, começa de novo.
-        campoArquivos.addEventListener('change', function () {
-            if (enviando) {
-                return;
-            }
+        // Vídeos soltos entram no fim da fila; uma fila de pasta, ou já toda enviada, começa de novo.
+        function adicionarVideos(entradas) {
             const acrescentar = !pasta && fila.some(item => !item.concluido);
             pasta = null;
             blocoColecao.classList.add('d-none');
-            montarFila(Array.from(campoArquivos.files), acrescentar);
+            montarFila(entradas, acrescentar);
+        }
+
+        // Uma pasta vira uma coleção com o nome dela e substitui a fila.
+        function adicionarPasta(nome, entradas) {
+            pasta = nome;
+            blocoColecao.classList.remove('d-none');
+            campoColecao.value = nome.slice(0, limiteColecao);
+
+            if (montarFila(entradas, false) === 0) {
+                mostrarErro(textos.pastaVazia);
+            }
+        }
+
+        // Depois de escolhidos, os arquivos já estão na fila: o campo volta a ficar vazio, pronto
+        // para escolher de novo.
+        campoArquivos.addEventListener('change', function () {
+            if (!enviando) {
+                adicionarVideos(Array.from(campoArquivos.files).map(arquivo => ({ arquivo: arquivo, caminho: arquivo.name })));
+            }
             campoArquivos.value = '';
         });
 
         campoPasta.addEventListener('change', function () {
-            if (enviando) {
+            const arquivos = Array.from(campoPasta.files);
+            campoPasta.value = '';
+            if (enviando || arquivos.length === 0) {
                 return;
             }
-            campoArquivos.value = '';
-            const arquivos = Array.from(campoPasta.files);
-            const primeiro = arquivos.find(a => a.webkitRelativePath);
+            const entradas = arquivos.map(arquivo => ({ arquivo: arquivo, caminho: arquivo.webkitRelativePath || arquivo.name }));
+            adicionarPasta(entradas[0].caminho.split('/')[0], entradas);
+        });
 
-            pasta = primeiro ? primeiro.webkitRelativePath.split('/')[0] : null;
-            blocoColecao.classList.toggle('d-none', !pasta);
-            campoColecao.value = pasta ? pasta.slice(0, limiteColecao) : '';
+        function escolher(qual) {
+            if (!enviando) {
+                (qual === 'pasta' ? campoPasta : campoArquivos).click();
+            }
+        }
 
-            const quantos = montarFila(arquivos, false);
-            campoPasta.value = '';
-            if (pasta && quantos === 0) {
-                mostrarErro(textos.pastaVazia);
+        area.addEventListener('click', function (evento) {
+            const botaoEscolher = evento.target.closest('[data-escolher]');
+            escolher(botaoEscolher ? botaoEscolher.dataset.escolher : 'arquivos');
+        });
+
+        area.addEventListener('keydown', function (evento) {
+            if (evento.target === area && (evento.key === 'Enter' || evento.key === ' ')) {
+                evento.preventDefault();
+                escolher('arquivos');
             }
         });
+
+        // Uma pasta sozinha vira coleção; qualquer outra combinação entra como vídeos soltos,
+        // com as pastas lidas por inteiro.
+        async function receber(entradas) {
+            if (enviando || entradas.length === 0) {
+                return;
+            }
+
+            try {
+                if (entradas.length === 1 && entradas[0].isDirectory) {
+                    adicionarPasta(entradas[0].name, await lerPasta(entradas[0]));
+                    return;
+                }
+
+                const todas = [];
+                for (const entrada of entradas) {
+                    if (entrada.arquivoPronto) {
+                        todas.push({ arquivo: entrada.arquivoPronto, caminho: entrada.arquivoPronto.name });
+                    } else if (entrada.isDirectory) {
+                        todas.push(...await lerPasta(entrada));
+                    } else if (entrada.isFile) {
+                        const arquivo = await new Promise((resolve, reject) => entrada.file(resolve, reject));
+                        todas.push({ arquivo: arquivo, caminho: arquivo.name });
+                    }
+                }
+                adicionarVideos(todas);
+            } catch (falha) {
+                mostrarErro(textos.falhaLeitura);
+            }
+        }
+
+        soltarNaPagina = {
+            ativo: () => formulario.isConnected,
+            travada: () => enviando,
+            destacar: function (sim) {
+                area.classList.toggle('soltando', sim && !enviando);
+            },
+            receber: receber
+        };
 
         async function enviarUm(item) {
             const arquivo = item.arquivo;
@@ -372,6 +528,8 @@ window.envioDeVideos = (function () {
             botao.disabled = travado;
             campoArquivos.disabled = travado;
             campoPasta.disabled = travado;
+            area.classList.toggle('travada', travado);
+            area.setAttribute('aria-disabled', travado ? 'true' : 'false');
             campoColecao.disabled = travado || colecao !== null;
             fila.forEach(item => {
                 item.titulo.disabled = travado || item.concluido;
