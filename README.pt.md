@@ -902,8 +902,9 @@ apagá-lo de arquivos copiados descumpre a licença. O `make headers` o acrescen
 novos, e o CI recusa uma mudança que traga arquivo sem ele. Código de terceiros (Bootstrap,
 Bootstrap Icons, hls.js) mantém os próprios avisos.
 
-Se você usa, faz um fork ou constrói sobre o OpenTube, mantenha também o link **Feito com
-OpenTube** no rodapé e cite o projeto original com um link. A licença não obriga, mas é assim que
+Se você usa, faz um fork ou constrói sobre o OpenTube, mantenha também os créditos do rodapé —
+**Desenvolvido por Barcelos.Dev** e o ícone do GitHub com o link do projeto original — e cite o projeto
+original com um link. A licença não obriga, mas é assim que
 um projeto livre fica conhecido — veja o [NOTICE](NOTICE).
 
 ---

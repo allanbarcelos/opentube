@@ -13,15 +13,19 @@
     </main>
 
     <footer class="border-top bg-body py-3 mt-4">
-        <div class="container d-flex flex-wrap justify-content-between gap-2 small text-body-secondary">
-            @* Crédito ao projeto original. A licença MIT não obriga a mantê-lo, mas o pedido está
-               no NOTICE: quem usa o OpenTube, por favor, deixe o link. *@
-            <span data-credito="opentube">
+        <div class="container rodape small text-body-secondary">
+            @* Créditos: o autor e o projeto original. A licença MIT não obriga a mantê-los, mas o
+               pedido está no NOTICE: quem usa o OpenTube, por favor, deixe os dois links. *@
+            <span class="rodape-credito" data-credito="autor">
                 @T["Powered by"]
-                <a class="link-secondary" href="https://github.com/allanbarcelos/opentube"
-                   target="_blank" rel="noopener">OpenTube</a>
+                <a class="link-secondary" href="https://www.barcelos.dev" target="_blank" rel="noopener">Barcelos.Dev</a>
             </span>
-            <span>@T["Access to this platform is recorded."]</span>
+            <span class="rodape-aviso">@T["Access to this platform is recorded."]</span>
+            <a class="rodape-github link-secondary fs-5 lh-1" href="https://github.com/allanbarcelos/opentube"
+               target="_blank" rel="noopener" data-credito="opentube"
+               title="@T["OpenTube on GitHub"]" aria-label="@T["OpenTube on GitHub"]">
+                <i class="bi bi-github" aria-hidden="true"></i>
+            </a>
         </div>
     </footer>
 </div>

@@ -186,8 +186,10 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         var html = await cliente.GetStringAsync("/");
 
-        Assert.Contains("data-credito=\"opentube\"", html);
+        Assert.Contains("href=\"https://www.barcelos.dev\"", html);
+        Assert.Contains("data-credito=\"autor\"", html);
         Assert.Contains("href=\"https://github.com/allanbarcelos/opentube\"", html);
+        Assert.Contains("data-credito=\"opentube\"", html);
         Assert.Contains("<meta name=\"generator\" content=\"OpenTube (https://github.com/allanbarcelos/opentube)\"", html);
     }
 }

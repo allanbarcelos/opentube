@@ -985,3 +985,37 @@
     cursor: not-allowed;
     opacity: 0.6;
 }
+
+/* Rodapé: crédito à esquerda, aviso no centro, GitHub à direita. As laterais têm a mesma
+   largura para o aviso ficar no centro da página, e não só entre os dois. */
+.rodape {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    grid-template-areas: "credito aviso github";
+    align-items: center;
+    gap: 0.5rem 1rem;
+}
+
+.rodape-credito {
+    grid-area: credito;
+}
+
+.rodape-aviso {
+    grid-area: aviso;
+    text-align: center;
+}
+
+.rodape-github {
+    grid-area: github;
+    justify-self: end;
+}
+
+/* Celular: crédito e GitHub na primeira linha, o aviso centralizado embaixo. */
+@media (max-width: 575.98px) {
+    .rodape {
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+            "credito github"
+            "aviso aviso";
+    }
+}

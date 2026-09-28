@@ -905,8 +905,9 @@ removing it from copied files does not comply with the license. `make headers` a
 files, and CI refuses a change that brings a file without it. Third-party code (Bootstrap, Bootstrap Icons, hls.js)
 keeps its own notices.
 
-If you run, fork, or build on OpenTube, please also keep the **Powered by OpenTube** link in the
-footer and mention the original project with a link. The license does not require it, but it is
+If you run, fork, or build on OpenTube, please also keep the footer credits — **Powered by
+Barcelos.Dev** and the GitHub icon linking to the original project — and mention the original
+project with a link. The license does not require it, but it is
 how a free project gets known — see [NOTICE](NOTICE).
 
 ---

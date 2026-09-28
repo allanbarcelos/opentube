@@ -12,7 +12,8 @@ REQUIRED BY THE LICENSE
 
 ASKED AS A COURTESY
   If you run, fork, or build on OpenTube, please:
-    - keep the "Powered by OpenTube" link in the interface footer;
+    - keep the footer credits: "Powered by Barcelos.Dev" and the GitHub icon
+      linking to the original project;
     - mention the original project, with a link, in your README or About page.
   The MIT License does not require these, but they are how a free project gets
   known, and the author asks that you keep them.
