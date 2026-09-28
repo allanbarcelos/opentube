@@ -278,38 +278,6 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Revogar_o_convite_corta_todos_e_restaurar_devolve_so_o_que_ele_cortou()
-    {
-        var video = await VideoRestritoAsync();
-        var (servico, db) = Criar();
-        await using var _ = db;
-
-        var convite = await servico.InviteAsync(
-            ["ana@barcelos.dev", "bia@barcelos.dev", "caio@barcelos.dev"], GrantTargetType.Video, video.Id,
-            GrantValidity.Forever, Admin, sendEmail: false);
-        var conviteId = convite[0].InvitationId;
-        var caio = convite.Single(c => c.Email == "caio@barcelos.dev").GrantId;
-
-        // Caio foi revogado sozinho antes; depois, o convite inteiro.
-        await servico.RevokeAsync(caio);
-        _relogio.Advance(TimeSpan.FromMinutes(1));
-        await servico.RevokeInvitationAsync(conviteId);
-
-        await using (var leitura = postgres.CreateContext())
-        {
-            Assert.All(await leitura.AccessGrants.ToListAsync(), g => Assert.True(g.IsRevoked));
-            Assert.True((await leitura.Invitations.SingleAsync()).IsRevoked);
-        }
-
-        await servico.RestoreInvitationAsync(conviteId);
-
-        await using var depois = postgres.CreateContext();
-        var ativos = await depois.AccessGrants.Where(g => g.RevokedAt == null).Select(g => g.SubjectValue).ToListAsync();
-        Assert.Equal(["ana@barcelos.dev", "bia@barcelos.dev"], ativos.Order());
-        Assert.False((await depois.Invitations.SingleAsync()).IsRevoked);
-    }
-
-    [Fact]
     public async Task Lista_os_convites_do_alvo_com_as_concessoes_de_cada_um()
     {
         var video = await VideoRestritoAsync();
@@ -383,6 +351,33 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var guardado = await leitura.AccessGrants.Select(g => g.SubjectValue).SingleAsync();
 
         Assert.DoesNotContain(token, guardado);
+    }
+
+    [Fact]
+    public async Task O_endereco_do_link_pode_ser_visto_de_novo()
+    {
+        var video = await VideoRestritoAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        var link = await servico.CreateShareLinkAsync(GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
+
+        await using var leitura = postgres.CreateContext();
+        var concessao = await leitura.AccessGrants.SingleAsync();
+
+        Assert.Equal(link.Url, servico.ShareLinkAddress(concessao));
+    }
+
+    [Fact]
+    public void Link_antigo_so_com_o_resumo_nao_tem_endereco()
+    {
+        var (servico, db) = Criar();
+        using var _ = db;
+
+        var antigo = AccessGrant.ForLink(TokenHasher.Hash("token-antigo", "segredo-de-teste"),
+            GrantTargetType.Video, Guid.CreateVersion7(), Admin, DateTimeOffset.UtcNow);
+
+        Assert.Null(servico.ShareLinkAddress(antigo));
     }
 
     [Fact]

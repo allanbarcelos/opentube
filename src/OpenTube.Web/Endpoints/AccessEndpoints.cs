@@ -167,47 +167,6 @@ public static class AccessEndpoints
             return Results.Redirect(Retorno.Para(Destino((GrantTargetType)alvoTipo, alvoId), "acesso-restaurado=1"));
         });
 
-        // O convite inteiro.
-        grupo.MapPost("/invitations/{invitationId:guid}/revoke", async (
-            Guid invitationId, [FromForm] int alvoTipo, [FromForm] Guid? alvoId,
-            GrantService concessoes, HttpContext contexto, CancellationToken cancellationToken) =>
-        {
-            var tipo = (GrantTargetType)alvoTipo;
-            try
-            {
-                await concessoes.RevokeInvitationAsync(invitationId, cancellationToken);
-
-                await contexto.RegistrarAsync(
-                    AuditActions.AcessoRevogado, TipoDeEntidade(tipo), alvoId, LocalText.Get("Invitation revoked"), cancellationToken);
-
-                return Results.Redirect(Retorno.Para(Destino(tipo, alvoId), "convite-revogado=1"));
-            }
-            catch (InvalidOperationException e)
-            {
-                return Erro(tipo, alvoId, e);
-            }
-        });
-
-        grupo.MapPost("/invitations/{invitationId:guid}/restore", async (
-            Guid invitationId, [FromForm] int alvoTipo, [FromForm] Guid? alvoId,
-            GrantService concessoes, HttpContext contexto, CancellationToken cancellationToken) =>
-        {
-            var tipo = (GrantTargetType)alvoTipo;
-            try
-            {
-                await concessoes.RestoreInvitationAsync(invitationId, cancellationToken);
-
-                await contexto.RegistrarAsync(
-                    AuditActions.AcessoRestaurado, TipoDeEntidade(tipo), alvoId, LocalText.Get("Invitation restored"), cancellationToken);
-
-                return Results.Redirect(Retorno.Para(Destino(tipo, alvoId), "convite-restaurado=1"));
-            }
-            catch (InvalidOperationException e)
-            {
-                return Erro(tipo, alvoId, e);
-            }
-        });
-
         return rotas;
     }
 

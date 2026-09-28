@@ -59,6 +59,12 @@ public class AccessGrant
     public string? Note { get; private set; }
 
     /// <summary>
+    /// Token do link secreto, cifrado, para a administração poder ver e copiar o endereço depois.
+    /// A validação usa só o resumo em <see cref="SubjectValue"/>; links antigos não têm isto.
+    /// </summary>
+    public string? SealedToken { get; private set; }
+
+    /// <summary>
     /// Convite de que a concessão faz parte. Nulo nas concessões de antes dos convites, que
     /// aparecem cada uma como um convite próprio.
     /// </summary>
@@ -229,6 +235,16 @@ public class AccessGrant
         StartsAt = startsAt;
         ExpiresAt = expiresAt;
         DurationAfterFirstUse = durationAfterFirstUse;
+    }
+
+    /// <summary>Guarda o token cifrado de um link secreto.</summary>
+    public void KeepSealedToken(string sealedToken)
+    {
+        if (SubjectType is not GrantSubjectType.Link)
+            throw new InvalidOperationException("Only a secret link keeps a token.");
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(sealedToken);
+        SealedToken = sealedToken;
     }
 
     public void SetNote(string? note) => Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();

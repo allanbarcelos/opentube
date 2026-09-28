@@ -452,13 +452,16 @@ and a revocation record.
 Grants are created through **invitations**, managed in the video's **Access** tab (and on the
 collection page): one person or many, one domain or many, or a secret link — each invitation with
 one validity for everyone in it (no end date, N days from the first visit, or until a date, that
-whole day included) and an optional note.
+whole day included) and an optional note of up to 64 characters.
 
 Invitations are **independent**. A new one never changes an existing grant: inviting someone who
 already has access creates a second grant, and the person can watch while any of them is active.
-An invitation can be revoked as a whole, or one person or domain at a time; restoring an invitation
-brings back only what revoking it cut, not someone revoked individually before. Grants from before
-invitations existed show up in the list as invitations of their own.
+The list groups the accesses by kind — people, domains and secret links — one per line, each
+revoked or restored on its own. A secret link is named by its note and keeps its address, with a
+**Copy** button, so it can be sent again later. The token is stored encrypted with a key derived
+from the server secret (`TOKEN_PEPPER`), next to the hash that validates it: reading the
+database alone does not reveal the links. Links created before this change have only the hash, so
+their address cannot be shown.
 
 The view limit is counted on the master playlist, with a conditional increment in the database
 that keeps simultaneous playbacks from going over the cap. When the view is counted, the

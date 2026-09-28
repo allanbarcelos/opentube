@@ -18,6 +18,7 @@ public class AccessGrantConfiguration : IEntityTypeConfiguration<AccessGrant>
         builder.Property(g => g.TargetType).HasConversion<int>();
         builder.Property(g => g.SubjectValue).HasMaxLength(320).IsRequired();
         builder.Property(g => g.Note).HasMaxLength(500);
+        builder.Property(g => g.SealedToken).HasMaxLength(200);
 
         // Índice que sustenta a busca de concessões aplicáveis a quem está pedindo.
         builder.HasIndex(g => new { g.SubjectType, g.SubjectValue });

@@ -154,7 +154,7 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
     }
 
     [Fact]
-    public async Task O_link_criado_aparece_uma_unica_vez()
+    public async Task O_link_criado_fica_na_lista_com_a_nota_e_o_botao_de_copiar()
     {
         var (cliente, video) = await PrepararAsync();
         using var _ = cliente;
@@ -167,7 +167,8 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
                 ["alvoId"] = video.Id.ToString(),
                 ["validade"] = "sempre",
                 ["valorDaValidade"] = "",
-                ["limiteDeVisualizacoes"] = ""
+                ["limiteDeVisualizacoes"] = "",
+                ["nota"] = "Equipe de vendas"
             });
 
         var destino = resposta.Headers.Location!.ToString();
@@ -176,11 +177,45 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
         Assert.DoesNotContain("/link/", destino);
 
         var primeira = await cliente.GetStringAsync(destino);
-        Assert.Contains("/link/", primeira);
-        Assert.Contains("will not be shown again.", primeira);
+        Assert.Contains("data-link-criado", primeira);
+        var endereco = System.Text.RegularExpressions.Regex.Match(primeira, "value=\"([^\"]*/link/[^\"]*)\" readonly data-link-criado").Groups[1].Value;
+        Assert.NotEmpty(endereco);
 
-        var segunda = await cliente.GetStringAsync(destino);
-        Assert.DoesNotContain("will not be shown again.", segunda);
+        // Depois, o aviso some, mas o link continua na lista, com a nota e o botão de copiar.
+        var depois = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access");
+        Assert.DoesNotContain("data-link-criado", depois);
+        Assert.Contains("data-grupo=\"links\"", depois);
+        Assert.Contains("Equipe de vendas", depois);
+        Assert.Contains($"value=\"{endereco}\"", depois);
+        Assert.Contains("data-copiar=\"link-", depois);
+
+        // No banco fica o resumo e o token cifrado, nunca o token em claro.
+        var token = endereco[(endereco.LastIndexOf('/') + 1)..];
+        await using var db = postgres.CreateContext();
+        var concessao = await db.AccessGrants.SingleAsync(g => g.SubjectType == GrantSubjectType.Link);
+        Assert.DoesNotContain(token, concessao.SubjectValue);
+        Assert.DoesNotContain(token, concessao.SealedToken!);
+    }
+
+    [Fact]
+    public async Task Nota_com_mais_de_64_caracteres_volta_com_o_motivo()
+    {
+        var (cliente, video) = await PrepararAsync();
+        using var _ = cliente;
+
+        var resposta = await ConvidarAsync(cliente, video.Id, new()
+        {
+            ["emails"] = Convidado,
+            ["validade"] = "sempre",
+            ["nota"] = new string('x', 65)
+        });
+
+        Assert.Contains("erro-acesso=", resposta.Headers.Location!.ToString());
+        var pagina = await cliente.GetStringAsync(resposta.Headers.Location!.ToString());
+        Assert.Contains("The note can have at most 64 characters.", System.Net.WebUtility.HtmlDecode(pagina));
+
+        await using var db = postgres.CreateContext();
+        Assert.Equal(0, await db.AccessGrants.CountAsync());
     }
 
     [Fact]
@@ -373,10 +408,12 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
         await ConvidarAsync(cliente, video.Id, new() { ["emails"] = Convidado, ["validade"] = "dias", ["dias"] = "30" });
         await ConvidarAsync(cliente, video.Id, new() { ["emails"] = $"{Convidado}, outra@barcelos.dev", ["validade"] = "sempre" });
 
+        // Os três acessos ficam juntos no card de pessoas, cada um na sua linha.
         var aba = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access");
-        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(aba, "data-convite=\"").Count);
+        Assert.Contains("data-grupo=\"pessoas\"", aba);
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(aba, "data-concessao=\"").Count);
         Assert.Contains("30 days from the first visit", aba);
-        Assert.Contains("2 people", aba);
+        Assert.Contains("3 active of 3", aba);
 
         await using var db = postgres.CreateContext();
         Assert.Equal(2, await db.Invitations.CountAsync());
@@ -404,7 +441,7 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
         Assert.Contains("dominios=2", resposta.Headers.Location!.ToString());
 
         var aba = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access");
-        Assert.Contains("2 domains", aba);
+        Assert.Contains("data-grupo=\"dominios\"", aba);
         Assert.Contains("@barcelos.dev", aba);
         Assert.Contains("@parceira.com.br", aba);
 
@@ -414,21 +451,17 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
     }
 
     [Fact]
-    public async Task Revogar_o_convite_corta_todos_e_restaurar_devolve()
+    public async Task Cada_acesso_do_convite_se_revoga_sozinho()
     {
         var (cliente, video) = await PrepararAsync();
         using var _ = cliente;
         _app.Emails.Clear();
 
-        await ConvidarAsync(cliente, video.Id, new() { ["emails"] = Convidado, ["validade"] = "sempre" });
+        await ConvidarAsync(cliente, video.Id, new() { ["emails"] = $"{Convidado}, outra@barcelos.dev", ["validade"] = "sempre" });
 
-        using var convidado = _app.CreateBrowser();
-        await convidado.GetAsync($"/sign-in/{_app.Emails.LastToken()}");
-        Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
-
-        Guid conviteId;
+        Guid concessaoId;
         await using (var db = postgres.CreateContext())
-            conviteId = (await db.Invitations.SingleAsync()).Id;
+            concessaoId = (await db.AccessGrants.SingleAsync(g => g.SubjectValue == "outra@barcelos.dev")).Id;
 
         var campos = new Dictionary<string, string>
         {
@@ -437,17 +470,19 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
         };
 
         var revogar = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}?tab=access", $"/admin/access/invitations/{conviteId}/revoke", campos);
-        Assert.Contains("convite-revogado=1", revogar.Headers.Location!.ToString());
-        Assert.Equal(HttpStatusCode.NotFound, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
+            cliente, $"/admin/videos/{video.Id}?tab=access", $"/admin/access/{concessaoId}/revoke", campos);
+        Assert.Contains("acesso-revogado=1", revogar.Headers.Location!.ToString());
 
         var aba = await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access");
-        Assert.Contains($"data-convite=\"{conviteId}\" data-situacao=\"revogado\"", aba);
-        Assert.Contains($"action=\"/admin/access/invitations/{conviteId}/restore\"", aba);
+        Assert.Contains($"data-concessao=\"{concessaoId}\" data-situacao=\"revogado\"", aba);
+        Assert.Contains($"action=\"/admin/access/{concessaoId}/restore\"", aba);
+        Assert.Contains("1 active of 2", aba);
 
-        await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}?tab=access", $"/admin/access/invitations/{conviteId}/restore", campos);
-        Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
+        await using (var db = postgres.CreateContext())
+        {
+            Assert.NotNull((await db.AccessGrants.SingleAsync(g => g.Id == concessaoId)).RevokedAt);
+            Assert.Null((await db.AccessGrants.SingleAsync(g => g.SubjectValue == Convidado)).RevokedAt);
+        }
     }
 
     [Fact]

@@ -222,13 +222,29 @@ public class GrantService(
         var convite = Invitation.Create(InvitationKind.Link, targetType, targetId, adminId, clock.GetUtcNow(),
             validity.ExpiresAt, validity.DurationAfterFirstUse, maxViews, note);
         var concessao = AccessGrant.ForInvitation(convite, GrantSubjectType.Link, TokenHasher.Hash(token, _options.TokenPepper));
+        concessao.KeepSealedToken(LinkSealer.Seal(token, _options.TokenPepper));
 
         db.Invitations.Add(convite);
         db.AccessGrants.Add(concessao);
         await db.SaveChangesAsync(cancellationToken);
 
-        return new ShareLink(concessao.Id, $"{_options.PublicUrl.TrimEnd('/')}/link/{token}");
+        return new ShareLink(concessao.Id, EnderecoDoLink(token));
     }
+
+    /// <summary>
+    /// Endereço de um link secreto, para a administração ver e copiar. Nulo para os links
+    /// criados antes de o token ser guardado cifrado: deles só existe o resumo.
+    /// </summary>
+    public string? ShareLinkAddress(AccessGrant grant)
+    {
+        ArgumentNullException.ThrowIfNull(grant);
+
+        return grant.SubjectType is GrantSubjectType.Link && LinkSealer.Open(grant.SealedToken, _options.TokenPepper) is { } token
+            ? EnderecoDoLink(token)
+            : null;
+    }
+
+    private string EnderecoDoLink(string token) => $"{_options.PublicUrl.TrimEnd('/')}/link/{token}";
 
     /// <summary>Revoga uma concessão. O acesso cai na avaliação seguinte.</summary>
     public async Task RevokeAsync(Guid grantId, CancellationToken cancellationToken = default)
@@ -248,44 +264,6 @@ public class GrantService(
             ?? throw new InvalidOperationException("Grant not found.");
 
         concessao.Restore();
-        await db.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Revoga o convite inteiro: todas as concessões dele que ainda valiam, no mesmo instante.
-    /// </summary>
-    public async Task RevokeInvitationAsync(Guid invitationId, CancellationToken cancellationToken = default)
-    {
-        var convite = await db.Invitations.FirstOrDefaultAsync(i => i.Id == invitationId, cancellationToken)
-            ?? throw new InvalidOperationException("Invitation not found.");
-
-        var agora = clock.GetUtcNow();
-        convite.Revoke(agora);
-
-        foreach (var concessao in await db.AccessGrants.Where(g => g.InvitationId == invitationId && g.RevokedAt == null).ToListAsync(cancellationToken))
-            concessao.Revoke(agora);
-
-        await db.SaveChangesAsync(cancellationToken);
-
-        logger.LogInformation("Convite {ConviteId} revogado", invitationId);
-    }
-
-    /// <summary>
-    /// Restaura o convite: devolve só as concessões que a revogação dele cortou. Quem já tinha
-    /// sido revogado individualmente antes continua revogado.
-    /// </summary>
-    public async Task RestoreInvitationAsync(Guid invitationId, CancellationToken cancellationToken = default)
-    {
-        var convite = await db.Invitations.FirstOrDefaultAsync(i => i.Id == invitationId, cancellationToken)
-            ?? throw new InvalidOperationException("Invitation not found.");
-
-        if (convite.RevokedAt is { } revogadoEm)
-        {
-            foreach (var concessao in await db.AccessGrants.Where(g => g.InvitationId == invitationId && g.RevokedAt == revogadoEm).ToListAsync(cancellationToken))
-                concessao.Restore();
-        }
-
-        convite.Restore();
         await db.SaveChangesAsync(cancellationToken);
     }
 

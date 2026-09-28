@@ -14,6 +14,9 @@ public class Invitation
 {
     private Invitation() { }
 
+    /// <summary>A nota é um lembrete curto, mostrado ao lado de cada acesso na lista.</summary>
+    public const int MaxNoteLength = 64;
+
     public Guid Id { get; private set; }
     public InvitationKind Kind { get; private set; }
     public GrantTargetType TargetType { get; private set; }
@@ -59,6 +62,9 @@ public class Invitation
 
         if (maxViews is not null && kind is not InvitationKind.Link)
             throw new ArgumentException("Only a secret link has a view limit.", nameof(maxViews));
+
+        if (note is not null && note.Trim().Length > MaxNoteLength)
+            throw new ArgumentException("The note can have at most 64 characters.", nameof(note));
 
         return new Invitation
         {

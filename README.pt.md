@@ -452,13 +452,16 @@ download e registro de revogação.
 As concessões são criadas por **convites**, gerenciados na aba **Access** do vídeo (e na página da
 coleção): uma pessoa ou várias, um domínio ou vários, ou um link secreto — cada convite com uma
 validade comum a todos dele (sem prazo, N dias a partir do primeiro acesso, ou até uma data, com o
-dia inteiro incluído) e uma nota opcional.
+dia inteiro incluído) e uma nota opcional de até 64 caracteres.
 
 Os convites são **independentes**. Um novo nunca altera uma concessão existente: convidar quem já
-tem acesso cria uma segunda concessão, e a pessoa assiste enquanto qualquer uma estiver valendo. Dá
-para revogar o convite inteiro ou uma pessoa ou domínio de cada vez; restaurar o convite devolve só
-o que a revogação dele cortou, não quem já tinha sido revogado individualmente. Concessões de antes
-dos convites aparecem na lista como convites próprios.
+tem acesso cria uma segunda concessão, e a pessoa assiste enquanto qualquer uma estiver valendo. A
+lista agrupa os acessos por tipo — pessoas, domínios e links secretos —, um por linha, cada um
+revogado ou restaurado sozinho. O link secreto leva o nome da nota e guarda o endereço, com um botão
+**Copy**, para ser enviado de novo depois. O token fica cifrado com uma chave derivada do segredo do
+servidor (`TOKEN_PEPPER`), ao lado do resumo que o valida: quem lê só o banco não descobre
+os links. Os links criados antes desta mudança têm só o resumo, e o endereço deles não pode ser
+mostrado.
 
 O limite de visualizações é contado na playlist principal, com um incremento condicional no
 banco que não deixa reproduções simultâneas passarem do teto. Ao contar a visualização, a

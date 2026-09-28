@@ -83,6 +83,8 @@ denial-of-service or volume tests against someone else's server.
 
 - **No passwords.** Access is by a single-use link or a 6-digit code sent by email. Codes and
   tokens are stored only as hashes; codes expire in 15 minutes and invitations in 7 days.
+  Secret-link tokens are also kept encrypted (AES-GCM, with a key derived from the server secret)
+  so administrators can copy a link again; the database alone does not reveal them.
   Sessions last 30 days, in an `HttpOnly`, `SameSite=Lax` cookie, and administrators can revoke
   them at once.
 - **Rate limits** by IP, email, and domain on sending and checking codes, with progressive

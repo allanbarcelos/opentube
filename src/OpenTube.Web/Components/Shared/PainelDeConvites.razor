@@ -27,20 +27,16 @@
     {
         <div class="alert alert-success" role="status">@T["Access restored."]</div>
     }
-    @if (ConviteRevogado)
-    {
-        <div class="alert alert-success" role="status">@T["Invitation revoked: nobody in it can watch any more."]</div>
-    }
-    @if (ConviteRestaurado)
-    {
-        <div class="alert alert-success" role="status">@T["Invitation restored."]</div>
-    }
     @if (!string.IsNullOrWhiteSpace(LinkCriado))
     {
-        <div class="alert alert-warning">
-            <p class="mb-2"><strong>@T["Link created."]</strong> @T["Copy it now: it will not be shown again."]</p>
-            <input class="form-control font-monospace" value="@LinkCriado" readonly data-link-criado
-                   onclick="this.select()" aria-label="@T["Share link address"]" />
+        <div class="alert alert-success">
+            <p class="mb-2"><strong>@T["Link created."]</strong> @T["Send it to whoever should watch; it also stays in the list below."]</p>
+            <div class="input-group">
+                <input class="form-control font-monospace" id="link-criado" value="@LinkCriado" readonly data-link-criado
+                       onclick="this.select()" aria-label="@T["Share link address"]" />
+                <button class="btn btn-outline-secondary" type="button" data-copiar="link-criado"
+                        data-copiado="@T["Copied"]">@T["Copy"]</button>
+            </div>
         </div>
     }
     @if (!string.IsNullOrWhiteSpace(Erro))
@@ -66,99 +62,74 @@
                 </div>
             }
 
-            @foreach (var convite in Convites)
+            @* Os acessos agrupados por tipo, cada um numa linha e revogado sozinho: o convite que
+               os criou só define a validade comum a eles. *@
+            @foreach (var grupo in Grupos)
             {
-                var situacao = Situacao(convite);
-                <div class="card mb-3 @(situacao == "ativo" ? "" : "opacity-75")" data-convite="@convite.Id" data-situacao="@situacao">
-                    <div class="card-header d-flex flex-wrap align-items-center gap-2">
-                        <span class="badge @TipoClasse(convite.Kind)">@TipoTexto(convite.Kind)</span>
-                        <span class="fw-semibold">@Quantos(convite)</span>
-                        <span class="badge @SituacaoClasse(situacao)">@SituacaoTexto(situacao)</span>
-                        <span class="ms-auto small text-body-secondary">
-                            @convite.CreatedAt.ToLocalTime().ToString("g")
-                            @if (!string.IsNullOrWhiteSpace(convite.CreatedBy))
-                            {
-                                <span> · @convite.CreatedBy</span>
-                            }
-                        </span>
+                <div class="card mb-3" data-grupo="@grupo.Chave">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <span class="badge @grupo.Classe">@grupo.Titulo</span>
+                        <span class="small text-body-secondary ms-auto">@T.Format("{0} active of {1}", grupo.Linhas.Count(l => Situacao(l.Concessao) == "ativo"), grupo.Linhas.Count)</span>
                     </div>
-
-                    <div class="card-body pb-2">
-                        <p class="small mb-1">
-                            <span class="text-body-secondary">@T["Validity"]:</span> @Validade(convite)
-                            @if (convite.MaxViews is { } teto)
-                            {
-                                <span class="text-body-secondary"> · </span>@T.Format("up to {0} views", teto)
-                            }
-                        </p>
-                        @if (!string.IsNullOrWhiteSpace(convite.Note))
-                        {
-                            <p class="small fst-italic text-body-secondary mb-1">@convite.Note</p>
-                        }
-                    </div>
-
                     <ul class="list-group list-group-flush">
-                        @foreach (var membro in convite.Members)
+                        @foreach (var linha in grupo.Linhas)
                         {
-                            <li class="list-group-item d-flex flex-wrap align-items-center gap-2 @(membro.IsRevoked ? "text-body-secondary" : "")"
-                                data-concessao="@membro.Id">
-                                <span class="@(membro.IsRevoked ? "text-decoration-line-through" : "")">@Sujeito(membro)</span>
-                                <span class="small text-body-secondary">@Uso(membro)</span>
-                                @if (membro.IsRevoked)
-                                {
-                                    <span class="badge text-bg-secondary">@T["Revoked"]</span>
-                                }
+                            var concessao = linha.Concessao;
+                            var situacao = Situacao(concessao);
+                            <li class="list-group-item @(situacao == "ativo" ? "" : "bg-body-tertiary")"
+                                data-concessao="@concessao.Id" data-situacao="@situacao">
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <span class="fw-semibold text-break @(situacao == "revogado" ? "text-decoration-line-through text-body-secondary" : "")">
+                                        @if (concessao.SubjectType == GrantSubjectType.Link)
+                                        {
+                                            @(concessao.Note ?? T["Secret link"])
+                                        }
+                                        else
+                                        {
+                                            @Sujeito(concessao)
+                                        }
+                                    </span>
+                                    <span class="badge @SituacaoClasse(situacao)">@SituacaoTexto(situacao)</span>
 
-                                @* Uma pessoa ou domínio sozinho; o link se revoga pelo convite. *@
-                                @if (!convite.IsLegacy && convite.Kind != InvitationKind.Link && convite.Members.Count > 1 && convite.RevokedAt is null)
-                                {
-                                    <form method="post" action="/admin/access/@membro.Id/@(membro.IsRevoked ? "restore" : "revoke")" class="ms-auto">
+                                    <form method="post" action="/admin/access/@concessao.Id/@(concessao.IsRevoked ? "restore" : "revoke")" class="ms-auto">
                                         <AntiforgeryToken />
                                         <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
                                         <input type="hidden" name="alvoId" value="@TargetId" />
-                                        <button class="btn btn-sm btn-link p-0 @(membro.IsRevoked ? "" : "link-danger")" type="submit">
-                                            @(membro.IsRevoked ? T["Restore"] : T["Revoke"])
+                                        <button class="btn btn-sm @(concessao.IsRevoked ? "btn-outline-secondary" : "btn-outline-danger")" type="submit">
+                                            @(concessao.IsRevoked ? T["Restore"] : T["Revoke"])
                                         </button>
                                     </form>
+                                </div>
+
+                                @if (concessao.SubjectType == GrantSubjectType.Link)
+                                {
+                                    var endereco = Concessoes.ShareLinkAddress(concessao);
+                                    @if (endereco is not null)
+                                    {
+                                        var campo = $"link-{concessao.Id:n}";
+                                        <div class="input-group input-group-sm mt-2">
+                                            <input class="form-control font-monospace" id="@campo" value="@endereco" readonly
+                                                   onclick="this.select()" aria-label="@T["Share link address"]" data-endereco-link />
+                                            <button class="btn btn-outline-secondary" type="button" data-copiar="@campo"
+                                                    data-copiado="@T["Copied"]">@T["Copy"]</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <p class="small text-body-secondary mb-0 mt-1">@T["The address of this link was not kept: it was created before links could be shown again."]</p>
+                                    }
                                 }
+                                else if (!string.IsNullOrWhiteSpace(concessao.Note))
+                                {
+                                    <p class="small fst-italic text-body-secondary mb-0 mt-1" data-nota>@concessao.Note</p>
+                                }
+
+                                <p class="small text-body-secondary mb-0 mt-1">
+                                    @Validade(concessao) · @Uso(concessao) · @T.Format("created {0}", concessao.CreatedAt.ToLocalTime().ToString("g"))@(string.IsNullOrWhiteSpace(linha.Criador) ? "" : " · " + linha.Criador)
+                                </p>
                             </li>
                         }
                     </ul>
-
-                    <div class="card-footer d-flex justify-content-end">
-                        @if (convite.IsLegacy)
-                        {
-                            var concessao = convite.Members[0];
-                            <form method="post" action="/admin/access/@concessao.Id/@(concessao.IsRevoked ? "restore" : "revoke")">
-                                <AntiforgeryToken />
-                                <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
-                                <input type="hidden" name="alvoId" value="@TargetId" />
-                                <button class="btn btn-sm @(concessao.IsRevoked ? "btn-outline-secondary" : "btn-outline-danger")" type="submit">
-                                    @(concessao.IsRevoked ? T["Restore"] : T["Revoke"])
-                                </button>
-                            </form>
-                        }
-                        else if (convite.RevokedAt is null)
-                        {
-                            <form method="post" action="/admin/access/invitations/@convite.Id/revoke"
-                                  onsubmit="return confirm(this.dataset.confirmar)"
-                                  data-confirmar="@T["Revoke the whole invitation? Everyone in it stops having access."]">
-                                <AntiforgeryToken />
-                                <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
-                                <input type="hidden" name="alvoId" value="@TargetId" />
-                                <button class="btn btn-sm btn-outline-danger" type="submit">@T["Revoke invitation"]</button>
-                            </form>
-                        }
-                        else
-                        {
-                            <form method="post" action="/admin/access/invitations/@convite.Id/restore">
-                                <AntiforgeryToken />
-                                <input type="hidden" name="alvoTipo" value="@((int)TargetType)" />
-                                <input type="hidden" name="alvoId" value="@TargetId" />
-                                <button class="btn btn-sm btn-outline-secondary" type="submit">@T["Restore invitation"]</button>
-                            </form>
-                        }
-                    </div>
                 </div>
             }
         </div>
@@ -200,8 +171,10 @@
 
                                 <div class="mb-3">
                                     <label class="form-label" for="nota-pessoas-@Sufixo">@T["Note"]</label>
-                                    <input class="form-control" id="nota-pessoas-@Sufixo" name="nota" maxlength="500"
+                                    <input class="form-control" id="nota-pessoas-@Sufixo" name="nota" maxlength="64"
+                                           aria-describedby="ajuda-nota-pessoas-@Sufixo"
                                            placeholder="@T["To remember why this was granted"]" />
+                                    <div class="form-text" id="ajuda-nota-pessoas-@Sufixo">@T["Up to 64 characters, seen only by administrators next to each person."]</div>
                                 </div>
 
                                 <div class="form-check mb-3">
@@ -232,7 +205,9 @@
 
                                 <div class="mb-3">
                                     <label class="form-label" for="nota-dominios-@Sufixo">@T["Note"]</label>
-                                    <input class="form-control" id="nota-dominios-@Sufixo" name="nota" maxlength="500" />
+                                    <input class="form-control" id="nota-dominios-@Sufixo" name="nota" maxlength="64"
+                                           aria-describedby="ajuda-nota-dominios-@Sufixo" />
+                                    <div class="form-text" id="ajuda-nota-dominios-@Sufixo">@T["Up to 64 characters, seen only by administrators next to each domain."]</div>
                                 </div>
 
                                 <button class="btn btn-primary w-100" type="submit">@T["Grant domains"]</button>
@@ -255,11 +230,13 @@
 
                                 <div class="mb-3">
                                     <label class="form-label" for="nota-link-@Sufixo">@T["Note"]</label>
-                                    <input class="form-control" id="nota-link-@Sufixo" name="nota" maxlength="500" />
+                                    <input class="form-control" id="nota-link-@Sufixo" name="nota" maxlength="64"
+                                           aria-describedby="ajuda-nota-link-@Sufixo" />
+                                    <div class="form-text" id="ajuda-nota-link-@Sufixo">@T["Up to 64 characters. It names the link in the list, so you can tell which one you sent to whom."]</div>
                                 </div>
 
                                 <div class="alert alert-warning small">
-                                    @T["Anyone with the address can watch without identifying themselves. It is shown only once."]
+                                    @T["Anyone with the address can watch without identifying themselves."]
                                 </div>
 
                                 <button class="btn btn-primary w-100" type="submit">@T["Create link"]</button>
@@ -298,12 +275,6 @@
     [SupplyParameterFromQuery(Name = "acesso-restaurado")]
     private string? AcessoRestauradoBruto { get; set; }
 
-    [SupplyParameterFromQuery(Name = "convite-revogado")]
-    private string? ConviteRevogadoBruto { get; set; }
-
-    [SupplyParameterFromQuery(Name = "convite-restaurado")]
-    private string? ConviteRestauradoBruto { get; set; }
-
     [SupplyParameterFromQuery(Name = "link")]
     private string? LinkBruto { get; set; }
 
@@ -314,8 +285,6 @@
     private int Dominios => DominiosBruto ?? 0;
     private bool AcessoRevogado => AcessoRevogadoBruto == "1";
     private bool AcessoRestaurado => AcessoRestauradoBruto == "1";
-    private bool ConviteRevogado => ConviteRevogadoBruto == "1";
-    private bool ConviteRestaurado => ConviteRestauradoBruto == "1";
 
     private string? LinkCriado;
 
@@ -326,7 +295,7 @@
 
     private readonly DateTimeOffset Agora = DateTimeOffset.UtcNow;
 
-    private int Ativos => Convites.Count(c => Situacao(c) == "ativo");
+    private int Ativos => Grupos.Sum(g => g.Linhas.Count(l => Situacao(l.Concessao) == "ativo"));
 
     private int PessoasAtivas => ContarAtivos(GrantSubjectType.User);
     private int DominiosAtivos => ContarAtivos(GrantSubjectType.Domain);
@@ -338,6 +307,7 @@
         LinkCriado = Links.Take(LinkBruto);
 
         Convites = await Concessoes.ListInvitationsAsync(TargetType, TargetId, Http.RequestAborted);
+        Grupos = Agrupar();
     }
 
     private int ContarAtivos(GrantSubjectType tipo) =>
@@ -348,12 +318,37 @@
             .Distinct()
             .Count();
 
-    private string Situacao(InvitationView convite)
+    private sealed record Linha(AccessGrant Concessao, string? Criador);
+
+    private sealed record Grupo(string Chave, string Titulo, string Classe, IReadOnlyList<Linha> Linhas);
+
+    private IReadOnlyList<Grupo> Grupos = [];
+
+    /// <summary>Pessoas, domínios e links, cada um num card; dentro, os mais recentes primeiro.</summary>
+    private IReadOnlyList<Grupo> Agrupar()
     {
-        if (convite.RevokedAt is not null || convite.Members.All(m => m.IsRevoked))
+        var linhas = Convites
+            .SelectMany(c => c.Members.Select(m => new Linha(m, c.CreatedBy)))
+            .OrderByDescending(l => l.Concessao.CreatedAt)
+            .ToList();
+
+        Grupo Montar(string chave, string titulo, string classe, params GrantSubjectType[] tipos) =>
+            new(chave, titulo, classe, linhas.Where(l => tipos.Contains(l.Concessao.SubjectType)).ToList());
+
+        return new[]
+        {
+            Montar("pessoas", T["People"], "text-bg-primary", GrantSubjectType.User, GrantSubjectType.Public),
+            Montar("dominios", T["Domains"], "text-bg-info", GrantSubjectType.Domain),
+            Montar("links", T["Secret links"], "text-bg-warning", GrantSubjectType.Link)
+        }.Where(g => g.Linhas.Count > 0).ToList();
+    }
+
+    private string Situacao(AccessGrant concessao)
+    {
+        if (concessao.IsRevoked)
             return "revogado";
 
-        return convite.IsActiveAt(Agora) ? "ativo" : "expirado";
+        return concessao.IsActiveAt(Agora) ? "ativo" : "expirado";
     }
 
     private string SituacaoTexto(string situacao) => situacao switch
@@ -370,30 +365,7 @@
         _ => "text-bg-warning"
     };
 
-    private string TipoTexto(InvitationKind tipo) => tipo switch
-    {
-        InvitationKind.Domains => T["Domains"],
-        InvitationKind.Link => T["Secret link"],
-        _ => T["People"]
-    };
-
-    private static string TipoClasse(InvitationKind tipo) => tipo switch
-    {
-        InvitationKind.Domains => "text-bg-info",
-        InvitationKind.Link => "text-bg-warning",
-        _ => "text-bg-primary"
-    };
-
-    private string Quantos(InvitationView convite) => convite.Kind switch
-    {
-        InvitationKind.Link => T["1 link"],
-        InvitationKind.Domains => T.Format(convite.Members.Count == 1 ? "{0} domain" : "{0} domains", convite.Members.Count),
-        _ => convite.Members.Count == 1 && convite.Members[0].SubjectType == GrantSubjectType.Public
-            ? T["any visitor"]
-            : T.Format(convite.Members.Count == 1 ? "{0} person" : "{0} people", convite.Members.Count)
-    };
-
-    private string Validade(InvitationView convite) => convite switch
+    private string Validade(AccessGrant concessao) => concessao switch
     {
         { DurationAfterFirstUse: { } prazo } => T.Format("{0} days from the first visit", (int)Math.Round(prazo.TotalDays)),
         { ExpiresAt: { } fim } => T.Format("until {0}", Termino(fim)),
