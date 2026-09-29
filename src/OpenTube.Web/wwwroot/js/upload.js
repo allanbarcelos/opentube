@@ -5,10 +5,11 @@
 // O servidor nunca recebe os bytes do vídeo: só coordena o envio.
 //
 // Uma área só recebe tudo: clicar escolhe vídeos, o link escolhe uma pasta, e arrastar (para a
-// área ou para qualquer ponto da página) aceita vídeos, pastas ou os dois. Cada vídeo ganha como
-// título o nome do arquivo sem a extensão (editável na fila). Uma pasta sozinha vira uma coleção
-// com o nome dela, e cada vídeo entra na coleção ao terminar de subir; várias pastas, ou pastas
-// junto com arquivos, entram como vídeos soltos. Os arquivos sobem um por vez, na ordem da fila.
+// área ou para qualquer ponto da página) aceita vídeos, pastas ou os dois. O envio começa assim
+// que o arquivo entra na fila, um por vez, e cada linha se cancela, se tira da fila ou se tenta
+// de novo sozinha. Cada vídeo ganha como título o nome do arquivo sem a extensão, editável até
+// terminar de subir. Uma pasta sozinha vira uma coleção com o nome dela, criada quando o primeiro
+// vídeo termina; várias pastas, ou pastas junto com arquivos, entram como vídeos soltos.
 //
 // Carregado para todas as páginas no App.razor; monta-se sozinho quando a página de envio
 // aparece, inclusive pela navegação aprimorada do Blazor.
@@ -154,8 +155,6 @@ window.envioDeVideos = (function () {
         const campoArquivos = document.getElementById('arquivos');
         const campoPasta = document.getElementById('pasta');
         const area = document.getElementById('area-de-envio');
-        const blocoColecao = document.getElementById('bloco-colecao');
-        const campoColecao = document.getElementById('nome-colecao');
         const blocoFila = document.getElementById('bloco-fila');
         const corpoFila = document.getElementById('fila-envio');
         const resumoFila = document.getElementById('resumo-fila');
@@ -163,19 +162,23 @@ window.envioDeVideos = (function () {
         const ignorados = document.getElementById('arquivos-ignorados');
         const erro = document.getElementById('erro-envio');
         const conclusao = document.getElementById('conclusao-envio');
-        const botao = document.getElementById('botao-enviar');
         const modelo = document.getElementById('modelo-linha-envio');
+        const modeloGrupo = document.getElementById('modelo-grupo-envio');
 
+        // Cada item: { arquivo, caminho, linha, titulo, grupo, estado, controle, destino, erro }.
+        // Estados: aguardando, enviando, concluido, falhou. Um cancelado sai da fila.
         let fila = [];
-        let pasta = null;
-        let colecao = null;
-        let enviando = false;
+        let processando = false;
 
-        async function postar(url, corpo) {
+        // O formulário não é enviado: Enter num título não pode recarregar a página.
+        formulario.addEventListener('submit', evento => evento.preventDefault());
+
+        async function postar(url, corpo, sinal) {
             const resposta = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
-                body: JSON.stringify(corpo)
+                body: JSON.stringify(corpo),
+                signal: sinal
             });
 
             if (!resposta.ok) {
@@ -192,8 +195,8 @@ window.envioDeVideos = (function () {
             return resposta.status === 204 ? null : await resposta.json();
         }
 
-        async function enviarPedaco(url, pedaco) {
-            const resposta = await fetch(url, { method: 'PUT', body: pedaco });
+        async function enviarPedaco(url, pedaco, sinal) {
+            const resposta = await fetch(url, { method: 'PUT', body: pedaco, signal: sinal });
             if (!resposta.ok) {
                 throw new Error(textos.falhaPedaco);
             }
@@ -209,9 +212,22 @@ window.envioDeVideos = (function () {
             erro.classList.toggle('d-none', !mensagem);
         }
 
+        // Situação e ações de uma linha: o X tira da fila enquanto espera, cancela enquanto
+        // sobe e some depois de enviado; a seta tenta de novo o que falhou.
         function situacao(item, tipo, texto, percentual) {
+            item.estado = tipo === 'progresso' ? 'enviando' : tipo;
+
             const celula = item.linha.querySelector('[data-campo="situacao"]');
             celula.replaceChildren();
+
+            const remover = item.linha.querySelector('[data-campo="remover"]');
+            const tentar = item.linha.querySelector('[data-campo="tentar"]');
+            const rotulo = item.estado === 'enviando' ? textos.cancelarEnvio : textos.remover;
+            remover.title = rotulo;
+            remover.setAttribute('aria-label', rotulo);
+            remover.classList.toggle('d-none', item.estado === 'concluido');
+            tentar.classList.toggle('d-none', item.estado !== 'falhou');
+            item.titulo.disabled = item.estado === 'concluido';
 
             if (tipo === 'progresso') {
                 const barra = document.createElement('div');
@@ -265,25 +281,27 @@ window.envioDeVideos = (function () {
             resumoFila.textContent = formatar(textos.resumoFila, fila.length, tamanhoLegivel(total));
             blocoFila.classList.toggle('d-none', fila.length === 0);
 
-            const enviados = fila.filter(item => item.concluido).length;
+            const enviados = fila.filter(item => item.estado === 'concluido').length;
             progressoGeral.textContent = enviados > 0 ? formatar(textos.progressoGeral, enviados, fila.length) : '';
 
             fila.forEach((item, i) => {
                 item.linha.querySelector('[data-campo="numero"]').textContent = String(i + 1);
             });
+
+            // Uma pasta que ficou sem vídeos, e cuja coleção nem chegou a nascer, sai da lista.
+            corpoFila.querySelectorAll('[data-grupo]').forEach(linha => {
+                if (!linha.grupo.colecao && !fila.some(item => item.grupo === linha.grupo)) {
+                    linha.remove();
+                }
+            });
         }
 
-        // Cada entrada da fila é { arquivo, caminho }: o caminho vem da pasta escolhida ou solta.
+        // Cada entrada é { arquivo, caminho }: o caminho vem da pasta escolhida ou solta.
         // Mesmo arquivo escolhido de novo não entra duas vezes na fila.
         const chave = entrada => [entrada.caminho, entrada.arquivo.size, entrada.arquivo.lastModified].join('|');
 
-        function montarFila(entradas, acrescentar) {
-            if (!acrescentar) {
-                fila = [];
-                colecao = null;
-                campoColecao.disabled = false;
-                corpoFila.replaceChildren();
-            }
+        // Acrescenta à fila e já começa a enviar. Devolve quantos vídeos entraram.
+        function acrescentar(entradas, grupo) {
             mostrarErro('');
             conclusao.classList.add('d-none');
 
@@ -304,16 +322,20 @@ window.envioDeVideos = (function () {
                 (ehVideo(arquivo) ? videos : outros).push(entrada);
             }
 
-            const caminho = entrada => entrada.caminho;
-            videos.sort((a, b) => ordenar.compare(caminho(a), caminho(b)));
+            videos.sort((a, b) => ordenar.compare(a.caminho, b.caminho));
+
+            if (grupo && videos.length > 0) {
+                corpoFila.append(grupo.linha);
+            }
 
             for (const entrada of videos) {
                 const arquivo = entrada.arquivo;
                 const linha = modelo.content.firstElementChild.cloneNode(true);
-                const item = { arquivo: arquivo, caminho: entrada.caminho, linha: linha, concluido: false };
+                const item = { arquivo: arquivo, caminho: entrada.caminho, linha: linha, grupo: grupo, estado: 'aguardando' };
 
                 const titulo = linha.querySelector('[data-campo="titulo"]');
                 titulo.value = tituloDoArquivo(arquivo.name, limiteTitulo);
+                item.titulo = titulo;
 
                 const onde = linha.querySelector('[data-campo="caminho"]');
                 onde.textContent = entrada.caminho;
@@ -321,26 +343,19 @@ window.envioDeVideos = (function () {
 
                 linha.querySelector('[data-campo="tamanho"]').textContent = tamanhoLegivel(arquivo.size);
 
-                const remover = linha.querySelector('[data-campo="remover"]');
-                remover.title = textos.remover;
-                remover.setAttribute('aria-label', textos.remover);
-                remover.addEventListener('click', function () {
-                    if (enviando || item.concluido) {
-                        return;
-                    }
-                    fila = fila.filter(outro => outro !== item);
-                    linha.remove();
-                    atualizarResumo();
+                linha.querySelector('[data-campo="remover"]').addEventListener('click', () => remover(item));
+                linha.querySelector('[data-campo="tentar"]').addEventListener('click', function () {
+                    situacao(item, 'aguardando', textos.aguardando);
+                    processar();
                 });
 
-                item.titulo = titulo;
                 fila.push(item);
                 corpoFila.append(linha);
                 situacao(item, 'aguardando', textos.aguardando);
             }
 
             if (outros.length > 0) {
-                const nomes = outros.slice(0, 5).map(caminho).join(', ') + (outros.length > 5 ? '…' : '');
+                const nomes = outros.slice(0, 5).map(entrada => entrada.caminho).join(', ') + (outros.length > 5 ? '…' : '');
                 ignorados.textContent = formatar(textos.ignorados, outros.length, nomes);
                 ignorados.classList.remove('d-none');
             } else {
@@ -348,41 +363,220 @@ window.envioDeVideos = (function () {
             }
 
             atualizarResumo();
+            processar();
             return videos.length;
         }
 
-        // Vídeos soltos entram no fim da fila; uma fila de pasta, ou já toda enviada, começa de novo.
-        function adicionarVideos(entradas) {
-            const acrescentar = !pasta && fila.some(item => !item.concluido);
-            pasta = null;
-            blocoColecao.classList.add('d-none');
-            montarFila(entradas, acrescentar);
+        // O X de uma linha: fora da fila se ainda não subiu; interrompido se estiver subindo.
+        function remover(item) {
+            if (item.estado === 'concluido') {
+                return;
+            }
+            if (item.estado === 'enviando' && item.controle) {
+                item.cancelado = true;
+                item.controle.abort();
+            }
+            fila = fila.filter(outro => outro !== item);
+            item.linha.remove();
+            atualizarResumo();
         }
 
-        // Uma pasta vira uma coleção com o nome dela e substitui a fila.
-        function adicionarPasta(nome, entradas) {
-            pasta = nome;
-            blocoColecao.classList.remove('d-none');
-            campoColecao.value = nome.slice(0, limiteColecao);
+        // Uma pasta: um grupo na fila, com o nome da coleção editável até ela ser criada.
+        function novoGrupo(nome) {
+            const linha = modeloGrupo.content.firstElementChild.cloneNode(true);
+            const campo = linha.querySelector('[data-campo="colecao"]');
+            campo.value = nome.slice(0, limiteColecao);
+            const grupo = { pasta: nome, linha: linha, campo: campo, colecao: null, criando: null };
+            linha.grupo = grupo;
+            return grupo;
+        }
 
-            if (montarFila(entradas, false) === 0) {
+        // A coleção nasce quando o primeiro vídeo da pasta termina de subir, com o nome escrito.
+        async function colecaoDo(grupo, sinal) {
+            if (grupo.colecao) {
+                return grupo.colecao;
+            }
+            if (!grupo.criando) {
+                const nome = grupo.campo.value.trim() || grupo.pasta;
+                grupo.criando = postar('/api/admin/uploads/collection', { nome: nome.slice(0, limiteColecao), descricao: null }, sinal)
+                    .then(colecao => {
+                        grupo.colecao = colecao;
+                        grupo.campo.value = colecao.nome;
+                        grupo.campo.disabled = true;
+                        const link = grupo.linha.querySelector('[data-campo="link-colecao"]');
+                        link.href = colecao.destino;
+                        link.textContent = textos.abrirColecao;
+                        link.classList.remove('d-none');
+                        grupo.linha.querySelector('[data-campo="ajuda-colecao"]').classList.add('d-none');
+                        return colecao;
+                    })
+                    .finally(() => { grupo.criando = null; });
+            }
+            return grupo.criando;
+        }
+
+        function adicionarVideos(entradas) {
+            acrescentar(entradas, null);
+        }
+
+        function adicionarPasta(nome, entradas) {
+            if (acrescentar(entradas, novoGrupo(nome)) === 0) {
                 mostrarErro(textos.pastaVazia);
             }
+        }
+
+        async function enviarUm(item) {
+            const arquivo = item.arquivo;
+            const controle = new AbortController();
+            const sinal = controle.signal;
+            let bilhete = null;
+
+            item.controle = controle;
+            item.cancelado = false;
+            item.erro = null;
+            situacao(item, 'progresso', textos.preparando, 0);
+
+            try {
+                bilhete = await postar('/api/admin/uploads/start', {
+                    titulo: item.titulo.value.trim() || tituloDoArquivo(arquivo.name, limiteTitulo),
+                    descricao: null,
+                    arquivo: arquivo.name,
+                    tipo: arquivo.type,
+                    tamanho: arquivo.size,
+                    colecaoId: null
+                }, sinal);
+
+                const enviados = [];
+                let assinadas = bilhete.partes;
+
+                for (let numero = 1; numero <= bilhete.totalDePedacos; numero++) {
+                    if (!assinadas.some(p => p.numero === numero)) {
+                        const lote = await postar(`/api/admin/uploads/${bilhete.videoId}/parts`, {
+                            uploadId: bilhete.uploadId,
+                            primeira: numero,
+                            quantidade: Math.min(LOTE_DE_ASSINATURAS, bilhete.totalDePedacos - numero + 1)
+                        }, sinal);
+                        assinadas = lote.partes;
+                    }
+
+                    const parte = assinadas.find(p => p.numero === numero);
+                    const inicio = (numero - 1) * bilhete.tamanhoDoPedaco;
+                    const fim = Math.min(inicio + bilhete.tamanhoDoPedaco, arquivo.size);
+
+                    const etag = await enviarPedaco(parte.url, arquivo.slice(inicio, fim), sinal);
+                    enviados.push({ numero: numero, eTag: etag });
+
+                    const percentual = Math.round((numero / bilhete.totalDePedacos) * 100);
+                    situacao(item, 'progresso', formatar(textos.enviando, percentual), percentual);
+                }
+
+                situacao(item, 'progresso', textos.finalizando, 100);
+
+                const colecao = item.grupo ? await colecaoDo(item.grupo, sinal) : null;
+
+                // O título vai de novo: pode ter sido editado enquanto o arquivo subia.
+                const resultado = await postar(`/api/admin/uploads/${bilhete.videoId}/complete`, {
+                    uploadId: bilhete.uploadId,
+                    partes: enviados,
+                    colecaoId: colecao ? colecao.colecaoId : null,
+                    titulo: item.titulo.value.trim() || null
+                }, sinal);
+
+                item.destino = resultado.destino;
+                situacao(item, 'concluido', textos.concluido);
+            } catch (falha) {
+                if (bilhete) {
+                    // Libera os pedaços já recebidos e apaga o rascunho, em vez de deixá-los
+                    // ocupando espaço. Sem o sinal: o cancelamento já interrompeu o resto.
+                    postar(`/api/admin/uploads/${bilhete.videoId}/cancel`, { uploadId: bilhete.uploadId })
+                        .catch(() => { /* o storage descarta envios incompletos por conta própria */ });
+                }
+                if (!item.cancelado) {
+                    item.erro = falha.message;
+                    situacao(item, 'falhou', textos.falhou);
+                }
+            } finally {
+                item.controle = null;
+            }
+
+            atualizarResumo();
+        }
+
+        function avisarSaida(evento) {
+            evento.preventDefault();
+            evento.returnValue = textos.sair;
+            return textos.sair;
+        }
+
+        // Um arquivo por vez, na ordem da fila; o que entra durante o envio espera a sua vez.
+        async function processar() {
+            if (processando) {
+                return;
+            }
+            processando = true;
+            window.addEventListener('beforeunload', avisarSaida);
+
+            try {
+                let proximo;
+                while ((proximo = fila.find(item => item.estado === 'aguardando'))) {
+                    await enviarUm(proximo);
+                }
+            } finally {
+                processando = false;
+                window.removeEventListener('beforeunload', avisarSaida);
+            }
+
+            concluir();
+        }
+
+        function concluir() {
+            const enviados = fila.filter(item => item.estado === 'concluido');
+            if (enviados.length === 0) {
+                conclusao.classList.add('d-none');
+                return;
+            }
+            const falhas = fila.filter(item => item.estado === 'falhou').length;
+
+            conclusao.replaceChildren();
+            conclusao.classList.toggle('alert-success', falhas === 0);
+            conclusao.classList.toggle('alert-warning', falhas > 0);
+
+            const frase = document.createElement('div');
+            frase.textContent = formatar(textos.conclusao, enviados.length, fila.length)
+                + (falhas > 0 ? ' ' + formatar(textos.comFalhas, falhas) : '');
+            conclusao.append(frase);
+
+            const links = document.createElement('div');
+            links.className = 'mt-2 d-flex flex-wrap gap-3';
+            corpoFila.querySelectorAll('[data-grupo]').forEach(linha => {
+                const colecao = linha.grupo.colecao;
+                if (colecao) {
+                    const link = document.createElement('a');
+                    link.href = colecao.destino;
+                    link.textContent = textos.abrirColecao + ': ' + colecao.nome;
+                    links.append(link);
+                }
+            });
+            const videos = document.createElement('a');
+            videos.href = '/admin';
+            videos.textContent = textos.verVideos;
+            links.append(videos);
+            conclusao.append(links);
+
+            conclusao.classList.remove('d-none');
         }
 
         // Depois de escolhidos, os arquivos já estão na fila: o campo volta a ficar vazio, pronto
         // para escolher de novo.
         campoArquivos.addEventListener('change', function () {
-            if (!enviando) {
-                adicionarVideos(Array.from(campoArquivos.files).map(arquivo => ({ arquivo: arquivo, caminho: arquivo.name })));
-            }
+            adicionarVideos(Array.from(campoArquivos.files).map(arquivo => ({ arquivo: arquivo, caminho: arquivo.name })));
             campoArquivos.value = '';
         });
 
         campoPasta.addEventListener('change', function () {
             const arquivos = Array.from(campoPasta.files);
             campoPasta.value = '';
-            if (enviando || arquivos.length === 0) {
+            if (arquivos.length === 0) {
                 return;
             }
             const entradas = arquivos.map(arquivo => ({ arquivo: arquivo, caminho: arquivo.webkitRelativePath || arquivo.name }));
@@ -390,9 +584,7 @@ window.envioDeVideos = (function () {
         });
 
         function escolher(qual) {
-            if (!enviando) {
-                (qual === 'pasta' ? campoPasta : campoArquivos).click();
-            }
+            (qual === 'pasta' ? campoPasta : campoArquivos).click();
         }
 
         area.addEventListener('click', function (evento) {
@@ -410,7 +602,7 @@ window.envioDeVideos = (function () {
         // Uma pasta sozinha vira coleção; qualquer outra combinação entra como vídeos soltos,
         // com as pastas lidas por inteiro.
         async function receber(entradas) {
-            if (enviando || entradas.length === 0) {
+            if (entradas.length === 0) {
                 return;
             }
 
@@ -439,192 +631,12 @@ window.envioDeVideos = (function () {
 
         soltarNaPagina = {
             ativo: () => formulario.isConnected,
-            travada: () => enviando,
+            travada: () => false,
             destacar: function (sim) {
-                area.classList.toggle('soltando', sim && !enviando);
+                area.classList.toggle('soltando', sim);
             },
             receber: receber
         };
-
-        async function enviarUm(item) {
-            const arquivo = item.arquivo;
-            let bilhete = null;
-
-            situacao(item, 'progresso', textos.preparando, 0);
-
-            try {
-                bilhete = await postar('/api/admin/uploads/start', {
-                    titulo: item.titulo.value.trim() || tituloDoArquivo(arquivo.name, limiteTitulo),
-                    descricao: null,
-                    arquivo: arquivo.name,
-                    tipo: arquivo.type,
-                    tamanho: arquivo.size,
-                    colecaoId: colecao ? colecao.colecaoId : null
-                });
-
-                const enviados = [];
-                let assinadas = bilhete.partes;
-
-                for (let numero = 1; numero <= bilhete.totalDePedacos; numero++) {
-                    if (!assinadas.some(p => p.numero === numero)) {
-                        const lote = await postar(`/api/admin/uploads/${bilhete.videoId}/parts`, {
-                            uploadId: bilhete.uploadId,
-                            primeira: numero,
-                            quantidade: Math.min(LOTE_DE_ASSINATURAS, bilhete.totalDePedacos - numero + 1)
-                        });
-                        assinadas = lote.partes;
-                    }
-
-                    const parte = assinadas.find(p => p.numero === numero);
-                    const inicio = (numero - 1) * bilhete.tamanhoDoPedaco;
-                    const fim = Math.min(inicio + bilhete.tamanhoDoPedaco, arquivo.size);
-
-                    const etag = await enviarPedaco(parte.url, arquivo.slice(inicio, fim));
-                    enviados.push({ numero: numero, eTag: etag });
-
-                    const percentual = Math.round((numero / bilhete.totalDePedacos) * 100);
-                    situacao(item, 'progresso', formatar(textos.enviando, percentual), percentual);
-                }
-
-                situacao(item, 'progresso', textos.finalizando, 100);
-
-                const resultado = await postar(`/api/admin/uploads/${bilhete.videoId}/complete`, {
-                    uploadId: bilhete.uploadId,
-                    partes: enviados,
-                    colecaoId: colecao ? colecao.colecaoId : null
-                });
-
-                item.concluido = true;
-                item.erro = null;
-                item.destino = resultado.destino;
-                item.titulo.disabled = true;
-                item.linha.querySelector('[data-campo="remover"]').classList.add('invisible');
-                situacao(item, 'concluido', textos.concluido);
-            } catch (falha) {
-                item.erro = falha.message;
-                situacao(item, 'falhou', textos.falhou);
-
-                if (bilhete) {
-                    // Libera os pedaços já recebidos em vez de deixá-los ocupando espaço.
-                    try {
-                        await postar(`/api/admin/uploads/${bilhete.videoId}/cancel`, { uploadId: bilhete.uploadId });
-                    } catch (_) {
-                        // Nada a fazer: o storage descarta envios incompletos por conta própria.
-                    }
-                }
-            }
-
-            atualizarResumo();
-        }
-
-        function avisarSaida(evento) {
-            evento.preventDefault();
-            evento.returnValue = textos.sair;
-            return textos.sair;
-        }
-
-        function travar(travado) {
-            enviando = travado;
-            botao.disabled = travado;
-            campoArquivos.disabled = travado;
-            campoPasta.disabled = travado;
-            area.classList.toggle('travada', travado);
-            area.setAttribute('aria-disabled', travado ? 'true' : 'false');
-            campoColecao.disabled = travado || colecao !== null;
-            fila.forEach(item => {
-                item.titulo.disabled = travado || item.concluido;
-                item.linha.querySelector('[data-campo="remover"]').disabled = travado;
-            });
-
-            if (travado) {
-                window.addEventListener('beforeunload', avisarSaida);
-            } else {
-                window.removeEventListener('beforeunload', avisarSaida);
-            }
-        }
-
-        function concluir() {
-            const enviados = fila.filter(item => item.concluido);
-            const falhas = fila.length - enviados.length;
-
-            // Um vídeo só, sem pasta: segue direto para a página dele, como sempre foi.
-            if (!pasta && fila.length === 1 && falhas === 0) {
-                window.location.href = enviados[0].destino;
-                return;
-            }
-
-            conclusao.replaceChildren();
-            conclusao.classList.toggle('alert-success', falhas === 0);
-            conclusao.classList.toggle('alert-warning', falhas > 0);
-
-            const frase = document.createElement('div');
-            frase.textContent = formatar(textos.conclusao, enviados.length, fila.length)
-                + (falhas > 0 ? ' ' + formatar(textos.comFalhas, falhas) : '');
-            conclusao.append(frase);
-
-            const links = document.createElement('div');
-            links.className = 'mt-2 d-flex flex-wrap gap-3';
-            if (colecao) {
-                const link = document.createElement('a');
-                link.href = colecao.destino;
-                link.textContent = textos.abrirColecao + ': ' + colecao.nome;
-                links.append(link);
-            }
-            const videos = document.createElement('a');
-            videos.href = '/admin';
-            videos.textContent = textos.verVideos;
-            links.append(videos);
-            conclusao.append(links);
-
-            conclusao.classList.remove('d-none');
-        }
-
-        formulario.addEventListener('submit', async function (evento) {
-            evento.preventDefault();
-            if (enviando) {
-                return;
-            }
-
-            mostrarErro('');
-            conclusao.classList.add('d-none');
-
-            // Um novo "Enviar" depois de falhas tenta de novo só o que não subiu.
-            const pendentes = fila.filter(item => !item.concluido);
-            if (pendentes.length === 0) {
-                mostrarErro(fila.length === 0 ? (pasta ? textos.pastaVazia : textos.semArquivos) : '');
-                return;
-            }
-
-            if (pasta && !colecao && !campoColecao.value.trim()) {
-                mostrarErro(textos.semColecao);
-                campoColecao.focus();
-                return;
-            }
-
-            travar(true);
-
-            try {
-                if (pasta && !colecao) {
-                    colecao = await postar('/api/admin/uploads/collection', {
-                        nome: campoColecao.value.trim(),
-                        descricao: null
-                    });
-                    campoColecao.value = colecao.nome;
-                }
-
-                for (const item of pendentes) {
-                    await enviarUm(item);
-                }
-            } catch (falha) {
-                mostrarErro(falha.message);
-            } finally {
-                travar(false);
-            }
-
-            if (fila.some(item => item.concluido)) {
-                concluir();
-            }
-        });
     }
 
     if (document.readyState === 'loading') {

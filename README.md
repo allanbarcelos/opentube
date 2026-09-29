@@ -574,12 +574,15 @@ container of its own too, and is optional (see [Automatic captions in production
 
 1. **Upload** — the application creates the video record in `Draft` and returns signed URLs; the
    browser sends the parts straight to the `originals` bucket; on completion, the transcoding job
-   is queued. Several files can be chosen at once, or in several rounds (each choice adds to the
-   list), and each video's title starts as its file name without the extension (editable before
-   sending); the description is filled in later, in the video's settings. Choosing a folder creates a collection named
-   after it, and each video of the folder (subfolders included) joins the collection when its
-   upload completes; files that are not videos are skipped. Files go up one at a time, and a
-   failed one can be retried without resending the others.
+   is queued. Videos are added by choosing files, choosing a folder, or dragging either onto the
+   upload page, and each one starts uploading as soon as it is added — one at a time, in the order
+   of the list. Each line handles itself: it can be removed while it waits, cancelled while it
+   uploads (the parts already sent are discarded along with the draft), and retried if it fails.
+   The title starts as the file name without the extension and can be edited until the upload
+   finishes; the description is filled in later, in the video's settings. A folder becomes a
+   collection named after it, created when its first video finishes, with the name as written by
+   then; each video of the folder (subfolders included) joins it. Files that are not videos are
+   skipped.
 2. **Probe** — `ffprobe` extracts duration, resolution, and codecs, and rejects invalid files early.
 3. **Transcode** — FFmpeg produces an adaptive ladder (360p to 1080p, never above the source
    resolution) in CMAF/fMP4, with 4 s segments and keyframes aligned across renditions.

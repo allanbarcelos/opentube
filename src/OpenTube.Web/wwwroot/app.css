@@ -980,12 +980,6 @@
     display: block;
 }
 
-/* Enquanto os arquivos sobem, a área não aceita mais nada. */
-.area-de-envio.travada {
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
 /* Rodapé: crédito à esquerda, aviso no centro, GitHub à direita. As laterais têm a mesma
    largura para o aviso ficar no centro da página, e não só entre os dois. */
 .rodape {

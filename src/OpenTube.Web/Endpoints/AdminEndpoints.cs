@@ -36,7 +36,9 @@ public sealed record ParteEnviada(int Numero, string ETag);
 /// <summary>Conclusão do envio.</summary>
 /// <param name="UploadId">Envio em andamento.</param>
 /// <param name="Partes">Pedaços enviados.</param>
-public sealed record ConcluirEnvio(string UploadId, ParteEnviada[] Partes, Guid? ColecaoId = null);
+/// <param name="ColecaoId">Coleção que recebe o vídeo, quando ele veio de uma pasta.</param>
+/// <param name="Titulo">Título final, se foi editado enquanto o arquivo subia.</param>
+public sealed record ConcluirEnvio(string UploadId, ParteEnviada[] Partes, Guid? ColecaoId = null, string? Titulo = null);
 
 /// <summary>Coleção criada para receber os vídeos de uma pasta.</summary>
 /// <param name="Nome">Nome da coleção (por padrão, o da pasta).</param>
@@ -122,7 +124,8 @@ public static class AdminEndpoints
                     pedido.UploadId,
                     pedido.Partes.Select(p => new CompletedPart(p.Numero, p.ETag)),
                     pedido.ColecaoId,
-                    cancellationToken);
+                    cancellationToken,
+                    pedido.Titulo);
             }
             catch (InvalidOperationException e)
             {

@@ -30,16 +30,15 @@
                   data-falhou="@T["Failed"]"
                   data-abrir="@T["Open"]"
                   data-remover="@T["Remove from the list"]"
+                  data-cancelar-envio="@T["Cancel the upload"]"
                   data-resumo-fila="@T["{0} video(s) · {1}"]"
                   data-progresso-geral="@T["{0} of {1} sent"]"
                   data-conclusao="@T["{0} of {1} video(s) sent."]"
-                  data-com-falhas="@T["{0} failed. Press Send again to retry only those."]"
+                  data-com-falhas="@T["{0} failed; use the retry button on each one."]"
                   data-abrir-colecao="@T["Open the collection"]"
                   data-ver-videos="@T["Go to the videos"]"
                   data-ignorados="@T["{0} file(s) skipped, not videos: {1}"]"
-                  data-sem-arquivos="@T["Choose at least one video."]"
                   data-pasta-vazia="@T["The folder has no videos."]"
-                  data-sem-colecao="@T["Enter a name for the collection."]"
                   data-sair="@T["Uploads in progress will be lost."]"
                   data-falha-servidor="@T["Could not reach the server."]"
                   data-falha-pedaco="@T["A part of the file failed to upload."]"
@@ -62,21 +61,13 @@
                             <button class="btn btn-link p-0 align-baseline" type="button" data-escolher="pasta">@T["choose a folder"]</button>
                         </p>
                         <p class="small text-body-secondary mb-0 mx-auto" id="ajuda-envio" style="max-width: 36rem">
-                            @T["Videos add to the list, as many times as you like; the title of each one is its file name, and can be changed below. A folder becomes a collection with its name, and its videos (subfolders included) go into it."]
+                            @T["Each video starts uploading as soon as it is added, one at a time, and can be cancelled on its own line. Its title is the file name, editable until it finishes. A folder becomes a collection with its name, and its videos (subfolders included) go into it."]
                         </p>
                     </div>
                 </div>
                 @* Fora da área: o clique que o script dá neles não pode voltar para ela. *@
                 <input class="d-none" id="arquivos" type="file" accept="video/*" multiple tabindex="-1" aria-hidden="true" />
                 <input class="d-none" id="pasta" type="file" webkitdirectory multiple tabindex="-1" aria-hidden="true" />
-
-                <div class="card mb-3 d-none" id="bloco-colecao">
-                    <div class="card-body">
-                        <label class="form-label" for="nome-colecao">@T["Collection"]</label>
-                        <input class="form-control" id="nome-colecao" maxlength="@UploadNames.MaxCollectionNameLength" />
-                        <div class="form-text">@T["A new collection is created with this name when the upload starts."]</div>
-                    </div>
-                </div>
 
                 <div class="card mb-3 d-none" id="bloco-fila">
                     <div class="card-header d-flex flex-wrap justify-content-between gap-2">
@@ -104,10 +95,6 @@
                 <div class="alert alert-danger d-none" id="erro-envio" role="alert"></div>
                 <div class="alert alert-success d-none" id="conclusao-envio" role="status"></div>
 
-                <div class="d-flex gap-2">
-                    <button class="btn btn-primary" id="botao-enviar" type="submit">@T["Send"]</button>
-                    <a class="btn btn-outline-secondary" href="/admin">@T["Cancel"]</a>
-                </div>
             </form>
 
             <template id="modelo-linha-envio">
@@ -119,9 +106,28 @@
                     </td>
                     <td class="small text-nowrap" data-campo="tamanho"></td>
                     <td class="small" style="min-width: 10rem" data-campo="situacao"></td>
-                    <td class="text-end">
+                    <td class="text-end text-nowrap">
+                        <button class="btn btn-sm btn-outline-secondary d-none" type="button" data-campo="tentar"
+                                title="@T["Try again"]" aria-label="@T["Try again"]"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button>
                         <button class="btn btn-sm btn-outline-secondary" type="button" data-campo="remover"
                                 title="@T["Remove"]" aria-label="@T["Remove"]"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                    </td>
+                </tr>
+            </template>
+
+            @* Cabeçalho de uma pasta na fila: a coleção dela nasce quando o primeiro vídeo termina
+               de subir, com o nome que estiver escrito aqui. *@
+            <template id="modelo-grupo-envio">
+                <tr class="table-light" data-grupo>
+                    <td class="text-end text-body-secondary"><i class="bi bi-folder2-open" aria-hidden="true"></i></td>
+                    <td colspan="4">
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <span class="small text-body-secondary">@T["Collection"]</span>
+                            <input class="form-control form-control-sm" style="max-width: 24rem" data-campo="colecao"
+                                   maxlength="@UploadNames.MaxCollectionNameLength" aria-label="@T["Collection"]" />
+                            <a class="small d-none" data-campo="link-colecao" target="_blank" rel="noopener"></a>
+                            <span class="small text-body-secondary" data-campo="ajuda-colecao">@T["Created with this name when its first video finishes uploading."]</span>
+                        </div>
                     </td>
                 </tr>
             </template>

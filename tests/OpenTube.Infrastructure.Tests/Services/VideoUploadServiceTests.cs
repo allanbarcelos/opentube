@@ -171,6 +171,26 @@ public class VideoUploadServiceTests(PostgresFixture postgres, MinioFixture mini
         Assert.Equal(bilhete.StorageKey, payload!.OriginalKey);
     }
 
+    [Theory]
+    [InlineData("Reunião geral de setembro", "Reunião geral de setembro")]
+    [InlineData("  Com espaços  ", "Com espaços")]
+    [InlineData("   ", "reuniao")]
+    [InlineData(null, "reuniao")]
+    public async Task O_titulo_editado_durante_o_envio_vale_na_conclusao(string? editado, string esperado)
+    {
+        var (servico, db, storage, _) = Criar();
+        using var _1 = storage;
+        await using var _2 = db;
+
+        var dados = new byte[1024];
+        var bilhete = await servico.StartAsync(null, null, "reuniao.mp4", "video/mp4", dados.Length, Admin);
+        var enviado = await EnviarPedacoAsync(bilhete.Parts[0], dados);
+
+        var video = await servico.CompleteAsync(bilhete.VideoId, bilhete.UploadId, [enviado], title: editado);
+
+        Assert.Equal(esperado, video.Title);
+    }
+
     [Fact]
     public async Task Nao_permite_concluir_duas_vezes()
     {

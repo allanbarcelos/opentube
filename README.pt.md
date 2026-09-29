@@ -574,12 +574,14 @@ próprio, e é opcional (veja [Legendas automáticas em produção](#legendas-au
 
 1. **Envio** — a aplicação cria o registro do vídeo em `Draft` e devolve URLs assinadas; o navegador
    envia os pedaços direto ao bucket `originals`; ao concluir, enfileira o job de transcodificação.
-   Dá para escolher vários arquivos de uma vez, ou em várias rodadas (cada escolha acrescenta à
-   lista), e o título de cada vídeo começa como o nome do arquivo sem a extensão (editável antes
-   de enviar); a descrição é preenchida depois, nas configurações do vídeo. Escolher uma pasta cria uma coleção com o
-   nome dela, e cada vídeo da pasta (inclusive de subpastas) entra na coleção quando termina de
-   subir; o que não é vídeo fica de fora. Os arquivos sobem um de cada vez, e um que falhou pode ser
-   enviado de novo sem reenviar os outros.
+   Os vídeos entram escolhendo arquivos, escolhendo uma pasta ou arrastando qualquer um dos dois
+   para a página de envio, e cada um começa a subir assim que entra — um de cada vez, na ordem da
+   lista. Cada linha cuida de si: pode sair da lista enquanto espera, ser cancelada enquanto sobe
+   (os pedaços já enviados são descartados junto com o rascunho) e ser tentada de novo se falhar.
+   O título começa como o nome do arquivo sem a extensão e pode ser editado até o envio terminar;
+   a descrição é preenchida depois, nas configurações do vídeo. Uma pasta vira uma coleção com o
+   nome dela, criada quando o primeiro vídeo termina, com o nome escrito até lá; cada vídeo da
+   pasta (inclusive de subpastas) entra nela. O que não é vídeo fica de fora.
 2. **Análise** — `ffprobe` extrai duração, resolução e codecs, e rejeita arquivo inválido cedo.
 3. **Transcodificação** — FFmpeg gera um ladder adaptativo (360p a 1080p, nunca acima da resolução
    original) em CMAF/fMP4, segmentos de 4 s com keyframes alinhados entre as versões.

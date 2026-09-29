@@ -137,10 +137,22 @@ public class VideoUploadService(
         string uploadId,
         IEnumerable<CompletedPart> parts,
         Guid? collectionId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? title = null)
     {
         var video = await CarregarRascunhoAsync(videoId, cancellationToken);
         var colecao = collectionId is { } colecaoId ? await CarregarColecaoAsync(colecaoId, cancellationToken) : null;
+
+        // O envio começa assim que o arquivo entra na fila; o título pode ter sido editado
+        // enquanto ele subia, e vale o que estiver escrito ao terminar.
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            var titulo = title.Trim();
+            if (titulo.Length > UploadNames.MaxTitleLength)
+                titulo = titulo[..UploadNames.MaxTitleLength].TrimEnd();
+            if (titulo != video.Title)
+                video.Describe(titulo, video.Description);
+        }
 
         var tamanho = await storage.CompleteUploadAsync(video.OriginalKey, uploadId, parts, cancellationToken);
 
