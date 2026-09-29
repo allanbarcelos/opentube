@@ -79,7 +79,6 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseStaticFiles();
 app.UseRequestLocalization();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -89,6 +88,12 @@ app.UseAuthorization();
 // autenticada ser recusado.
 app.UseAntiforgery();
 app.UseRateLimiter();
+
+// Arquivos do wwwroot pelo manifesto da compilação: o @Assets das páginas ganha a impressão do
+// conteúdo no endereço (guardado para sempre pelo navegador), e o endereço sem ela é revalidado
+// a cada pedido. Com UseStaticFiles o navegador guardava uma versão antiga do JavaScript por
+// conta própria depois de uma atualização.
+app.MapStaticAssets();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
