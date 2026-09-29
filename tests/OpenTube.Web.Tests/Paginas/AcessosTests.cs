@@ -451,6 +451,30 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
     }
 
     [Fact]
+    public async Task Provedor_de_email_publico_volta_com_o_motivo()
+    {
+        var (cliente, video) = await PrepararAsync();
+        using var _ = cliente;
+
+        var resposta = await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/videos/{video.Id}?tab=access", "/admin/access/domain",
+            new Dictionary<string, string>
+            {
+                ["alvoTipo"] = ((int)GrantTargetType.Video).ToString(),
+                ["alvoId"] = video.Id.ToString(),
+                ["dominios"] = "gmail.com",
+                ["validade"] = "sempre"
+            });
+
+        Assert.Contains("erro-acesso=", resposta.Headers.Location!.ToString());
+        var pagina = System.Net.WebUtility.HtmlDecode(await cliente.GetStringAsync(resposta.Headers.Location!.ToString()));
+        Assert.Contains("gmail.com is a public email provider", pagina);
+
+        await using var db = postgres.CreateContext();
+        Assert.Equal(0, await db.AccessGrants.CountAsync());
+    }
+
+    [Fact]
     public async Task Cada_acesso_do_convite_se_revoga_sozinho()
     {
         var (cliente, video) = await PrepararAsync();

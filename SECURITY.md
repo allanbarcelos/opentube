@@ -52,7 +52,8 @@ denial-of-service or volume tests against someone else's server.
   `forward_auth`.
 - **Authentication**: signing in without the code or link, reusing a code or link, brute-forcing
   codes past the rate limits, session fixation or theft, taking over another account.
-- **Domain verification**: getting a domain entry page without controlling the domain's DNS.
+- **Domain grants**: watching through a domain grant with an address outside that domain, or
+  without proving the address with the code.
 - **Administration**: reaching administrative pages or actions without being an administrator,
   cross-site request forgery, stored or reflected XSS (video titles, captions, comments, the
   watermark image).

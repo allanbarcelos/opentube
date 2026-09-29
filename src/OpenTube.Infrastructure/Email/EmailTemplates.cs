@@ -60,38 +60,6 @@ public static class EmailTemplates
         return new EmailMessage(to, LocalText.Format("You were given access to {0}", whatWasShared), html, texto);
     }
 
-    /// <summary>
-    /// Endereço da porta de entrada, enviado ao responsável pelo domínio para que ele repasse
-    /// às pessoas da organização.
-    /// </summary>
-    public static EmailMessage DomainEntry(string to, string domain, string entryUrl)
-    {
-        var texto = $"""
-            {LocalText.Format("Organization {0} can now use OpenTube.", domain)}
-
-            {LocalText.Get("Forward this address to the people who should watch:")}
-            {entryUrl}
-
-            {LocalText.Format("Anyone who opens the page enters their own {0} email and receives an access code. There is no password to share and no account to create.", domain)}
-            """;
-
-        var html = $"""
-            <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#212529">
-              <h1 style="font-size:20px;margin:0 0 16px">OpenTube</h1>
-              <p style="margin:0 0 16px">{WebUtility.HtmlEncode(LocalText.Format("Organization {0} can now use OpenTube.", domain))}</p>
-              <p style="margin:0 0 8px">{WebUtility.HtmlEncode(LocalText.Get("Forward this address to the people who should watch:"))}</p>
-              <p style="margin:0 0 24px">
-                <a href="{WebUtility.HtmlEncode(entryUrl)}" style="word-break:break-all">{WebUtility.HtmlEncode(entryUrl)}</a>
-              </p>
-              <p style="font-size:14px;color:#6c757d;margin:0">
-                {WebUtility.HtmlEncode(LocalText.Format("Anyone who opens the page enters their own {0} email and receives an access code. There is no password to share and no account to create.", domain))}
-              </p>
-            </div>
-            """;
-
-        return new EmailMessage(to, LocalText.Format("OpenTube access for {0}", domain), html, texto);
-    }
-
     /// <summary>Aviso à administração de que alguém escreveu sobre um vídeo.</summary>
     public static EmailMessage SupportForAdmin(string to, string author, string videoTitle, string message, string link)
     {

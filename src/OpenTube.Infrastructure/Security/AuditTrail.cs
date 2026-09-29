@@ -23,9 +23,6 @@ public static class AuditActions
     public const string ColecaoCriada = "colecao.criada";
     public const string ColecaoAlterada = "colecao.alterada";
     public const string ColecaoExcluida = "colecao.excluida";
-    public const string DominioCadastrado = "dominio.cadastrado";
-    public const string DominioVerificado = "dominio.verificado";
-    public const string DominioAlterado = "dominio.alterado";
     public const string MarcaDefinida = "marca.definida";
     public const string MarcaReposicionada = "marca.reposicionada";
     public const string MarcaRemovida = "marca.removida";
@@ -39,6 +36,7 @@ public static class AuditEntities
     public const string Video = "video";
     public const string Colecao = "colecao";
     public const string Concessao = "concessao";
+    /// <summary>Da antiga área de domínios verificados; fica para filtrar os registros de então.</summary>
     public const string Dominio = "dominio";
     public const string Pessoa = "pessoa";
     public const string MarcaDagua = "marca";

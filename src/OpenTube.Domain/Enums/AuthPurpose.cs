@@ -12,6 +12,9 @@ public enum AuthPurpose
     /// <summary>Convite enviado pelo administrador junto com uma concessão de acesso.</summary>
     Invite = 1,
 
-    /// <summary>Entrada pela porta dedicada de um domínio verificado.</summary>
+    /// <summary>
+    /// Entrada pela antiga porta dedicada de um domínio, que não existe mais. O valor fica
+    /// porque está gravado nos códigos emitidos antes.
+    /// </summary>
     DomainEntry = 2
 }

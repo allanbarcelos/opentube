@@ -20,7 +20,6 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<Invitation> Invitations => Set<Invitation>();
     public DbSet<Collection> Collections => Set<Collection>();
     public DbSet<CollectionVideo> CollectionVideos => Set<CollectionVideo>();
-    public DbSet<VerifiedDomain> VerifiedDomains => Set<VerifiedDomain>();
     public DbSet<PlaybackSession> PlaybackSessions => Set<PlaybackSession>();
     public DbSet<PlaybackInterval> PlaybackIntervals => Set<PlaybackInterval>();
     public DbSet<PlaybackEvent> PlaybackEvents => Set<PlaybackEvent>();

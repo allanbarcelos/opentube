@@ -417,7 +417,6 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | Envio | Vários vídeos de uma vez, ou uma pasta inteira que vira coleção; direto do navegador para o storage, sem passar pelo servidor da aplicação |
 | Visibilidade | Todo vídeo nasce **privado**; o administrador promove para público ou restrito |
 | Convites | Email com link de acesso e código de 6 dígitos — sem senha |
-| Domínios | Porta de entrada própria por domínio verificado por DNS |
 | Validade | Acesso eterno, até uma data ou por um período após o primeiro uso |
 | Analytics | Quem assistiu, quando, de onde, em qual dispositivo e quanto de cada vídeo |
 | Suporte | Comentários privados por vídeo, visíveis apenas ao autor e ao administrador |
@@ -452,7 +451,7 @@ Os quatro tipos de acesso são a mesma entidade com sujeitos diferentes:
 | Sujeito | Significado |
 | --- | --- |
 | `User` | Um email específico (`allan@barcelos.dev`) |
-| `Domain` | Qualquer email de um domínio verificado (`barcelos.dev`) |
+| `Domain` | Todo email de um domínio (`barcelos.dev`), como um grupo |
 | `Link` | Quem possuir um token secreto de compartilhamento |
 | `Public` | Qualquer visitante |
 
@@ -520,14 +519,14 @@ cookie de 30 dias, renovável e revogável de imediato pelo administrador.
 
 ### Acesso por domínio
 
-1. O administrador cadastra `barcelos.dev` e recebe um token de verificação.
-2. O responsável pelo domínio publica `TXT _opentube-verify.barcelos.dev = <token>`.
-3. Verificado o registro, o sistema libera a porta de entrada `/entry/barcelos.dev`.
-4. Quem chega nessa página informa um email do domínio e recebe o código por email.
-
-A verificação por DNS existe para impedir que alguém cadastre um domínio que não controla. O envio
-e a validação de códigos são limitados por taxa (IP, email e domínio), única barreira contra força
-bruta num código de 6 dígitos.
+Dar um vídeo ou uma coleção a um domínio funciona como um grupo: todo email daquele domínio pode
+assistir, sem ninguém ser acrescentado um a um. Quem chega entra pela página de acesso de sempre,
+com o próprio endereço, e recebe o código nele; provar o endereço é o que prova que a pessoa é do
+domínio. Não há registro de DNS a publicar nem porta de entrada à parte. Provedores de email
+públicos (gmail.com, outlook.com, yahoo.com e parecidos, variantes regionais incluídas) são
+recusados: uma concessão para um deles abriria o vídeo a qualquer pessoa com uma conta gratuita. O
+envio e a validação de códigos são limitados por taxa (IP, email e domínio), única barreira contra
+força bruta num código de 6 dígitos.
 
 ---
 
@@ -819,7 +818,7 @@ docker/whisper/               imagem do servidor do Whisper (cpu e cuda), detec�
 src/
   OpenTube.Shared/            contratos e DTOs compartilhados
   OpenTube.Domain/            entidades e regras de acesso (sem dependência de infraestrutura)
-  OpenTube.Infrastructure/    EF Core, storage S3, email, verificação DNS, fila
+  OpenTube.Infrastructure/    EF Core, storage S3, email, fila
   OpenTube.Web/               Blazor: home, busca, player e área administrativa
   OpenTube.Worker/            transcodificação, derivados e agregação de analytics
 tests/
@@ -885,7 +884,7 @@ Para relatar uma vulnerabilidade, veja o [SECURITY.md](SECURITY.md) — de forma
 | --- | --- | --- |
 | 1 | Núcleo: upload, transcodificação, player, home e busca | **concluída** |
 | 2 | Acesso: concessões, convites e coleções | **concluída** |
-| 3 | Domínios: verificação por DNS e porta de entrada dedicada | **concluída** |
+| 3 | Domínios: acesso para todo email de um domínio | **concluída** |
 | 4 | Analytics: coleta, agregação, painéis e exportação | **concluída** |
 | 5 | Suporte: conversas privadas por vídeo | **concluída** |
 | 6 | Refino: legendas automáticas, marca d'água, auditoria, autorização por segmento | **concluída** |

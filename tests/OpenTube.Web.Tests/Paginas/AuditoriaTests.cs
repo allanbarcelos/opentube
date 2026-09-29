@@ -137,52 +137,6 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
     }
 
     [Fact]
-    public async Task A_verificacao_de_dominio_fica_registrada()
-    {
-        using var cliente = _app.CreateBrowser();
-        await EntrarComoAdminAsync(cliente);
-
-        var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/admin/domains", "/admin/domains/register",
-            new Dictionary<string, string> { ["dominio"] = "barcelos.dev", ["responsavel"] = "", ["nota"] = "" });
-
-        var id = Guid.Parse(resposta.Headers.Location!.ToString().Split('/')[^1].Split('?')[0]);
-
-        await using (var db = postgres.CreateContext())
-        {
-            var dominio = await db.VerifiedDomains.SingleAsync();
-            _app.Dns.Publicar(dominio.VerificationRecordName, dominio.ExpectedRecordValue);
-        }
-
-        await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
-
-        await using var leitura = postgres.CreateContext();
-
-        Assert.True(await leitura.AuditEntries.AnyAsync(e => e.Action == AuditActions.DominioCadastrado));
-        Assert.True(await leitura.AuditEntries.AnyAsync(e => e.Action == AuditActions.DominioVerificado));
-    }
-
-    [Fact]
-    public async Task Verificacao_que_falhou_nao_vira_registro_de_dominio_verificado()
-    {
-        using var cliente = _app.CreateBrowser();
-        await EntrarComoAdminAsync(cliente);
-
-        var resposta = await FormularioHelpers.EnviarFormularioAsync(
-            cliente, "/admin/domains", "/admin/domains/register",
-            new Dictionary<string, string> { ["dominio"] = "barcelos.dev", ["responsavel"] = "", ["nota"] = "" });
-
-        var id = Guid.Parse(resposta.Headers.Location!.ToString().Split('/')[^1].Split('?')[0]);
-
-        await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/domains/{id}", $"/admin/domains/{id}/verify", new Dictionary<string, string>());
-
-        await using var leitura = postgres.CreateContext();
-        Assert.False(await leitura.AuditEntries.AnyAsync(e => e.Action == AuditActions.DominioVerificado));
-    }
-
-    [Fact]
     public async Task A_pagina_de_auditoria_lista_e_filtra()
     {
         using var storage = minio.CreateStorage();

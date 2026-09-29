@@ -11,7 +11,6 @@ using OpenTube.Infrastructure.Playback;
 using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Access;
 using OpenTube.Infrastructure.Analytics;
-using OpenTube.Infrastructure.Domains;
 using OpenTube.Infrastructure.Email;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
@@ -70,8 +69,6 @@ public static class DependencyInjection
         services.AddScoped<AuditTrail>();
         services.AddScoped<AccessService>();
         services.AddScoped<GrantService>();
-        services.AddSingleton<IDnsTxtLookup, DnsTxtLookup>();
-        services.AddScoped<DomainService>();
         services.AddScoped<PlaybackGuard>();
         services.AddScoped<PlaybackService>();
         services.AddSingleton<PlaybackTickets>();

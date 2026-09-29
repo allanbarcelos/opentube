@@ -4,6 +4,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTube.Domain.Access;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Domain.ValueObjects;
@@ -193,6 +194,11 @@ public class GrantService(
         if (dominios.FirstOrDefault(d => !DominioValido(d)) is { } invalido)
             throw new InvalidOperationException(LocalText.Format("{0} is not a valid domain.", invalido));
 
+        if (dominios.FirstOrDefault(PublicEmailProviders.IsPublic) is { } publico)
+            throw new InvalidOperationException(LocalText.Format(
+                "{0} is a public email provider: granting it would let anyone with an account there watch. Invite those people by their own address.",
+                publico));
+
         var convite = Invitation.Create(InvitationKind.Domains, targetType, targetId, adminId, clock.GetUtcNow(),
             validity.ExpiresAt, validity.DurationAfterFirstUse, note: note);
         var concessoes = dominios.Select(d => AccessGrant.ForInvitation(convite, GrantSubjectType.Domain, d)).ToList();
@@ -205,8 +211,8 @@ public class GrantService(
     }
 
     /// <summary>
-    /// Cria um link secreto de compartilhamento. O endereço é devolvido uma única vez: só o
-    /// resumo do token fica guardado, então não há como exibi-lo de novo depois.
+    /// Cria um link secreto de compartilhamento. A validação usa só o resumo do token; o token
+    /// também fica cifrado, para a administração poder ver e copiar o endereço depois.
     /// </summary>
     public async Task<ShareLink> CreateShareLinkAsync(
         GrantTargetType targetType,

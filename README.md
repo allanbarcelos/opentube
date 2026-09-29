@@ -417,7 +417,6 @@ testable without a database or network; the rest uses ephemeral containers.
 | Upload | Several videos at once, or a whole folder that becomes a collection; straight from the browser to storage, bypassing the application server |
 | Visibility | Every video starts **private**; the administrator promotes it to public or restricted |
 | Invitations | Email with an access link and a 6-digit code — no password |
-| Domains | Dedicated entry page per DNS-verified domain |
 | Validity | Access forever, until a date, or for a period after first use |
 | Analytics | Who watched, when, from where, on which device, and how much of each video |
 | Support | Private comments per video, visible only to the author and the administrator |
@@ -452,7 +451,7 @@ The four kinds of access are the same entity with different subjects:
 | Subject | Meaning |
 | --- | --- |
 | `User` | A specific email address (`allan@barcelos.dev`) |
-| `Domain` | Any email address from a verified domain (`barcelos.dev`) |
+| `Domain` | Every email address at a domain (`barcelos.dev`), like a group |
 | `Link` | Whoever holds a secret share token |
 | `Public` | Any visitor |
 
@@ -520,14 +519,14 @@ session, which is renewable and can be revoked immediately by the administrator.
 
 ### Domain access
 
-1. The administrator registers `barcelos.dev` and receives a verification token.
-2. Whoever manages the domain publishes `TXT _opentube-verify.barcelos.dev = <token>`.
-3. Once the record is verified, the system opens the entry page `/entry/barcelos.dev`.
-4. Visitors to that page enter an email address from the domain and receive the code by email.
-
-DNS verification exists so that nobody can register a domain they do not control. Sending and
-checking codes are rate-limited (by IP, email, and domain), the only barrier against brute-forcing
-a 6-digit code.
+Granting a video or collection to a domain works like a group: every email address at that
+domain can watch it, with nobody added one by one. Whoever arrives signs in on the usual page with
+their own address and receives the code there, so proving the address is what proves they belong
+to the domain. There is no DNS record to publish and no separate entry page. Public email
+providers (gmail.com, outlook.com, yahoo.com and the like, regional variants included) are refused:
+a grant for one of them would open the video to anyone with a free account. Sending and checking
+codes are rate-limited (by IP, email, and domain), the only barrier against brute-forcing a 6-digit
+code.
 
 ---
 
@@ -822,7 +821,7 @@ docker/whisper/               Whisper server image (cpu and cuda), hardware dete
 src/
   OpenTube.Shared/            shared contracts and DTOs
   OpenTube.Domain/            entities and access rules (no infrastructure dependencies)
-  OpenTube.Infrastructure/    EF Core, S3 storage, email, DNS verification, queue
+  OpenTube.Infrastructure/    EF Core, S3 storage, email, queue
   OpenTube.Web/               Blazor: home, search, player, and admin area
   OpenTube.Worker/            transcoding, derivatives, and analytics aggregation
 tests/
@@ -888,7 +887,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md) — privately, never i
 | --- | --- | --- |
 | 1 | Core: upload, transcoding, player, home, and search | **done** |
 | 2 | Access: grants, invitations, and collections | **done** |
-| 3 | Domains: DNS verification and dedicated entry page | **done** |
+| 3 | Domains: access for every address at a domain | **done** |
 | 4 | Analytics: collection, aggregation, dashboards, and export | **done** |
 | 5 | Support: private conversations per video | **done** |
 | 6 | Polish: automatic captions, watermark, audit, per-segment authorization | **done** |

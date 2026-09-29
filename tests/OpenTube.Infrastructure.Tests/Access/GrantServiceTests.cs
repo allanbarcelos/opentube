@@ -277,6 +277,26 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(0, await leitura.Invitations.CountAsync());
     }
 
+    [Theory]
+    [InlineData("gmail.com")]
+    [InlineData("hotmail.com.br")]
+    [InlineData("@Outlook.com")]
+    public async Task Provedor_de_email_publico_e_recusado_sem_criar_nada(string dominio)
+    {
+        var video = await VideoRestritoAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        var erro = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servico.GrantToDomainsAsync(["barcelos.dev", dominio], GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin));
+
+        Assert.Contains("public email provider", erro.Message);
+
+        await using var leitura = postgres.CreateContext();
+        Assert.Equal(0, await leitura.AccessGrants.CountAsync());
+        Assert.Equal(0, await leitura.Invitations.CountAsync());
+    }
+
     [Fact]
     public async Task Lista_os_convites_do_alvo_com_as_concessoes_de_cada_um()
     {

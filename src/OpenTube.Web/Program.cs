@@ -120,7 +120,6 @@ app.MapAdminEndpoints();
 app.MapShareEndpoints();
 app.MapCollectionEndpoints();
 app.MapAccessEndpoints();
-app.MapDomainEndpoints();
 app.MapAnalyticsEndpoints();
 app.MapExportEndpoints();
 app.MapSupportEndpoints();
