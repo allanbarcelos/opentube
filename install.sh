@@ -130,6 +130,17 @@ ask_secret() {
   printf -v "$var_name" '%s' "$value"
 }
 
+# Same as ask_secret, but an empty answer is accepted (a server with no password).
+ask_secret_optional() {
+  local prompt="$1" var_name="$2" value
+  if [[ "$UPDATE_MODE" == "y" ]]; then
+    printf -v "$var_name" '%s' ""
+    return
+  fi
+  read -rsp "$(echo -e "  ${BOLD}${prompt}${NC} ${DIM}(empty for none)${NC}: ")" value </dev/tty; echo
+  printf -v "$var_name" '%s' "$value"
+}
+
 ask_optional() {
   local prompt="$1" default="${2:-}" var_name="$3" value
   if [[ "$UPDATE_MODE" == "y" ]]; then
@@ -137,12 +148,14 @@ ask_optional() {
     printf -v "$var_name" '%s' "$default"
     return
   fi
+  # Enter keeps the saved value; "-" clears it, so an answer can go back to empty.
   if [[ -n "$default" ]]; then
-    read -rp "$(echo -e "  ${BOLD}${prompt}${NC} ${DIM}[${default}]${NC}: ")" value </dev/tty
+    read -rp "$(echo -e "  ${BOLD}${prompt}${NC} ${DIM}[${default}] (- to clear)${NC}: ")" value </dev/tty
   else
     read -rp "$(echo -e "  ${BOLD}${prompt}${NC}: ")" value </dev/tty
   fi
   value="${value:-$default}"
+  [[ "$value" == "-" ]] && value=""
   printf -v "$var_name" '%s' "$value"
 }
 
@@ -1114,7 +1127,7 @@ _smtp_default="$(read_conf "$INSTALL_CONF" SMTP_HOST)"
 _smtp_yn="n"
 [[ -n "$_smtp_default" ]] && _smtp_yn="y"
 ask_yn "Configure SMTP now? Without it the access code is not sent." CONFIGURE_SMTP "$_smtp_yn"
-SMTP_HOST=""; SMTP_PORT="587"; SMTP_USER=""; SMTP_FROM=""; SMTP_PASSWORD=""
+SMTP_HOST=""; SMTP_PORT="587"; SMTP_USER=""; SMTP_FROM=""; SMTP_PASSWORD=""; SMTP_ACCEPT_SELF_SIGNED="n"
 if [[ "$CONFIGURE_SMTP" == "y" ]]; then
   ask "SMTP server" "${_smtp_default}" SMTP_HOST
   _smtp_port="$(read_conf "$INSTALL_CONF" SMTP_PORT)"
@@ -1125,6 +1138,12 @@ if [[ "$CONFIGURE_SMTP" == "y" ]]; then
   _from_default="$(read_conf "$INSTALL_CONF" SMTP_FROM)"
   [[ -z "$_from_default" ]] && _from_default="no-reply@${PUBLIC_HOST}"
   ask "From address" "$_from_default" SMTP_FROM
+  # An installation from before this question has no value saved: an update keeps "no".
+  _self_signed_default="$(read_conf "$INSTALL_CONF" SMTP_ACCEPT_SELF_SIGNED)"
+  [[ "$_self_signed_default" == "y" ]] || _self_signed_default="n"
+  echo -e "  ${DIM}Only for a server whose certificate is self-signed or from an internal CA. The name${NC}"
+  echo -e "  ${DIM}on the certificate must still match the server; the access codes travel over this link.${NC}"
+  ask_yn "Accept a self-signed certificate from the SMTP server?" SMTP_ACCEPT_SELF_SIGNED "$_self_signed_default"
 fi
 echo ""
 
@@ -1192,7 +1211,7 @@ if [[ "$INSTALL_MODE" == "certificate" ]]; then
 fi
 echo -e "  MinIO     : ${CYAN}${MINIO_DATA_DIR}${NC}"
 if [[ -n "$SMTP_HOST" ]]; then
-  echo -e "  SMTP      : ${CYAN}${SMTP_HOST}:${SMTP_PORT}${NC}"
+  echo -e "  SMTP      : ${CYAN}${SMTP_HOST}:${SMTP_PORT}${NC}$([[ "$SMTP_ACCEPT_SELF_SIGNED" == "y" ]] && echo " ${YELLOW}(self-signed certificate accepted)${NC}")"
 else
   echo -e "  SMTP        : ${YELLOW}not configured${NC}"
 fi
@@ -1334,8 +1353,10 @@ else
   ok "User, password, and keys generated"
 fi
 
-if [[ -n "$SMTP_HOST" ]] && ! swarm_secret_exists "${STACK_NAME}_smtp_password"; then
-  ask_secret "SMTP password" SMTP_PASSWORD
+# Without a user there is no sign-in, so no password to ask. With one, the password may still
+# be empty; then no secret is created and the application signs in with an empty password.
+if [[ -n "$SMTP_HOST" && -n "$SMTP_USER" ]] && ! swarm_secret_exists "${STACK_NAME}_smtp_password"; then
+  ask_secret_optional "SMTP password" SMTP_PASSWORD
 fi
 
 # ==============================================================================
@@ -1489,8 +1510,9 @@ if [[ -n "$SMTP_HOST" ]]; then
       Smtp__Username: \"${SMTP_USER}\"
       Smtp__From: \"${SMTP_FROM}\"
       Smtp__FromName: OpenTube
-      Smtp__UseStartTls: \"true\""
-  if swarm_secret_exists "${STACK_NAME}_smtp_password"; then
+      Smtp__UseStartTls: \"true\"
+      Smtp__AcceptSelfSignedCertificate: \"$([[ "$SMTP_ACCEPT_SELF_SIGNED" == "y" ]] && echo true || echo false)\""
+  if [[ -n "$SMTP_USER" ]] && swarm_secret_exists "${STACK_NAME}_smtp_password"; then
     SMTP_MOUNT="      - source: ${STACK_NAME}_smtp_password
         target: Smtp__Password
         uid: \"1001\"
@@ -1826,6 +1848,7 @@ SMTP_HOST='${SMTP_HOST}'
 SMTP_PORT='${SMTP_PORT}'
 SMTP_USER='${SMTP_USER}'
 SMTP_FROM='${SMTP_FROM}'
+SMTP_ACCEPT_SELF_SIGNED='${SMTP_ACCEPT_SELF_SIGNED}'
 CERTBOT_EMAIL='${CERTBOT_EMAIL}'
 CERT_FILE='${CERT_FILE}'
 KEY_FILE='${KEY_FILE}'

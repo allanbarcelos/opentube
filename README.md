@@ -121,7 +121,7 @@ even when the script arrives through the pipe:
 | Administrator email | Signs in with a code sent by email — there is no password |
 | Access mode | Public hostname, local network, or Cloudflare — see [access modes](#access-modes) |
 | Domain, port, certificate | Depending on the mode. A public hostname uses Let's Encrypt, or a certificate file already on the machine |
-| SMTP | Server, port, user, and sender; the password becomes a Swarm secret |
+| SMTP | Server, port, user, and sender; the password becomes a Swarm secret. User and password may be empty, for a relay that takes mail without signing in (`-` clears a saved answer). Whether to accept a self-signed certificate from the server (default no; the name must still match) |
 | Automatic captions | Whisper on or off; with an NVIDIA GPU, whether to use it |
 | MinIO disk | Where the video files live — can be a separate disk |
 

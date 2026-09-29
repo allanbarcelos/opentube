@@ -122,7 +122,7 @@ terminal mesmo quando o script chega pelo pipe:
 | Email do administrador | Entra com um código enviado por email — não há senha |
 | Modo de acesso | Domínio público, rede local ou Cloudflare — veja [modos de acesso](#modos-de-acesso) |
 | Domínio, porta, certificado | Conforme o modo. Domínio público usa Let's Encrypt ou um ficheiro de certificado já na máquina |
-| SMTP | Servidor, porta, usuário e remetente; a senha vira segredo do Swarm |
+| SMTP | Servidor, porta, usuário e remetente; a senha vira segredo do Swarm. Usuário e senha podem ficar vazios, para um relay que aceita email sem login (`-` apaga uma resposta salva). Se aceita certificado autoassinado do servidor (padrão não; o nome ainda precisa bater) |
 | Legendas automáticas | Whisper ligado ou não; com GPU NVIDIA, se deve usá-la |
 | Disco do MinIO | Onde ficam os arquivos de vídeo — pode ser um disco separado |
 
