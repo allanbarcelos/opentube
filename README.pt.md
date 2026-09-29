@@ -121,7 +121,7 @@ terminal mesmo quando o script chega pelo pipe:
 | Nome da aplicação | Padrão `opentube`. Dá nome ao diretório `/opt/<nome>` e à pilha |
 | Email do administrador | Entra com um código enviado por email — não há senha |
 | Modo de acesso | Domínio público, rede local ou Cloudflare — veja [modos de acesso](#modos-de-acesso) |
-| Domínio, porta, email do Let's Encrypt | Conforme o modo |
+| Domínio, porta, certificado | Conforme o modo. Domínio público usa Let's Encrypt ou um ficheiro de certificado já na máquina |
 | SMTP | Servidor, porta, usuário e remetente; a senha vira segredo do Swarm |
 | Legendas automáticas | Whisper ligado ou não; com GPU NVIDIA, se deve usá-la |
 | Disco do MinIO | Onde ficam os arquivos de vídeo — pode ser um disco separado |
@@ -138,9 +138,22 @@ do banco que já existem são mantidos.
 
 | Modo | TLS | Portas expostas |
 | --- | --- | --- |
-| Domínio público | Caddy obtém certificado do Let's Encrypt | 80 e 443 |
+| Domínio público | Let's Encrypt, ou um ficheiro de certificado indicado por si | 80 e 443 |
 | Rede local | Certificado interno | 80 e 443, só redes privadas |
 | Cloudflare | A Cloudflare termina o HTTPS; a origem responde em HTTP | Uma porta (padrão 8080), só faixas da Cloudflare |
+
+No domínio público o instalador pergunta qual certificado usar. Let's Encrypt é o padrão:
+o Caddy pede o certificado, e o email é a conta dos avisos de expiração. A outra opção é um
+ficheiro que já esteja na máquina — PEM, DER, PKCS#7 ou PKCS#12. A chave privada pode estar
+nesse ficheiro ou num segundo; a cadeia da CA só é pedida quando o ficheiro ainda não a traz.
+A senha de uma chave cifrada é usada uma vez e não fica guardada. Antes de instalar o resto,
+o ficheiro é validado: tem de ser lido, a chave tem de corresponder, o nome tem de cobrir o
+domínio e as datas têm de estar em vigor. DER, PKCS#7, PKCS#12 e um ficheiro único com o
+certificado e a chave são convertidos para a cadeia PEM e a chave que o Caddy serve, em
+`/opt/<nome>/etc/tls/`, legíveis só pelo usuário do Caddy. O `update.sh` volta a ler o mesmo
+caminho quando o ficheiro continua lá e não está cifrado, por isso um certificado renovado
+entra sozinho; um ficheiro cifrado fica como a cópia já instalada até o instalador correr
+sem `--update`.
 
 No modo Cloudflare, a porta da origem fica restrita às faixas da Cloudflare no UFW e no
 `DOCKER-USER` (porta publicada pelo Docker não passa pelo UFW), com uma unidade systemd que
@@ -169,7 +182,7 @@ por um interno, e os limites por origem passariam a valer para todo mundo de uma
 | Caminho | Conteúdo |
 | --- | --- |
 | `/opt/<nome>/docker-compose.prod.yml` | A pilha (só referências a segredos, nenhum valor) |
-| `/opt/<nome>/etc/` | Caddyfile e `install.conf` (as respostas, sem segredos) |
+| `/opt/<nome>/etc/` | Caddyfile, `install.conf` (as respostas, sem segredos) e, com certificado próprio, `tls/` (a chave, modo 600) |
 | `/opt/<nome>/data/` | PostgreSQL, certificados do Caddy e modelos do Whisper |
 | Disco do MinIO (escolhido) | Originais e vídeos publicados |
 | `/opt/<nome>/scripts/update.sh` | Atualiza tudo para a versão mais recente (veja [operação](#operação)) |

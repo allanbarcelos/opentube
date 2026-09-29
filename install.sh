@@ -246,6 +246,698 @@ host_gpu_name() {
 
 docker_default_runtime() { docker info --format '{{.DefaultRuntime}}' 2>/dev/null || true; }
 
+# ------------------------------------------------------------------------------
+# Own certificate for the public hostname.
+#
+# Caddy serves a PEM chain plus an unencrypted PEM key. Operators arrive with
+# PEM, DER, PKCS#7 or PKCS#12, sometimes with the key in a second file and
+# sometimes encrypted. Conversion happens here, and the file is rejected before
+# the stack changes when it cannot be a certificate for this hostname.
+# The passphrase decrypts the key and is never written down: Caddy cannot ask
+# for one when it starts.
+# ------------------------------------------------------------------------------
+
+# Set by the certificate checks so the installer can explain a file that is
+# usable but incomplete (private CA, missing intermediate, close to expiry).
+TLS_ERROR=""
+TLS_CHAIN_INCOMPLETE="n"
+TLS_SELF_SIGNED="n"
+TLS_UNTRUSTED="n"
+TLS_IS_CA="n"
+TLS_EXPIRES_SOON="n"
+CERT_LABEL=""
+CERT_FINGERPRINT=""
+
+cleanup_tls_stage() {
+  if [[ -n "${TLS_STAGE:-}" && -d "$TLS_STAGE" ]]; then
+    rm -rf "$TLS_STAGE"
+  fi
+}
+
+# OpenSSL's wording for "this blob is encrypted and that passphrase is not it".
+# Kept narrow on purpose: a file that simply is not a key must not look like
+# a password problem, or the installer would ask for a passphrase forever.
+tls_password_error() {
+  # "wrong tag" / "no start line" is a file that is not an encrypted key at all.
+  # OpenSSL sometimes mentions a password in the same breath; that must not win.
+  if grep -Eiq 'wrong tag|not enough data|no start line|decode error' <<<"${1:-}"; then
+    return 1
+  fi
+  grep -Eiq 'bad decrypt|mac verify error|invalid password|maybe wrong password|pkcs12 cipherfinal|bad password read' <<<"${1:-}"
+}
+
+tls_legacy_error() {
+  grep -Eiq 'unsupported|digital envelope|unknown cipher|RC2' <<<"${1:-}"
+}
+
+tls_require_file() {
+  local path="$1" label="$2"
+  [[ -n "$path" ]] || die "${label} is required."
+  [[ "$path" == /* ]] || die "${label} must be an absolute path: ${path}"
+  [[ "$path" != *$'\n'* && "$path" != *$'\r'* && "$path" != *"'"* ]] \
+    || die "${label} contains a character the installer cannot store safely."
+  case "$path" in
+    "${APP_DIR}/etc/tls"|"${APP_DIR}/etc/tls"/*)
+      die "${label} is the copy this installer writes. Point at the original file, outside ${APP_DIR}/etc/tls."
+      ;;
+  esac
+  if [[ -d "$path" ]]; then
+    die "${label} is a directory. Point at the certificate file itself: ${path}"
+  fi
+  [[ -f "$path" ]] || die "${label} not found: ${path}"
+  [[ -s "$path" ]] || die "${label} is empty: ${path}"
+  [[ -r "$path" ]] || die "${label} is not readable: ${path}"
+}
+
+tls_pub_digest() {
+  local file="$1" kind="$2" digest=""
+  if [[ "$kind" == "cert" ]]; then
+    digest="$(openssl x509 -in "$file" -noout -pubkey 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | openssl dgst -sha256 2>/dev/null | awk '{print $NF}')" || true
+  else
+    digest="$(openssl pkey -in "$file" -pubout -outform DER 2>/dev/null | openssl dgst -sha256 2>/dev/null | awk '{print $NF}')" || true
+  fi
+  printf '%s' "$digest"
+}
+
+tls_subject() {
+  openssl x509 -in "$1" -noout -subject -nameopt RFC2253 2>/dev/null | sed 's/^subject=//' | tr -d '\r'
+}
+
+tls_issuer() {
+  openssl x509 -in "$1" -noout -issuer -nameopt RFC2253 2>/dev/null | sed 's/^issuer=//' | tr -d '\r'
+}
+
+# Writes one clean PEM certificate. The same public key is stored once: a
+# PKCS#12 often repeats the leaf next to the chain.
+tls_add_cert() {
+  local raw="$1" dir="$2" clean="" fp="" existing=""
+  clean="$(mktemp "${dir}/raw.XXXXXX")"
+  if ! openssl x509 -in "$raw" -out "$clean" >/dev/null 2>&1; then
+    rm -f "$clean"
+    return 1
+  fi
+  fp="$(tls_pub_digest "$clean" cert)"
+  [[ -n "$fp" ]] || { rm -f "$clean"; return 1; }
+  for existing in "${dir}"/c-*.pem; do
+    [[ -f "$existing" ]] || continue
+    if [[ "$(tls_pub_digest "$existing" cert)" == "$fp" ]]; then
+      rm -f "$clean"
+      return 0
+    fi
+  done
+  local n=1
+  while [[ -e "${dir}/c-${n}.pem" ]]; do n=$((n + 1)); done
+  mv "$clean" "${dir}/c-${n}.pem"
+}
+
+tls_add_certs_from_pem() {
+  local src="$1" dir="$2" rc=0
+  [[ -s "$src" ]] || return 0
+  local n=0 block=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == *"BEGIN CERTIFICATE"* ]]; then
+      n=$((n + 1))
+      block="${dir}/split-${n}.pem"
+      : > "$block"
+    fi
+    if [[ -n "${block:-}" ]]; then
+      printf '%s\n' "$line" >> "$block"
+    fi
+    if [[ "$line" == *"END CERTIFICATE"* ]]; then
+      tls_add_cert "$block" "$dir" || rc=1
+      rm -f "$block"
+      block=""
+    fi
+  done < "$src"
+  rm -f "${dir}"/split-*.pem
+  return "$rc"
+}
+
+tls_add_key() {
+  local raw="$1" dir="$2" clean="" fp="" existing=""
+  clean="$(mktemp "${dir}/kraw.XXXXXX")"
+  if ! openssl pkey -in "$raw" -out "$clean" >/dev/null 2>&1; then
+    rm -f "$clean"
+    return 1
+  fi
+  fp="$(tls_pub_digest "$clean" key)"
+  [[ -n "$fp" ]] || { rm -f "$clean"; return 1; }
+  for existing in "${dir}"/k-*.pem; do
+    [[ -f "$existing" ]] || continue
+    if [[ "$(tls_pub_digest "$existing" key)" == "$fp" ]]; then
+      rm -f "$clean"
+      return 0
+    fi
+  done
+  local n=1
+  while [[ -e "${dir}/k-${n}.pem" ]]; do n=$((n + 1)); done
+  mv "$clean" "${dir}/k-${n}.pem"
+  chmod 600 "${dir}/k-${n}.pem"
+}
+
+# Writes the passphrase to a file so it never appears in the process list.
+# An empty passphrase is not passed this way: OpenSSL rejects an empty file
+# even for a key that is not encrypted. Callers use "-passin pass:" instead.
+tls_passfile() {
+  local dir="$1" passphrase="${2:-}" file
+  file="$(mktemp "${dir}/pass.XXXXXX")"
+  chmod 600 "$file"
+  printf '%s' "$passphrase" > "$file"
+  printf '%s' "$file"
+}
+
+# 0 = key stored, 2 = a passphrase is required, 1 = this file has no key.
+# An empty passphrase is "-passin pass:" — an empty password file makes OpenSSL
+# refuse the read even when the key is not encrypted.
+tls_read_key() {
+  local src="$1" dir="$2" passphrase="${3:-}" passfile="" err="" rc=0 out=""
+  out="$(mktemp "${dir}/keyout.XXXXXX")"
+  err="$(openssl pkey -in "$src" -passin pass: -out "$out" 2>&1)" || rc=$?
+  if [[ "$rc" -ne 0 ]] && tls_password_error "$err" && [[ -n "$passphrase" ]]; then
+    passfile="$(tls_passfile "$dir" "$passphrase")"
+    rc=0
+    err="$(openssl pkey -in "$src" -passin "file:${passfile}" -out "$out" 2>&1)" || rc=$?
+    rm -f "$passfile"
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    rm -f "$out"
+    if tls_password_error "$err"; then
+      return 2
+    fi
+    return 1
+  fi
+  tls_add_key "$out" "$dir"
+  local add_rc=$?
+  rm -f "$out"
+  return "$add_rc"
+}
+
+tls_try_pkcs12() {
+  local src="$1" certdir="$2" keydir="$3" passphrase="${4:-}" legacy="${5:-n}"
+  local -a extra=()
+  [[ "$legacy" == "y" ]] && extra=(-legacy)
+  local passfile="" err="" rc=0 certout="" keyout="" passin="pass:"
+  certout="$(mktemp "${certdir}/p12c.XXXXXX")"
+  keyout="$(mktemp "${keydir}/p12k.XXXXXX")"
+
+  err="$(openssl pkcs12 -in "$src" "${extra[@]}" -nokeys -passin "$passin" -out "$certout" 2>&1)" || rc=$?
+  if [[ "$rc" -ne 0 ]] && tls_password_error "$err" && [[ -n "$passphrase" ]]; then
+    passfile="$(tls_passfile "$certdir" "$passphrase")"
+    passin="file:${passfile}"
+    rc=0
+    err="$(openssl pkcs12 -in "$src" "${extra[@]}" -nokeys -passin "$passin" -out "$certout" 2>&1)" || rc=$?
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    rm -f "$passfile" "$certout" "$keyout"
+    # An old PKCS#12 (RC2, 3DES) fails in OpenSSL 3 before the password check,
+    # sometimes with both "unsupported" and a password line. Retry with -legacy
+    # first, or a correct passphrase would be reported as rejected.
+    if [[ "$legacy" != "y" ]] && tls_legacy_error "$err"; then
+      local legacy_rc=0
+      tls_try_pkcs12 "$src" "$certdir" "$keydir" "$passphrase" y || legacy_rc=$?
+      return "$legacy_rc"
+    fi
+    if tls_password_error "$err"; then
+      return 2
+    fi
+    return 1
+  fi
+
+  rc=0
+  err="$(openssl pkcs12 -in "$src" "${extra[@]}" -nocerts -noenc -passin "$passin" -out "$keyout" 2>&1)" || rc=$?
+  if [[ "$rc" -ne 0 ]] && grep -q 'unknown option' <<<"$err"; then
+    rc=0
+    err="$(openssl pkcs12 -in "$src" "${extra[@]}" -nocerts -nodes -passin "$passin" -out "$keyout" 2>&1)" || rc=$?
+  fi
+  rm -f "$passfile"
+  tls_add_certs_from_pem "$certout" "$certdir" || true
+  if [[ "$rc" -eq 0 ]]; then
+    tls_add_key "$keyout" "$keydir" || true
+  fi
+  rm -f "$certout" "$keyout"
+  if tls_password_error "$err"; then
+    return 2
+  fi
+  return 0
+}
+
+# Pulls every certificate and every key out of one file into the two pools.
+# Returns 2 when the file is encrypted and the passphrase was not the right one.
+tls_ingest_file() {
+  local src="$1" certdir="$2" keydir="$3" passphrase="${4:-}" rc=0
+  if grep -aq -- '-----BEGIN ' "$src"; then
+    if grep -aq -- 'PRIVATE KEY' "$src"; then
+      tls_read_key "$src" "$keydir" "$passphrase" || rc=$?
+      if [[ "$rc" -eq 2 ]]; then
+        return 2
+      fi
+      if [[ "$rc" -ne 0 ]] && ! grep -aq -- 'BEGIN CERTIFICATE' "$src"; then
+        TLS_ERROR="Could not read the private key in ${src}."
+        return 1
+      fi
+    fi
+    if grep -aq -- 'BEGIN PKCS7' "$src" || grep -aq -- 'BEGIN PKCS #7' "$src"; then
+      local p7
+      p7="$(mktemp "${certdir}/p7.XXXXXX")"
+      if openssl pkcs7 -print_certs -in "$src" -out "$p7" >/dev/null 2>&1; then
+        tls_add_certs_from_pem "$p7" "$certdir" || true
+      fi
+      rm -f "$p7"
+    fi
+    if grep -aq -- 'BEGIN CERTIFICATE' "$src"; then
+      tls_add_certs_from_pem "$src" "$certdir" || {
+        TLS_ERROR="Could not read a certificate in ${src}."
+        return 1
+      }
+    fi
+    return 0
+  fi
+
+  tls_try_pkcs12 "$src" "$certdir" "$keydir" "$passphrase" || rc=$?
+  if [[ "$rc" -eq 0 || "$rc" -eq 2 ]]; then
+    return "$rc"
+  fi
+
+  local der
+  der="$(mktemp "${certdir}/der.XXXXXX")"
+  if openssl x509 -inform DER -in "$src" -out "$der" >/dev/null 2>&1; then
+    tls_add_cert "$der" "$certdir" || true
+    rm -f "$der"
+    return 0
+  fi
+  if openssl pkcs7 -inform DER -print_certs -in "$src" -out "$der" >/dev/null 2>&1; then
+    tls_add_certs_from_pem "$der" "$certdir" || true
+    rm -f "$der"
+    return 0
+  fi
+  rm -f "$der"
+  return 0
+}
+
+tls_count_pem() {
+  local n=0 file
+  for file in "$1"/$2-*.pem; do
+    [[ -f "$file" ]] || continue
+    n=$((n + 1))
+  done
+  printf '%s' "$n"
+}
+
+# Checks the pair Caddy will serve. The first certificate in the chain file is
+# the leaf. Sets CERT_LABEL, CERT_FINGERPRINT and the TLS_* warning flags.
+tls_check_pair() {
+  local chain="$1" key="$2" host="$3"
+  TLS_ERROR=""
+  TLS_CHAIN_INCOMPLETE="n"
+  TLS_SELF_SIGNED="n"
+  TLS_UNTRUSTED="n"
+  TLS_IS_CA="n"
+  TLS_EXPIRES_SOON="n"
+  CERT_LABEL=""
+  CERT_FINGERPRINT=""
+
+  local leaf_fp="" key_fp=""
+  leaf_fp="$(tls_pub_digest "$chain" cert)"
+  key_fp="$(tls_pub_digest "$key" key)"
+  if [[ -z "$leaf_fp" || -z "$key_fp" ]]; then
+    TLS_ERROR="The certificate or the private key could not be read."
+    return 1
+  fi
+  if [[ "$leaf_fp" != "$key_fp" ]]; then
+    TLS_ERROR="The private key does not match the certificate."
+    return 1
+  fi
+
+  local eku=""
+  eku="$(openssl x509 -in "$chain" -noout -ext extendedKeyUsage 2>/dev/null || true)"
+  if [[ -n "$eku" ]] && ! grep -Eq 'TLS Web Server Authentication|Any Extended Key Usage' <<<"$eku"; then
+    TLS_ERROR="This certificate is not valid for a TLS server (extended key usage does not allow server authentication)."
+    return 1
+  fi
+
+  local bc=""
+  bc="$(openssl x509 -in "$chain" -noout -ext basicConstraints 2>/dev/null || true)"
+  if grep -q 'CA:TRUE' <<<"$bc"; then
+    TLS_IS_CA="y"
+  fi
+
+  if ! openssl x509 -in "$chain" -noout -checkend 0 >/dev/null 2>&1; then
+    local ended=""
+    ended="$(openssl x509 -in "$chain" -noout -enddate 2>/dev/null | sed 's/^notAfter=//')"
+    TLS_ERROR="Certificate expired (${ended})."
+    return 1
+  fi
+
+  local start_raw="" start_epoch="" now_epoch=""
+  start_raw="$(openssl x509 -in "$chain" -noout -startdate 2>/dev/null | sed 's/^notBefore=//')"
+  start_epoch="$(date -u -d "$start_raw" +%s 2>/dev/null)" || start_epoch=""
+  now_epoch="$(date -u +%s)"
+  # A few minutes of clock skew is normal between the machine that issued the
+  # certificate and this one. More than that, the certificate is not valid yet.
+  if [[ -n "$start_epoch" && "$start_epoch" -gt $((now_epoch + 600)) ]]; then
+    TLS_ERROR="Certificate is not valid yet (${start_raw})."
+    return 1
+  fi
+  if ! openssl x509 -in "$chain" -noout -checkend 2592000 >/dev/null 2>&1; then
+    TLS_EXPIRES_SOON="y"
+  fi
+
+  if ! openssl x509 -in "$chain" -noout -checkhost "$host" >/dev/null 2>&1; then
+    local names="" cn=""
+    names="$(openssl x509 -in "$chain" -noout -ext subjectAltName 2>/dev/null | tr '\n' ' ' | sed 's/  */ /g' || true)"
+    cn="$(tls_subject "$chain")"
+    TLS_ERROR="Certificate does not cover ${host}. It is for: ${names:-$cn}"
+    return 1
+  fi
+
+  local subj="" iss=""
+  subj="$(tls_subject "$chain")"
+  iss="$(tls_issuer "$chain")"
+  local work="" intermediates=""
+  work="$(mktemp -d)"
+  tls_add_certs_from_pem "$chain" "$work" || true
+  if [[ "$subj" == "$iss" ]]; then
+    TLS_SELF_SIGNED="y"
+  else
+    local piece="" found="n"
+    for piece in "$work"/c-*.pem; do
+      [[ -f "$piece" ]] || continue
+      if [[ "$(tls_subject "$piece")" == "$iss" ]]; then
+        found="y"
+        break
+      fi
+    done
+    if [[ "$found" != "y" ]]; then
+      TLS_CHAIN_INCOMPLETE="y"
+      TLS_UNTRUSTED="y"
+    else
+      intermediates="$(mktemp)"
+      for piece in "$work"/c-*.pem; do
+        [[ -f "$piece" ]] || continue
+        # The leaf is first in the chain file and was stored too. verify wants
+        # only the intermediates in -untrusted.
+        [[ "$(tls_pub_digest "$piece" cert)" == "$leaf_fp" ]] && continue
+        cat "$piece" >> "$intermediates"
+      done
+      local verify=""
+      verify="$(openssl verify -untrusted "$intermediates" "$chain" 2>&1)" || true
+      if grep -q ': OK$' <<<"$verify"; then
+        TLS_UNTRUSTED="n"
+      elif grep -Eiq 'expired|not yet valid' <<<"$verify"; then
+        rm -rf "$work"
+        rm -f "$intermediates"
+        TLS_ERROR="A certificate in the chain is outside its validity window: ${verify}"
+        return 1
+      else
+        TLS_UNTRUSTED="y"
+      fi
+      rm -f "$intermediates"
+    fi
+  fi
+  rm -rf "$work"
+
+  local cn="" end_raw="" end_pretty=""
+  cn="$(tls_subject "$chain")"
+  cn="$(sed -n 's/.*CN=\([^,+]*\).*/\1/p' <<<"$cn")"
+  [[ -n "$cn" ]] || cn="$(tls_subject "$chain")"
+  end_raw="$(openssl x509 -in "$chain" -noout -enddate 2>/dev/null | sed 's/^notAfter=//')"
+  end_pretty="$(date -u -d "$end_raw" +%Y-%m-%d 2>/dev/null || true)"
+  [[ -n "$end_pretty" ]] || end_pretty="$end_raw"
+  CERT_LABEL="${cn}, valid until ${end_pretty}"
+  CERT_FINGERPRINT="$(openssl x509 -in "$chain" -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//;s/://g')"
+  return 0
+}
+
+tls_warn_about_certificate() {
+  if [[ "$TLS_SELF_SIGNED" == "y" ]]; then
+    warn "This certificate is self-signed. A browser trusts it only where this CA is installed."
+  fi
+  if [[ "$TLS_IS_CA" == "y" ]]; then
+    warn "This certificate is a certificate authority. Browsers usually refuse it for a site."
+  fi
+  if [[ "$TLS_EXPIRES_SOON" == "y" ]]; then
+    warn "This certificate expires within 30 days (${CERT_LABEL})."
+  fi
+  if [[ "$TLS_CHAIN_INCOMPLETE" == "y" ]]; then
+    warn "No intermediate certificate was found. Browsers may reject the site unless every device already has the CA."
+  elif [[ "$TLS_UNTRUSTED" == "y" && "$TLS_SELF_SIGNED" != "y" ]]; then
+    warn "The chain does not end at a CA in this system's trust store. A private CA has to be installed on each device."
+  fi
+}
+
+# Builds fullchain.pem and key.pem in dest.
+# Returns 0 on success, 2 when a passphrase is required, 3 when the files have
+# certificates but no private key, 1 on any other problem (see TLS_ERROR).
+tls_import_certificate() {
+  local dest="$1" host="$2" cert_path="$3" key_path="${4:-}" chain_path="${5:-}" passphrase="${6:-}"
+  local work="" certdir="" keydir="" rc=0
+  TLS_ERROR=""
+  work="$(mktemp -d "${dest}/work.XXXXXX")"
+  certdir="${work}/certs"
+  keydir="${work}/keys"
+  mkdir -p "$certdir" "$keydir"
+  chmod 700 "$work" "$keydir"
+
+  tls_ingest_file "$cert_path" "$certdir" "$keydir" "$passphrase" || rc=$?
+  if [[ "$rc" -eq 2 ]]; then
+    rm -rf "$work"
+    TLS_ERROR="A passphrase is required."
+    return 2
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    rm -rf "$work"
+    [[ -n "$TLS_ERROR" ]] || TLS_ERROR="Could not read ${cert_path}."
+    return 1
+  fi
+
+  if [[ -n "$key_path" ]]; then
+    rc=0
+    tls_ingest_file "$key_path" "$certdir" "$keydir" "$passphrase" || rc=$?
+    if [[ "$rc" -eq 2 ]]; then
+      rm -rf "$work"
+      TLS_ERROR="A passphrase is required."
+      return 2
+    fi
+    if [[ "$rc" -ne 0 ]]; then
+      rm -rf "$work"
+      [[ -n "$TLS_ERROR" ]] || TLS_ERROR="Could not read ${key_path}."
+      return 1
+    fi
+  fi
+
+  if [[ -n "$chain_path" ]]; then
+    rc=0
+    tls_ingest_file "$chain_path" "$certdir" "$keydir" "$passphrase" || rc=$?
+    if [[ "$rc" -eq 2 ]]; then
+      rm -rf "$work"
+      TLS_ERROR="A passphrase is required for the CA chain file."
+      return 2
+    fi
+    if [[ "$rc" -ne 0 ]]; then
+      rm -rf "$work"
+      [[ -n "$TLS_ERROR" ]] || TLS_ERROR="Could not read ${chain_path}."
+      return 1
+    fi
+  fi
+
+  local ncerts="" nkeys=""
+  ncerts="$(tls_count_pem "$certdir" c)"
+  nkeys="$(tls_count_pem "$keydir" k)"
+  if [[ "$ncerts" -eq 0 ]]; then
+    rm -rf "$work"
+    TLS_ERROR="No certificate found in the file. PEM, DER, PKCS#7 and PKCS#12 are accepted."
+    return 1
+  fi
+  if [[ "$nkeys" -eq 0 ]]; then
+    rm -rf "$work"
+    TLS_ERROR="No private key found. The certificate file does not contain one."
+    return 3
+  fi
+
+  local leaf="" kfile="" matched=""
+  for kfile in "$keydir"/k-*.pem; do
+    [[ -f "$kfile" ]] || continue
+    local kfp=""
+    kfp="$(tls_pub_digest "$kfile" key)"
+    for leaf in "$certdir"/c-*.pem; do
+      [[ -f "$leaf" ]] || continue
+      if [[ "$(tls_pub_digest "$leaf" cert)" == "$kfp" ]]; then
+        matched="$kfile"
+        break
+      fi
+    done
+    [[ -n "$matched" ]] && break
+  done
+  if [[ -z "$matched" || -z "$leaf" ]]; then
+    rm -rf "$work"
+    TLS_ERROR="The private key does not match the certificate."
+    return 1
+  fi
+
+  # Leaf first, then each issuer, and stop before a self-signed root. Clients
+  # already have the root when they trust the CA; sending it only adds bytes.
+  local ordered=("$leaf") current="" guard=0 piece=""
+  current="$(tls_issuer "$leaf")"
+  while [[ "$guard" -lt 20 ]]; do
+    guard=$((guard + 1))
+    local next=""
+    for piece in "$certdir"/c-*.pem; do
+      [[ -f "$piece" ]] || continue
+      [[ "$piece" == "$leaf" ]] && continue
+      if [[ "$(tls_subject "$piece")" == "$current" ]]; then
+        next="$piece"
+        break
+      fi
+    done
+    [[ -n "$next" ]] || break
+    if [[ "$(tls_subject "$next")" == "$(tls_issuer "$next")" ]]; then
+      break
+    fi
+    ordered+=("$next")
+    current="$(tls_issuer "$next")"
+  done
+
+  : > "${work}/fullchain.pem"
+  local item="" first="y"
+  for item in "${ordered[@]}"; do
+    [[ "$first" == "y" ]] || printf '\n' >> "${work}/fullchain.pem"
+    first="n"
+    openssl x509 -in "$item" -outform PEM >> "${work}/fullchain.pem"
+  done
+  openssl pkey -in "$matched" -out "${work}/key.pem" >/dev/null 2>&1
+  chmod 644 "${work}/fullchain.pem"
+  chmod 600 "${work}/key.pem"
+
+  rc=0
+  tls_check_pair "${work}/fullchain.pem" "${work}/key.pem" "$host" || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    rm -rf "$work"
+    return 1
+  fi
+  mv "${work}/fullchain.pem" "${dest}/fullchain.pem"
+  mv "${work}/key.pem" "${dest}/key.pem"
+  chmod 600 "${dest}/key.pem"
+  rm -rf "$work"
+  return 0
+}
+
+# The installed copy is what Caddy serves. Update keeps it when the original
+# file cannot be read again without a question (it moved, or it is encrypted).
+tls_reuse_installed() {
+  local why="$1" dir="${APP_DIR}/etc/tls" rc=0
+  if [[ -f "${dir}/fullchain.pem" && -f "${dir}/key.pem" ]]; then
+    warn "${why} Keeping the certificate already installed."
+    TLS_REUSE="y"
+    tls_check_pair "${dir}/fullchain.pem" "${dir}/key.pem" "$PUBLIC_HOST" || rc=$?
+    [[ "$rc" -eq 0 ]] || die "${TLS_ERROR:-The installed certificate is no longer valid.}"
+    tls_warn_about_certificate
+    ok "Using the installed certificate: ${CERT_LABEL}"
+    return 0
+  fi
+  die "${why} There is no certificate installed yet. Run the installer without --update."
+}
+
+# Asks only for what the file does not already contain. --update never asks:
+# an encrypted source stays as the copy already on disk.
+prepare_own_certificate() {
+  local saved_cert="" saved_key="" saved_chain="" rc=0 pass=""
+  TLS_REUSE="n"
+  TLS_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/opentube-tls.XXXXXX")"
+  chmod 700 "$TLS_STAGE"
+  trap cleanup_tls_stage EXIT
+
+  if [[ "$UPDATE_MODE" == "y" ]]; then
+    CERT_FILE="$(read_conf "$INSTALL_CONF" CERT_FILE)"
+    KEY_FILE="$(read_conf "$INSTALL_CONF" KEY_FILE)"
+    CHAIN_FILE="$(read_conf "$INSTALL_CONF" CHAIN_FILE)"
+    answered "Certificate file" "$CERT_FILE"
+    [[ -n "$KEY_FILE" ]] && answered "Private key file" "$KEY_FILE"
+    [[ -n "$CHAIN_FILE" ]] && answered "CA chain file" "$CHAIN_FILE"
+    [[ -n "$CERT_FILE" ]] || die "No saved certificate path in ${INSTALL_CONF}. Run the installer without --update."
+    if [[ ! -f "$CERT_FILE" ]]; then
+      tls_reuse_installed "Certificate file ${CERT_FILE} is not on this machine anymore."
+      return 0
+    fi
+    if [[ -n "$KEY_FILE" && ! -f "$KEY_FILE" ]]; then
+      die "Private key file not found: ${KEY_FILE}"
+    fi
+    if [[ -n "$CHAIN_FILE" && ! -f "$CHAIN_FILE" ]]; then
+      warn "CA chain file ${CHAIN_FILE} is not on this machine anymore. Continuing without it."
+      CHAIN_FILE=""
+    fi
+    tls_import_certificate "$TLS_STAGE" "$PUBLIC_HOST" "$CERT_FILE" "$KEY_FILE" "$CHAIN_FILE" "" || rc=$?
+    if [[ "$rc" -eq 2 ]]; then
+      tls_reuse_installed "The certificate file is encrypted, and an update does not ask for the passphrase."
+      return 0
+    fi
+    if [[ "$rc" -eq 3 ]]; then
+      die "The certificate file has no private key, and no key file is saved. Run the installer without --update."
+    fi
+    if [[ "$rc" -ne 0 ]]; then
+      die "${TLS_ERROR:-Could not read the certificate.}"
+    fi
+    tls_warn_about_certificate
+    ok "Certificate ready: ${CERT_LABEL}"
+    return 0
+  fi
+
+  saved_cert="$(read_conf "$INSTALL_CONF" CERT_FILE)"
+  saved_key="$(read_conf "$INSTALL_CONF" KEY_FILE)"
+  saved_chain="$(read_conf "$INSTALL_CONF" CHAIN_FILE)"
+  ask "Absolute path of the certificate file" "$saved_cert" CERT_FILE
+  tls_require_file "$CERT_FILE" "Certificate file"
+  KEY_FILE=""
+  CHAIN_FILE=""
+
+  tls_import_certificate "$TLS_STAGE" "$PUBLIC_HOST" "$CERT_FILE" "" "" "" || rc=$?
+  if [[ "$rc" -eq 2 ]]; then
+    ask_secret "Passphrase for the private key" pass
+    rc=0
+    tls_import_certificate "$TLS_STAGE" "$PUBLIC_HOST" "$CERT_FILE" "" "" "$pass" || rc=$?
+    if [[ "$rc" -eq 2 ]]; then
+      pass=""
+      die "The passphrase was rejected."
+    fi
+  fi
+  if [[ "$rc" -eq 3 ]]; then
+    ask "Absolute path of the private key file" "$saved_key" KEY_FILE
+    tls_require_file "$KEY_FILE" "Private key file"
+    rc=0
+    tls_import_certificate "$TLS_STAGE" "$PUBLIC_HOST" "$CERT_FILE" "$KEY_FILE" "" "$pass" || rc=$?
+    if [[ "$rc" -eq 2 ]]; then
+      ask_secret "Passphrase for the private key" pass
+      rc=0
+      tls_import_certificate "$TLS_STAGE" "$PUBLIC_HOST" "$CERT_FILE" "$KEY_FILE" "" "$pass" || rc=$?
+      if [[ "$rc" -eq 2 ]]; then
+        pass=""
+        die "The passphrase was rejected."
+      fi
+    fi
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    pass=""
+    die "${TLS_ERROR:-Could not read the certificate.}"
+  fi
+
+  if [[ "$TLS_CHAIN_INCOMPLETE" == "y" ]]; then
+    ask_optional "Absolute path of the CA chain, if it is a separate file (empty to continue)" "$saved_chain" CHAIN_FILE
+    if [[ -n "$CHAIN_FILE" ]]; then
+      tls_require_file "$CHAIN_FILE" "CA chain file"
+      rc=0
+      tls_import_certificate "$TLS_STAGE" "$PUBLIC_HOST" "$CERT_FILE" "$KEY_FILE" "$CHAIN_FILE" "$pass" || rc=$?
+      if [[ "$rc" -ne 0 ]]; then
+        pass=""
+        die "${TLS_ERROR:-Could not read the CA chain.}"
+      fi
+    fi
+  else
+    CHAIN_FILE=""
+  fi
+  pass=""
+  tls_warn_about_certificate
+  ok "Certificate ready: ${CERT_LABEL}"
+}
+
 # Deletes every UFW rule whose comment contains the tag, from the top each time,
 # so the rule numbers stay valid.
 ufw_delete_tagged() {
@@ -256,6 +948,11 @@ ufw_delete_tagged() {
     echo y | ufw delete "$num" >/dev/null 2>&1 || break
   done
 }
+
+# The certificate routines above are sourced by their test. A normal run falls through.
+if [[ "${OPENTUBE_LIB_ONLY:-}" == "1" ]]; then
+  return 0
+fi
 
 require_root
 # The published images (app, worker, whisper) are built for x86-64 only.
@@ -305,7 +1002,7 @@ _access_default="1"
 [[ "$_mode_default" == "local" ]] && _access_default="2"
 [[ "$_mode_default" == "cloudflare" ]] && _access_default="3"
 echo -e "  ${BOLD}Access${NC}"
-echo -e "  ${BOLD}1)${NC} Public hostname — Caddy requests a certificate (ports 80 and 443)"
+echo -e "  ${BOLD}1)${NC} Public hostname — Let's Encrypt or your own certificate (ports 80 and 443)"
 echo -e "  ${BOLD}2)${NC} Local network — internal certificate, UFW limited to private networks"
 echo -e "  ${BOLD}3)${NC} Cloudflare — Cloudflare terminates HTTPS; this server answers HTTP on one"
 echo -e "     port that only Cloudflare can reach (UFW and DOCKER-USER)"
@@ -324,6 +1021,12 @@ fi
 
 CERTBOT_EMAIL=""
 APP_PORT=""
+CERT_FILE=""
+KEY_FILE=""
+CHAIN_FILE=""
+TLS_REUSE="n"
+CERT_LABEL=""
+CERT_FINGERPRINT=""
 if [[ "$ACCESS_CHOICE" == "3" ]]; then
   INSTALL_MODE="cloudflare"
   _host_default="$(read_conf "$INSTALL_CONF" PUBLIC_HOST)"
@@ -354,17 +1057,45 @@ if [[ "$ACCESS_CHOICE" == "3" ]]; then
   done
   PUBLIC_URL="https://${PUBLIC_HOST}"
 elif [[ "$ACCESS_CHOICE" == "1" ]]; then
-  INSTALL_MODE="letsencrypt"
   _host_default="$(read_conf "$INSTALL_CONF" PUBLIC_HOST)"
   ask "Domain (it must point at this machine)" "$_host_default" PUBLIC_HOST
   PUBLIC_HOST="${PUBLIC_HOST#http://}"; PUBLIC_HOST="${PUBLIC_HOST#https://}"
   PUBLIC_HOST="${PUBLIC_HOST%%/*}"; PUBLIC_HOST="${PUBLIC_HOST%%:*}"
   [[ "$PUBLIC_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}$ ]] \
     || die "Invalid domain: ${PUBLIC_HOST}"
-  _mail_default="$(read_conf "$INSTALL_CONF" CERTBOT_EMAIL)"
-  [[ -z "$_mail_default" ]] && _mail_default="$ADMIN_EMAIL"
-  ask "Email for Let's Encrypt" "$_mail_default" CERTBOT_EMAIL
   PUBLIC_URL="https://${PUBLIC_HOST}"
+
+  # Let's Encrypt is the default. An installation that already uses its own
+  # certificate keeps that choice on update, and offers it again as the default
+  # the next time the questions are asked.
+  _tls_default="1"
+  [[ "$_mode_default" == "certificate" ]] && _tls_default="2"
+  echo ""
+  echo -e "  ${BOLD}Certificate${NC}"
+  echo -e "  ${BOLD}1)${NC} Let's Encrypt — Caddy requests a certificate"
+  echo -e "  ${BOLD}2)${NC} Your own certificate — a file already on this machine"
+  echo -e "     ${DIM}PEM, DER, PKCS#7 or PKCS#12. The key may be in the same file or a second one.${NC}"
+  echo ""
+  if [[ "$UPDATE_MODE" == "y" ]]; then
+    TLS_CHOICE="$_tls_default"
+    answered "Certificate" "$([[ "$TLS_CHOICE" == "2" ]] && echo "own file" || echo "Let's Encrypt")"
+  else
+    while true; do
+      read -rp "$(echo -e "  ${BOLD}Certificate${NC} ${DIM}[${_tls_default}]${NC}: ")" TLS_CHOICE </dev/tty
+      TLS_CHOICE="${TLS_CHOICE:-$_tls_default}"
+      [[ "$TLS_CHOICE" =~ ^[12]$ ]] && break
+      echo -e "  ${RED}Choose 1 or 2.${NC}"
+    done
+  fi
+  if [[ "$TLS_CHOICE" == "2" ]]; then
+    INSTALL_MODE="certificate"
+    prepare_own_certificate
+  else
+    INSTALL_MODE="letsencrypt"
+    _mail_default="$(read_conf "$INSTALL_CONF" CERTBOT_EMAIL)"
+    [[ -z "$_mail_default" ]] && _mail_default="$ADMIN_EMAIL"
+    ask "Email for Let's Encrypt" "$_mail_default" CERTBOT_EMAIL
+  fi
 else
   INSTALL_MODE="local"
   _host_default="$(read_conf "$INSTALL_CONF" PUBLIC_HOST)"
@@ -448,7 +1179,17 @@ echo ""
 sep
 echo -e "  Application : ${CYAN}${APP_NAME}${NC}  →  ${CYAN}${APP_DIR}${NC}"
 echo -e "  Admin       : ${CYAN}${ADMIN_EMAIL}${NC}"
-echo -e "  Access      : ${CYAN}${INSTALL_MODE}${NC}  ${PUBLIC_URL}"
+case "$INSTALL_MODE" in
+  letsencrypt) ACCESS_LABEL="public hostname, Let's Encrypt" ;;
+  certificate) ACCESS_LABEL="public hostname, own certificate" ;;
+  local) ACCESS_LABEL="local network" ;;
+  cloudflare) ACCESS_LABEL="Cloudflare" ;;
+  *) ACCESS_LABEL="$INSTALL_MODE" ;;
+esac
+echo -e "  Access      : ${CYAN}${ACCESS_LABEL}${NC}  ${PUBLIC_URL}"
+if [[ "$INSTALL_MODE" == "certificate" ]]; then
+  echo -e "  Certificate : ${CYAN}${CERT_LABEL}${NC}"
+fi
 echo -e "  MinIO     : ${CYAN}${MINIO_DATA_DIR}${NC}"
 if [[ -n "$SMTP_HOST" ]]; then
   echo -e "  SMTP      : ${CYAN}${SMTP_HOST}:${SMTP_PORT}${NC}"
@@ -675,8 +1416,42 @@ TLS_LINE=""
 ACME_BLOCK=""
 SITE_ADDRESS="${PUBLIC_HOST}"
 PROXY_HEADERS=""
+CADDY_CERT_LABEL=""
 CF_TRUSTED="${APP_DIR}/etc/cloudflare-trusted.caddy"
-if [[ "$INSTALL_MODE" == "local" ]]; then
+if [[ "$INSTALL_MODE" != "certificate" && -d "${APP_DIR}/etc/tls" ]]; then
+  # The copy made for a previous "own certificate" run. This mode does not use
+  # it, and the key would otherwise stay on disk with nothing pointing at it.
+  rm -rf "${APP_DIR}/etc/tls"
+  info "Removed the previously installed certificate; this mode does not use it."
+fi
+if [[ "$INSTALL_MODE" == "certificate" ]]; then
+  # The converted files live on the host. Caddy only ever sees the fixed
+  # paths inside the container, so a strange character in the original path
+  # cannot change the Caddyfile.
+  mkdir -p "${APP_DIR}/etc/tls"
+  chmod 700 "${APP_DIR}/etc/tls"
+  if [[ "$TLS_REUSE" != "y" ]]; then
+    [[ -f "${TLS_STAGE}/fullchain.pem" && -f "${TLS_STAGE}/key.pem" ]] \
+      || die "Converted certificate is missing."
+    cp "${TLS_STAGE}/fullchain.pem" "${APP_DIR}/etc/tls/fullchain.pem"
+    cp "${TLS_STAGE}/key.pem" "${APP_DIR}/etc/tls/key.pem"
+  fi
+  [[ -f "${APP_DIR}/etc/tls/fullchain.pem" && -f "${APP_DIR}/etc/tls/key.pem" ]] \
+    || die "No certificate installed in ${APP_DIR}/etc/tls."
+  chown -R "${CADDY_UID}:${CADDY_UID}" "${APP_DIR}/etc/tls" || true
+  chmod 700 "${APP_DIR}/etc/tls"
+  chmod 644 "${APP_DIR}/etc/tls/fullchain.pem"
+  chmod 600 "${APP_DIR}/etc/tls/key.pem"
+  TLS_LINE=$'\n\ttls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/key.pem'
+  if [[ -n "$CERT_FINGERPRINT" ]]; then
+    # A new certificate does not change the compose text otherwise, and Swarm
+    # would keep the old Caddy process, still serving the previous file.
+    CADDY_CERT_LABEL="
+      labels:
+        opentube.certificate: \"${CERT_FINGERPRINT}\""
+  fi
+  ok "Certificate installed for Caddy"
+elif [[ "$INSTALL_MODE" == "local" ]]; then
   TLS_LINE=$'\n\ttls internal'
 elif [[ "$INSTALL_MODE" == "cloudflare" ]]; then
   # Cloudflare terminates TLS and talks plain HTTP to this port. The real client
@@ -784,6 +1559,10 @@ else
         published: 443
         protocol: tcp
         mode: host"
+  if [[ "$INSTALL_MODE" == "certificate" ]]; then
+    CADDY_EXTRA_VOLUMES="
+      - ${APP_DIR}/etc/tls:/etc/caddy/certs:ro"
+  fi
 fi
 
 # Secrets mounted under the name KeyPerFile turns into a configuration key
@@ -995,7 +1774,7 @@ ${CADDY_PORTS}
       - ${APP_DIR}/data/caddy:/data${CADDY_EXTRA_VOLUMES}
     networks:
       - internal
-    deploy:
+    deploy:${CADDY_CERT_LABEL}
       replicas: 1
       placement:
         constraints: ["node.role == manager"]
@@ -1048,6 +1827,9 @@ SMTP_PORT='${SMTP_PORT}'
 SMTP_USER='${SMTP_USER}'
 SMTP_FROM='${SMTP_FROM}'
 CERTBOT_EMAIL='${CERTBOT_EMAIL}'
+CERT_FILE='${CERT_FILE}'
+KEY_FILE='${KEY_FILE}'
+CHAIN_FILE='${CHAIN_FILE}'
 APP_PORT='${APP_PORT}'
 WHISPER_ENABLED='${WHISPER_ENABLED}'
 WHISPER_VARIANT='${WHISPER_VARIANT}'
@@ -1340,6 +2122,10 @@ phase "PHASE 12 — Summary"
 echo ""
 sep
 echo -e "  URL       : ${BOLD}${PUBLIC_URL}${NC}"
+if [[ "$INSTALL_MODE" == "certificate" ]]; then
+  echo -e "  Certificate : ${BOLD}${CERT_LABEL}${NC}"
+  echo -e "  ${DIM}Caddy reads it from ${APP_DIR}/etc/tls. Run the installer again to replace the file.${NC}"
+fi
 echo -e "  Admin     : ${BOLD}${ADMIN_EMAIL}${NC}"
 echo -e "  ${DIM}There is no administrator password. The code arrives by email (or Mailpit, in dev).${NC}"
 echo -e "  Directory : ${APP_DIR}"

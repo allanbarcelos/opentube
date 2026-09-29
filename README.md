@@ -120,7 +120,7 @@ even when the script arrives through the pipe:
 | Application name | Default `opentube`. Names the directory `/opt/<name>` and the stack |
 | Administrator email | Signs in with a code sent by email — there is no password |
 | Access mode | Public hostname, local network, or Cloudflare — see [access modes](#access-modes) |
-| Domain, port, Let's Encrypt email | Depending on the mode |
+| Domain, port, certificate | Depending on the mode. A public hostname uses Let's Encrypt, or a certificate file already on the machine |
 | SMTP | Server, port, user, and sender; the password becomes a Swarm secret |
 | Automatic captions | Whisper on or off; with an NVIDIA GPU, whether to use it |
 | MinIO disk | Where the video files live — can be a separate disk |
@@ -137,9 +137,22 @@ user are kept.
 
 | Mode | TLS | Exposed ports |
 | --- | --- | --- |
-| Public hostname | Caddy gets a Let's Encrypt certificate | 80 and 443 |
+| Public hostname | Let's Encrypt, or a certificate file you provide | 80 and 443 |
 | Local network | Internal certificate | 80 and 443, private networks only |
 | Cloudflare | Cloudflare terminates HTTPS; the origin answers HTTP | One port (default 8080), Cloudflare ranges only |
+
+On a public hostname the installer asks which certificate to use. Let's Encrypt is the
+default: Caddy requests it, and the email is the account for expiry notices. The other
+choice is a file already on the machine — PEM, DER, PKCS#7 or PKCS#12. The private key can
+sit in that file or in a second one; a CA chain is asked for only when the file does not
+already contain it. The passphrase of an encrypted key is used once and is not stored.
+Before anything else is installed, the file is checked: it must parse, the key must match,
+the name must cover the hostname, and the dates must be current. DER, PKCS#7, PKCS#12 and a
+single file that holds both the certificate and the key are converted to the PEM chain and
+key Caddy serves, kept in `/opt/<name>/etc/tls/` and readable only by the Caddy user.
+`update.sh` reads the same path again when the file is still there and not encrypted, so a
+renewed file is picked up; an encrypted file stays as the copy already installed until the
+installer is run without `--update`.
 
 In Cloudflare mode, the origin port is restricted to Cloudflare's ranges in UFW and in
 `DOCKER-USER` (Docker-published ports skip UFW), through a systemd unit that reapplies the rules
@@ -169,7 +182,7 @@ internal one, and the per-origin limits would apply to everyone at once.
 | Path | Content |
 | --- | --- |
 | `/opt/<name>/docker-compose.prod.yml` | The stack (secret references only, no values) |
-| `/opt/<name>/etc/` | Caddyfile and `install.conf` (the answers, no secrets) |
+| `/opt/<name>/etc/` | Caddyfile, `install.conf` (the answers, no secrets) and, with your own certificate, `tls/` (the key, mode 600) |
 | `/opt/<name>/data/` | PostgreSQL, Caddy certificates, and Whisper models |
 | MinIO disk (chosen) | Originals and published videos |
 | `/opt/<name>/scripts/update.sh` | Update everything to the latest version (see [operation](#operation)) |
