@@ -51,12 +51,15 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
               )
               """;
 
+        // O id no fim desempata: vídeos com a mesma data (um lote enviado junto, por exemplo)
+        // não têm ordem garantida, e LIMIT/OFFSET poderia repetir um e pular outro entre páginas.
         var ordem = termo is null
-            ? "ORDER BY COALESCE(v.published_at, v.created_at) DESC"
+            ? "ORDER BY COALESCE(v.published_at, v.created_at) DESC, v.id DESC"
             : """
               ORDER BY ts_rank(v.search_vector, plainto_tsquery('portuguese_unaccent', @Termo)) DESC,
                        similarity(v.title, @Termo) DESC,
-                       COALESCE(v.published_at, v.created_at) DESC
+                       COALESCE(v.published_at, v.created_at) DESC,
+                       v.id DESC
               """;
 
         var parametros = new
