@@ -10,6 +10,7 @@
     <Project Path="src/OpenTube.Shared/OpenTube.Shared.csproj" />
     <Project Path="src/OpenTube.Web/OpenTube.Web.csproj" />
     <Project Path="src/OpenTube.Worker/OpenTube.Worker.csproj" />
+    <Project Path="src/OpenTube.Mock/OpenTube.Mock.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OpenTube.Domain.Tests/OpenTube.Domain.Tests.csproj" />
@@ -17,5 +18,6 @@
     <Project Path="tests/OpenTube.TestSupport/OpenTube.TestSupport.csproj" />
     <Project Path="tests/OpenTube.Web.Tests/OpenTube.Web.Tests.csproj" />
     <Project Path="tests/OpenTube.Worker.Tests/OpenTube.Worker.Tests.csproj" />
+    <Project Path="tests/OpenTube.Mock.Tests/OpenTube.Mock.Tests.csproj" />
   </Folder>
 </Solution>

@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
 .PHONY: help up up-d down restart logs ps build clean shell _docker \
-        watch watch-web watch-worker deps-up deps-down test whisper headers
+        watch watch-web watch-worker deps-up deps-down mock test whisper headers
 
 .DEFAULT_GOAL := help
 
@@ -70,6 +70,25 @@ watch: .env _docker deps-up ## Dev completo: deps em container + aplicação e w
 	 $(MAKE) --no-print-directory watch-web & \
 	 $(MAKE) --no-print-directory watch-worker & \
 	 wait
+
+# Grava um catálogo de exemplo no banco do make watch. Sem argumento: 5 vídeos soltos e 5
+# coleções com 3 vídeos. videos=N muda os soltos. collections=N.M-K gera N coleções, cada uma
+# com M a K vídeos (collections=5 são 5 com 3; collections=5.4 são 5 com 4). colections é o
+# mesmo que collections. Compila em .artifacts/mock para não disputar bin/obj com o make watch.
+# Rodar de novo substitui só os slugs que começam com mock-.
+mock: .env _docker ## Gera coleções e vídeos de teste  →  make mock  |  make mock videos=10 collections=5.3-10
+	@$(COMPOSE_DEV) up -d --wait $(DEV_DEPS)
+	@command -v ffmpeg >/dev/null 2>&1 || { \
+	  echo "  ffmpeg não está no PATH. Instale o FFmpeg antes de make mock."; \
+	  exit 1; }
+	@command -v ffprobe >/dev/null 2>&1 || { \
+	  echo "  ffprobe não está no PATH. Ele acompanha o FFmpeg."; \
+	  exit 1; }
+	@set -a; . ./scripts/dev-env.sh; set +a; \
+	  dotnet run --project src/OpenTube.Mock --artifacts-path .artifacts/mock -- \
+	    $(if $(videos),--videos "$(videos)",) \
+	    $(if $(collections),--collections "$(collections)",) \
+	    $(if $(colections),--collections "$(colections)",)
 
 # Instala o whisper.cpp e baixa o modelo usado pelo worker do 'make watch'. O modelo pode ser
 # trocado: make whisper m=base (rápido) | small (melhor) | large-v3-turbo-q5_0 (o mais preciso).

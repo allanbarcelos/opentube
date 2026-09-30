@@ -300,7 +300,7 @@ reuses it after that.
 | --- | --- |
 | Docker (Docker Desktop or Colima) | Dependencies and integration tests. `make` starts Colima if it is installed and stopped |
 | .NET 10 SDK | The application and the worker |
-| FFmpeg | Transcoding by the worker under `make watch`; tests that use it are skipped without it |
+| FFmpeg | Transcoding by the worker under `make watch`, and the sample catalog from `make mock`. Tests that use it are skipped without it |
 | Homebrew (optional) | `make whisper`, to turn on automatic captions |
 
 ### Quick start
@@ -318,6 +318,7 @@ http://localhost:8025.
 | Command | What starts | Environment | Code |
 | --- | --- | --- | --- |
 | `make watch` | Database, MinIO, and Mailpit in containers; app and worker on the host | `Development` | `dotnet watch`, reloads on save |
+| `make mock` | Sample collections and videos in the development database | `Development` | One-shot; replaces slugs that start with `mock-` |
 | `make up` / `make up-d` | Full stack in containers, with Caddy | `Development` | Built image, no hot reload |
 
 ### `make watch` — hot reload
@@ -337,6 +338,29 @@ The browser uploads files straight to MinIO at `localhost:9000`. Username and pa
 `.env`. Ctrl+C stops the app and the worker; the containers keep running until `make deps-down`.
 `make watch-web` and `make watch-worker` start each process on its own, with the dependencies
 already up.
+
+### `make mock` — sample catalog
+
+```bash
+make mock
+make mock videos=10 collections=5.3-10
+```
+
+Writes sample collections and videos into the development database and MinIO, so the home, the
+player, collection covers, and access rules can be tried without uploading anything. It needs
+FFmpeg. With no arguments it writes 5 loose videos and 5 collections of 3 videos each.
+`videos` is how many stay outside a collection. `collections=5.3-10` is 5 collections, each with
+3 to 10 videos; `collections=5` keeps 3 per collection, and `collections=5.4` fixes every
+collection at 4. The second collection keeps the name cover. From 3 collections up, the last one
+is restricted and granted to `convidado@empresa.test`. When there is more than one loose video,
+the last one is private. Running it again replaces only rows whose slug starts with `mock-`.
+
+`make` itself rejects `--videos` (it reads that as its own option), so the counts go on the
+right-hand side of `=`.
+
+Browse at http://localhost:5080 with `make watch` already running. The administrator is the email
+in `src/OpenTube.Web/appsettings.Development.json`. The sign-in code for the guest shows up in
+Mailpit.
 
 ### `make up` — full stack in containers
 
@@ -396,6 +420,7 @@ testable without a database or network; the rest uses ephemeral containers.
 | `make watch` | Dependencies in containers, app and worker on the host with hot reload |
 | `make watch-web` / `make watch-worker` | Only the app, or only the worker (dependencies already up) |
 | `make deps-up` / `make deps-down` | Start or stop only the database, MinIO, and Mailpit |
+| `make mock` | Sample collections and videos in the development database (`videos=10 collections=5.3-10`). Running it again replaces only slugs that start with `mock-` |
 | `make whisper` | Install whisper.cpp and a model for captions (`m=base`, `m=large-v3-turbo-q5_0`…) |
 | `make up` / `make up-d` | Build and start the full stack (foreground / background) |
 | `make down` | Stop and remove the containers |
@@ -829,6 +854,7 @@ src/
   OpenTube.Infrastructure/    EF Core, S3 storage, email, queue
   OpenTube.Web/               Blazor: home, search, player, and admin area
   OpenTube.Worker/            transcoding, derivatives, and analytics aggregation
+  OpenTube.Mock/              sample catalog for `make mock`
 tests/
   OpenTube.Domain.Tests/
   OpenTube.Infrastructure.Tests/

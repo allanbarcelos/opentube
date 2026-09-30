@@ -301,7 +301,7 @@ o reutiliza.
 | --- | --- |
 | Docker (Docker Desktop ou Colima) | Dependências e testes de integração. O `make` inicia o Colima se ele estiver instalado e parado |
 | .NET SDK 10 | A aplicação e o worker |
-| FFmpeg | Transcodificação pelo worker no `make watch`; os testes que o usam são pulados sem ele |
+| FFmpeg | Transcodificação pelo worker no `make watch`, e o catálogo de exemplo do `make mock`. Os testes que o usam são pulados sem ele |
 | Homebrew (opcional) | `make whisper`, para ligar as legendas automáticas |
 
 ### Início rápido
@@ -319,6 +319,7 @@ http://localhost:8025.
 | Comando | O que sobe | Ambiente | Código |
 | --- | --- | --- | --- |
 | `make watch` | Banco, MinIO e Mailpit em container; aplicação e worker no host | `Development` | `dotnet watch`, recarrega ao salvar |
+| `make mock` | Coleções e vídeos de exemplo no banco de desenvolvimento | `Development` | Uma vez; substitui os slugs que começam com `mock-` |
 | `make up` / `make up-d` | Pilha inteira em container, com Caddy | `Development` | Imagem compilada, sem hot-reload |
 
 ### `make watch` — hot-reload
@@ -337,6 +338,28 @@ máquina, com `ASPNETCORE_ENVIRONMENT=Development`.
 O navegador envia o arquivo direto ao MinIO em `localhost:9000`. Usuário e senha estão no `.env`.
 Ctrl+C encerra aplicação e worker; os containers continuam até `make deps-down`.
 `make watch-web` e `make watch-worker` sobem cada processo sozinho, com as dependências já no ar.
+
+### `make mock` — catálogo de teste
+
+```bash
+make mock
+make mock videos=10 collections=5.3-10
+```
+
+Grava coleções e vídeos de exemplo no banco e no MinIO de desenvolvimento, para experimentar a
+home, o player, a capa das coleções e as regras de acesso sem enviar nada. Precisa do FFmpeg.
+Sem argumento, grava 5 vídeos soltos e 5 coleções com 3 vídeos cada. `videos` é quantos ficam
+fora de coleção. `collections=5.3-10` são 5 coleções, cada uma com 3 a 10 vídeos;
+`collections=5` mantém 3 por coleção, e `collections=5.4` fixa 4 em todas. A segunda coleção
+fica com a capa do nome. A partir de 3 coleções, a última é restrita e concedida a
+`convidado@empresa.test`. Havendo mais de um vídeo solto, o último é privado. Rodar de novo
+substitui só as linhas cujo slug começa com `mock-`; o restante fica.
+
+O `make` recusa `--videos` (lê isso como opção dele), então as quantidades vão do lado direito
+do `=`.
+
+Abra http://localhost:5080 com o `make watch` já no ar. O administrador é o email de
+`src/OpenTube.Web/appsettings.Development.json`. O código do convidado aparece no Mailpit.
 
 ### `make up` — pilha inteira em container
 
@@ -396,6 +419,7 @@ limitador de taxa), testável sem banco nem rede; o restante usa containers efê
 | `make watch` | Dependências em container, aplicação e worker no host com hot-reload |
 | `make watch-web` / `make watch-worker` | Só a aplicação, ou só o worker (dependências já no ar) |
 | `make deps-up` / `make deps-down` | Sobe ou para só o banco, o MinIO e o Mailpit |
+| `make mock` | Coleções e vídeos de exemplo no banco de desenvolvimento (`videos=10 collections=5.3-10`). Rodar de novo substitui só os slugs que começam com `mock-` |
 | `make whisper` | Instala o whisper.cpp e um modelo para as legendas (`m=base`, `m=large-v3-turbo-q5_0`…) |
 | `make up` / `make up-d` | Compila e sobe a pilha inteira (em primeiro plano / em segundo plano) |
 | `make down` | Para e remove os containers |
@@ -825,6 +849,7 @@ src/
   OpenTube.Infrastructure/    EF Core, storage S3, email, fila
   OpenTube.Web/               Blazor: home, busca, player e área administrativa
   OpenTube.Worker/            transcodificação, derivados e agregação de analytics
+  OpenTube.Mock/              catálogo de exemplo do `make mock`
 tests/
   OpenTube.Domain.Tests/
   OpenTube.Infrastructure.Tests/
