@@ -287,6 +287,15 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         Assert.Contains("bi-star-fill", favorita[estrela..outra]);
         Assert.Contains("bi-star-fill", await admin.GetStringAsync("/collections/beta"));
 
+        // Sem conta e sem concessão o pedido de código não envia email: a resposta é a mesma
+        // de um endereço conhecido, para não revelar quem está convidado.
+        await using (var db = postgres.CreateContext())
+        {
+            db.Users.Add(OpenTube.Domain.Entities.User.Create(
+                OpenTube.Domain.ValueObjects.EmailAddress.Parse(Convidado), DateTimeOffset.UtcNow));
+            await db.SaveChangesAsync();
+        }
+
         using var convidado = _app.CreateBrowser();
         await EntrarAsync(convidado, Convidado);
         var dele = await convidado.GetStringAsync("/");
