@@ -311,6 +311,34 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         Assert.DoesNotContain("bi-star-fill", sem);
     }
 
+    [Fact]
+    public async Task A_home_poe_2_antes_de_10_no_nome()
+    {
+        using var storage = minio.CreateStorage();
+        var deDez = await AcervoDeTeste.PublicarAsync(postgres, storage, "Dentro de dez", VideoVisibility.Public);
+        var deDois = await AcervoDeTeste.PublicarAsync(postgres, storage, "Dentro de dois", VideoVisibility.Public);
+        await AcervoDeTeste.PublicarAsync(postgres, storage, "10-solto", VideoVisibility.Public);
+        await AcervoDeTeste.PublicarAsync(postgres, storage, "2-solto", VideoVisibility.Public);
+
+        using var admin = _app.CreateBrowser();
+        await EntrarAsync(admin, Admin);
+        var dez = await CriarColecaoAsync(admin, "10-teste");
+        var dois = await CriarColecaoAsync(admin, "2-outro-teste");
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, $"/admin/collections/{dez}", $"/admin/collections/{dez}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = deDez.Id.ToString() });
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, $"/admin/collections/{dois}", $"/admin/collections/{dois}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = deDois.Id.ToString() });
+
+        using var visitante = _app.CreateBrowser();
+        var html = await visitante.GetStringAsync("/");
+        Assert.True(Posicao(html, "2-outro-teste") < Posicao(html, "10-teste"));
+        Assert.True(Posicao(html, "10-teste") < Posicao(html, "2-solto"));
+        Assert.True(Posicao(html, "2-solto") < Posicao(html, "10-solto"));
+    }
+
     private static int Posicao(string html, string texto)
     {
         var indice = html.IndexOf(texto, StringComparison.Ordinal);

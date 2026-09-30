@@ -96,7 +96,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
     /// Página inicial sem busca. Um vídeo que está numa coleção não aparece sozinho: no lugar
     /// dele entra a coleção, uma vez. A busca continua vídeo a vídeo, mesmo dentro de coleção.
     /// A ordem é por nome: coleções favoritas desta pessoa, as outras coleções e, por último,
-    /// os vídeos que não estão em coleção.
+    /// os vídeos que não estão em coleção. Maiúsculas e acentos não contam, e cada número
+    /// vale pelo valor, então 2 fica antes de 10.
     /// </summary>
     public async Task<PagedResult<HomeCard>> HomeAsync(
         Viewer viewer,
@@ -124,7 +125,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
             SELECT Id, Slug, Title, Description, VideoCount, DurationSeconds, Visibility, Status,
                    PublishedAt, CreatedAt, Tags, Kind, Favorite
               FROM itens
-             ORDER BY Kind DESC, Favorite DESC, lower(unaccent(Title)), Id
+             ORDER BY Kind DESC, Favorite DESC, opentube_natural_sort_key(Title), Id
              LIMIT @Limite OFFSET @Salto
             """, parametros, cancellationToken: cancellationToken));
 
