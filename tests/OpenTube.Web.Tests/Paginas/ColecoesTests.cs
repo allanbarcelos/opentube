@@ -243,6 +243,73 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
     }
 
     [Fact]
+    public async Task A_home_poe_colecoes_por_nome_e_o_favorito_na_frente()
+    {
+        using var storage = minio.CreateStorage();
+        var daArvore = await AcervoDeTeste.PublicarAsync(postgres, storage, "Raiz", VideoVisibility.Public);
+        var doBeta = await AcervoDeTeste.PublicarAsync(postgres, storage, "Ramo", VideoVisibility.Public);
+        await AcervoDeTeste.PublicarAsync(postgres, storage, "Fora", VideoVisibility.Public);
+
+        using var admin = _app.CreateBrowser();
+        await EntrarAsync(admin, Admin);
+        var arvore = await CriarColecaoAsync(admin, "Árvore");
+        var beta = await CriarColecaoAsync(admin, "Beta");
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, $"/admin/collections/{arvore}", $"/admin/collections/{arvore}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = daArvore.Id.ToString() });
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, $"/admin/collections/{beta}", $"/admin/collections/{beta}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = doBeta.Id.ToString() });
+
+        using var visitante = _app.CreateBrowser();
+        var anonima = await visitante.GetStringAsync("/");
+        Assert.True(Posicao(anonima, "Árvore") < Posicao(anonima, "Beta"));
+        Assert.True(Posicao(anonima, "Beta") < Posicao(anonima, "Fora"));
+        Assert.DoesNotContain("Raiz", anonima);
+        Assert.DoesNotContain("Ramo", anonima);
+        Assert.DoesNotContain("/favorite", anonima);
+
+        var antes = await admin.GetStringAsync("/");
+        Assert.True(Posicao(antes, "Árvore") < Posicao(antes, "Beta"));
+        Assert.DoesNotContain("bi-star-fill", antes);
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, "/", "/collections/beta/favorite",
+            new Dictionary<string, string> { ["destino"] = "/" });
+
+        var favorita = await admin.GetStringAsync("/");
+        Assert.True(Posicao(favorita, "Beta") < Posicao(favorita, "Árvore"));
+        Assert.True(Posicao(favorita, "Árvore") < Posicao(favorita, "Fora"));
+        var estrela = favorita.IndexOf("/collections/beta/favorite", StringComparison.Ordinal);
+        var outra = favorita.IndexOf("/collections/arvore/favorite", StringComparison.Ordinal);
+        Assert.True(estrela >= 0 && estrela < outra);
+        Assert.Contains("bi-star-fill", favorita[estrela..outra]);
+        Assert.Contains("bi-star-fill", await admin.GetStringAsync("/collections/beta"));
+
+        using var convidado = _app.CreateBrowser();
+        await EntrarAsync(convidado, Convidado);
+        var dele = await convidado.GetStringAsync("/");
+        Assert.True(Posicao(dele, "Árvore") < Posicao(dele, "Beta"));
+        Assert.DoesNotContain("bi-star-fill", dele);
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, "/", "/collections/beta/favorite",
+            new Dictionary<string, string> { ["destino"] = "/" });
+
+        var sem = await admin.GetStringAsync("/");
+        Assert.True(Posicao(sem, "Árvore") < Posicao(sem, "Beta"));
+        Assert.DoesNotContain("bi-star-fill", sem);
+    }
+
+    private static int Posicao(string html, string texto)
+    {
+        var indice = html.IndexOf(texto, StringComparison.Ordinal);
+        Assert.True(indice >= 0, texto);
+        return indice;
+    }
+
+    [Fact]
     public async Task Colecao_so_com_video_privado_nao_aparece_nem_abre()
     {
         using var storage = minio.CreateStorage();

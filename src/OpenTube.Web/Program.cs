@@ -124,6 +124,7 @@ app.MapPlaybackEndpoints();
 app.MapAdminEndpoints();
 app.MapShareEndpoints();
 app.MapCollectionEndpoints();
+app.MapCollectionFavoriteEndpoints();
 app.MapAccessEndpoints();
 app.MapAnalyticsEndpoints();
 app.MapExportEndpoints();

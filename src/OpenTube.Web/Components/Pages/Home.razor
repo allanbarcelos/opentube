@@ -58,7 +58,7 @@
             {
                 @if (item.Kind == HomeCardKind.Collection)
                 {
-                    <CollectionCard Card="item" />
+                    <CollectionCard Card="item" PodeFavoritar="Espectador.IsAuthenticated" Destino="@DestinoDaHome" />
                 }
                 else
                 {
@@ -90,6 +90,8 @@
     private bool Buscando => !string.IsNullOrWhiteSpace(Q);
 
     private bool Vazio => Buscando ? Busca.Items.Count == 0 : Inicio.Items.Count == 0;
+
+    private string DestinoDaHome => Pagina is > 1 ? $"/?page={Pagina}" : "/";
 
     protected override async Task OnInitializedAsync()
     {

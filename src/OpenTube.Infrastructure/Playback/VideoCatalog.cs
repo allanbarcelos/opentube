@@ -95,6 +95,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
     /// <summary>
     /// Página inicial sem busca. Um vídeo que está numa coleção não aparece sozinho: no lugar
     /// dele entra a coleção, uma vez. A busca continua vídeo a vídeo, mesmo dentro de coleção.
+    /// A ordem é por nome: coleções favoritas desta pessoa, as outras coleções e, por último,
+    /// os vídeos que não estão em coleção.
     /// </summary>
     public async Task<PagedResult<HomeCard>> HomeAsync(
         Viewer viewer,
@@ -120,9 +122,9 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         var linhas = await conexao.QueryAsync<HomeRow>(new CommandDefinition($"""
             {itens}
             SELECT Id, Slug, Title, Description, VideoCount, DurationSeconds, Visibility, Status,
-                   PublishedAt, CreatedAt, Tags, Kind
+                   PublishedAt, CreatedAt, Tags, Kind, Favorite
               FROM itens
-             ORDER BY Ordenacao DESC, Id DESC
+             ORDER BY Kind DESC, Favorite DESC, lower(unaccent(Title)), Id
              LIMIT @Limite OFFSET @Salto
             """, parametros, cancellationToken: cancellationToken));
 
@@ -150,7 +152,11 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
             SELECT c.id          AS Id,
                    c.slug        AS Slug,
                    c.name        AS Name,
-                   c.description AS Description
+                   c.description AS Description,
+                   EXISTS (
+                       SELECT 1 FROM collection_favorites f
+                        WHERE f.collection_id = c.id AND f.user_id = @Usuario
+                   )             AS IsFavorite
               FROM collections c
              WHERE c.slug = @Slug AND c.deleted_at IS NULL
             """, new
@@ -160,7 +166,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
             parametros.Agora,
             parametros.Email,
             parametros.Dominio,
-            parametros.ConcessaoDeLink
+            parametros.ConcessaoDeLink,
+            parametros.Usuario
         }, cancellationToken: cancellationToken));
 
         if (colecao is null)
@@ -189,14 +196,15 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
             parametros.Agora,
             parametros.Email,
             parametros.Dominio,
-            parametros.ConcessaoDeLink
+            parametros.ConcessaoDeLink,
+            parametros.Usuario
         }, cancellationToken: cancellationToken));
 
         var videos = linhas.Select(Converter).ToList();
 
         return videos.Count == 0
             ? null
-            : new PlaylistListing(colecao.Slug, colecao.Name, colecao.Description, videos);
+            : new PlaylistListing(colecao.Id, colecao.Slug, colecao.Name, colecao.Description, colecao.IsFavorite, videos);
     }
 
     /// <summary>Busca um vídeo pelo endereço legível, respeitando o acesso do espectador.</summary>
@@ -250,7 +258,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    v.created_at         AS CreatedAt,
                    v.tags               AS Tags,
                    v.ordenacao          AS Ordenacao,
-                   0                    AS Kind
+                   0                    AS Kind,
+                   false                AS Favorite
               FROM visiveis v
              WHERE NOT EXISTS (
                    SELECT 1
@@ -270,7 +279,10 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    MAX(v.ordenacao),
                    ARRAY[]::text[],
                    MAX(v.ordenacao),
-                   1
+                   1,
+                   EXISTS (
+                       SELECT 1 FROM collection_favorites f
+                        WHERE f.collection_id = c.id AND f.user_id = @Usuario)
               FROM collections c
               JOIN collection_videos cv ON cv.collection_id = c.id
               JOIN visiveis v ON v.id = cv.video_id
@@ -291,7 +303,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         clock.GetUtcNow(),
         viewer.Email,
         viewer.EmailDomain,
-        viewer.LinkGrantId);
+        viewer.LinkGrantId,
+        viewer.UserId);
 
     private static VideoSummary Converter(VideoRow linha) => new(
         linha.Id, linha.Slug, linha.Title, linha.Description, linha.DurationSeconds,
@@ -302,7 +315,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         (HomeCardKind)linha.Kind,
         linha.Id, linha.Slug, linha.Title, linha.Description, linha.VideoCount, linha.DurationSeconds,
         linha.Visibility, linha.Status, Momento(linha.PublishedAt), Momento(linha.CreatedAt) ?? DateTimeOffset.UnixEpoch,
-        linha.Tags ?? []);
+        linha.Tags ?? [], linha.Favorite);
 
     /// <summary>
     /// O leitor devolve <c>timestamptz</c> como <see cref="DateTime"/> em UTC; o domínio
@@ -340,6 +353,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         public DateTime CreatedAt { get; init; }
         public string[]? Tags { get; init; }
         public int Kind { get; init; }
+        public bool Favorite { get; init; }
     }
 
     private sealed class CollectionHead
@@ -348,6 +362,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         public string Slug { get; init; } = string.Empty;
         public string Name { get; init; } = string.Empty;
         public string? Description { get; init; }
+        public bool IsFavorite { get; init; }
     }
 
     private sealed record CatalogParameters(
@@ -358,5 +373,6 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         DateTimeOffset Agora,
         string? Email,
         string? Dominio,
-        Guid? ConcessaoDeLink);
+        Guid? ConcessaoDeLink,
+        Guid? Usuario);
 }

@@ -14,7 +14,13 @@
 <div class="container py-4">
     @if (Lista is not null)
     {
-        <h1 class="h4 mb-1">@Lista.Name</h1>
+        <div class="d-flex align-items-center gap-2 mb-1">
+            <h1 class="h4 mb-0">@Lista.Name</h1>
+            @if (Espectador.IsAuthenticated)
+            {
+                <EstrelaDaColecao Slug="@Lista.Slug" Favorita="Lista.IsFavorite" Destino="@($"/collections/{Lista.Slug}")" />
+            }
+        </div>
         <p class="text-body-secondary mb-3">
             @T.Format(Lista.Videos.Count == 1 ? "{0} video" : "{0} videos", Lista.Videos.Count)
         </p>
@@ -37,12 +43,14 @@
     [Parameter]
     public string Slug { get; set; } = string.Empty;
 
+    private Viewer Espectador = Viewer.Anonymous;
+
     private PlaylistListing? Lista;
 
     protected override async Task OnInitializedAsync()
     {
-        var espectador = await Espectadores.GetAsync(Http.RequestAborted);
-        Lista = await Catalogo.PlaylistAsync(espectador, Slug, Http.RequestAborted);
+        Espectador = await Espectadores.GetAsync(Http.RequestAborted);
+        Lista = await Catalogo.PlaylistAsync(Espectador, Slug, Http.RequestAborted);
 
         // Sem nenhum vídeo visível a coleção responde como inexistente: o nome também não vaza.
         if (Lista is null)

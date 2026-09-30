@@ -7,9 +7,11 @@ namespace OpenTube.Shared.Catalog;
 /// Vídeos de uma coleção na ordem da playlist, já filtrados pelo que o espectador pode ver.
 /// </summary>
 public sealed record PlaylistListing(
+    Guid Id,
     string Slug,
     string Name,
     string? Description,
+    bool IsFavorite,
     IReadOnlyList<VideoSummary> Videos)
 {
     /// <summary>O vídeo que vem a seguir na playlist, ou nenhum quando este é o último.</summary>

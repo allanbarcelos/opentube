@@ -26,7 +26,8 @@ public sealed record HomeCard(
     int Status,
     DateTimeOffset? PublishedAt,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<string> Tags)
+    IReadOnlyList<string> Tags,
+    bool IsFavorite)
 {
     /// <summary>O mesmo cartão visto como vídeo, para reutilizar o cartão da listagem.</summary>
     public VideoSummary ToVideo() => new(

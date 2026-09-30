@@ -60,6 +60,7 @@ public static class DependencyInjection
         services.AddScoped<VideoChapterService>();
         services.AddScoped<VideoRatingService>();
         services.AddScoped<CollectionService>();
+        services.AddScoped<CollectionFavoriteService>();
         services.AddScoped<CaptionService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
         services.AddScoped<IAuthRateLimiter, AuthRateLimiter>();

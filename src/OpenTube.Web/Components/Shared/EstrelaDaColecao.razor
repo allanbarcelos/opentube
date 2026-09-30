@@ -1,0 +1,38 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@* Estrela da coleção. O formulário fica fora do link do cartão, para o clique marcar em vez de abrir. *@
+
+<form method="post" action="/collections/@Slug/favorite" class="@Classe">
+    <AntiforgeryToken />
+    <input type="hidden" name="destino" value="@Destino" />
+    <button type="submit"
+            class="collection-favorite-btn @(SobreCapa ? null : "collection-favorite-btn-clara") @(Favorita ? "marcada" : null)"
+            aria-pressed="@(Favorita ? "true" : "false")"
+            title="@(Favorita ? T["Remove from favorites"] : T["Add to favorites"])"
+            aria-label="@(Favorita ? T["Remove from favorites"] : T["Add to favorites"])">
+        <i class="bi @(Favorita ? "bi-star-fill" : "bi-star")" aria-hidden="true"></i>
+    </button>
+</form>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Slug { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool Favorita { get; set; }
+
+    /// <summary>Para onde voltar depois de marcar. Só vale um caminho deste site.</summary>
+    [Parameter]
+    public string Destino { get; set; } = "/";
+
+    /// <summary>Classe do formulário. No cartão, posiciona a estrela sobre a capa.</summary>
+    [Parameter]
+    public string? Classe { get; set; }
+
+    /// <summary>Estrela sobre a capa escura. No cabeçalho claro, o botão fica sem fundo.</summary>
+    [Parameter]
+    public bool SobreCapa { get; set; }
+}

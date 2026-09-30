@@ -40,6 +40,46 @@
     color: #fff;
 }
 
+.collection-favorite {
+    position: absolute;
+    z-index: 2;
+    top: 0.55rem;
+    right: 0.55rem;
+}
+
+.collection-favorite-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(11, 31, 58, 0.55);
+    color: #fff;
+    line-height: 1;
+    flex: 0 0 auto;
+}
+
+.collection-favorite-btn.marcada,
+.collection-favorite-btn:hover,
+.collection-favorite-btn:focus-visible {
+    color: #ffc107;
+}
+
+.collection-favorite-btn-clara {
+    background: transparent;
+    color: var(--bs-secondary-color);
+}
+
+.collection-favorite-btn-clara.marcada,
+.collection-favorite-btn-clara:hover,
+.collection-favorite-btn-clara:focus-visible {
+    background: transparent;
+    color: #d39e00;
+}
+
 .collection-cover span {
     font-weight: 600;
     font-size: 1.15rem;
