@@ -57,6 +57,7 @@ public class CollectionConfiguration : IEntityTypeConfiguration<Collection>
         builder.Property(c => c.Name).HasMaxLength(200).IsRequired();
         builder.Property(c => c.Slug).HasMaxLength(80).IsRequired();
         builder.Property(c => c.Description).HasMaxLength(2000);
+        builder.Property(c => c.ThumbnailKey).HasMaxLength(300);
 
         builder.HasIndex(c => c.Slug).IsUnique();
 

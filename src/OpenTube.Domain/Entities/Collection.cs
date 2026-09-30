@@ -22,9 +22,17 @@ public class Collection
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? DeletedAt { get; private set; }
 
+    /// <summary>Caminho da miniatura enviada, no bucket de distribuição. Nulo usa o nome como capa.</summary>
+    public string? ThumbnailKey { get; private set; }
+
+    /// <summary>Muda a cada imagem. Zero significa que não há miniatura própria.</summary>
+    public long ThumbnailVersion { get; private set; }
+
     public IReadOnlyCollection<CollectionVideo> Videos => _videos;
 
     public bool IsDeleted => DeletedAt is not null;
+
+    public bool HasThumbnail => ThumbnailKey is not null;
 
     public static Collection Create(string name, string slug, Guid createdBy, DateTimeOffset now, string? description = null)
     {
@@ -48,6 +56,24 @@ public class Collection
 
         Name = name.Trim();
         Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+    }
+
+    /// <summary>Define a miniatura enviada pela administração. Sem ela, a capa continua sendo o nome.</summary>
+    public void SetThumbnail(string key, long version)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        if (version <= 0)
+            throw new ArgumentOutOfRangeException(nameof(version), "A versão da miniatura precisa ser positiva.");
+
+        ThumbnailKey = key;
+        ThumbnailVersion = version;
+    }
+
+    /// <summary>Volta à capa padrão, o nome da coleção.</summary>
+    public void ClearThumbnail()
+    {
+        ThumbnailKey = null;
+        ThumbnailVersion = 0;
     }
 
     /// <summary>Acrescenta um vídeo ao fim da coleção, sem duplicar.</summary>

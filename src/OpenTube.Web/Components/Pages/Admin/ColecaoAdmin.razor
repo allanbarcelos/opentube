@@ -144,6 +144,50 @@
                     </div>
                 </div>
 
+                <div class="card mb-3">
+                    <div class="card-header">@T["Thumbnail"]</div>
+                    <div class="card-body">
+                        @if (Colecao.HasThumbnail)
+                        {
+                            <img class="card-img-top video-thumb rounded mb-3"
+                                 src="/api/collections/@Colecao.Id/thumbnail?v=@Colecao.ThumbnailVersion"
+                                 alt="@T.Format("Thumbnail of {0}", Colecao.Name)" />
+                        }
+                        else
+                        {
+                            <div class="card-img-top video-thumb collection-cover rounded mb-3" aria-hidden="true">
+                                <span>@Colecao.Name</span>
+                            </div>
+                            <p class="small text-body-secondary">@T["The card shows the collection name until an image is set."]</p>
+                        }
+
+                        <form method="post" action="/admin/collections/@Colecao.Id/thumbnail" enctype="multipart/form-data">
+                            <AntiforgeryToken />
+
+                            <div class="mb-3">
+                                <label class="form-label" for="arquivo">@T["Thumbnail image"]</label>
+                                <input class="form-control" type="file" id="arquivo" name="arquivo"
+                                       accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" required />
+                                <div class="form-text">
+                                    @T["JPEG, PNG or WebP, up to 5 MB. Larger images are reduced to fit within 1280 × 720 pixels; smaller ones stay as they are. The longest side needs at least 160 pixels."]
+                                </div>
+                            </div>
+
+                            <button class="btn btn-primary w-100" type="submit">
+                                @(Colecao.HasThumbnail ? T["Change the thumbnail"] : T["Set the thumbnail"])
+                            </button>
+                        </form>
+
+                        @if (Colecao.HasThumbnail)
+                        {
+                            <form method="post" action="/admin/collections/@Colecao.Id/thumbnail/remove" class="mt-3">
+                                <AntiforgeryToken />
+                                <button class="btn btn-outline-danger w-100" type="submit">@T["Remove the thumbnail"]</button>
+                            </form>
+                        }
+                    </div>
+                </div>
+
                 @if (!Colecao.IsDeleted)
                 {
                     <div class="card border-danger">
@@ -186,6 +230,12 @@
     [SupplyParameterFromQuery(Name = "restaurada")]
     private string? Restaurada { get; set; }
 
+    [SupplyParameterFromQuery(Name = "capa")]
+    private string? Capa { get; set; }
+
+    [SupplyParameterFromQuery(Name = "semcapa")]
+    private string? SemCapa { get; set; }
+
     [SupplyParameterFromQuery(Name = "erro")]
     private string? Erro { get; set; }
 
@@ -206,6 +256,8 @@
             if (Adicionado == "1") yield return T["Video added to the collection."];
             if (Removido == "1") yield return T["Video removed from the collection."];
             if (Restaurada == "1") yield return T["Collection restored."];
+            if (Capa == "1") yield return T["Thumbnail saved."];
+            if (SemCapa == "1") yield return T["Thumbnail removed. The card shows the collection name again."];
         }
     }
 

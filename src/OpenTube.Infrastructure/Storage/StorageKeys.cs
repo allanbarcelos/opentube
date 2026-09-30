@@ -47,6 +47,13 @@ public static class StorageKeys
 
     public static string Thumbnail(Guid videoId) => ThumbnailUnder(VodPrefix(videoId));
 
+    /// <summary>
+    /// Miniatura enviada para uma coleção. A versão entra no caminho: trocar a imagem não
+    /// reaproveita o endereço antigo.
+    /// </summary>
+    public static string CollectionThumbnail(Guid collectionId, long version) =>
+        $"collections/{collectionId:n}/thumb-{version}.jpg";
+
     public static string ThumbnailUnder(string prefix) => $"{prefix}thumb.jpg";
 
     public static string Sprite(Guid videoId) => SpriteUnder(VodPrefix(videoId));

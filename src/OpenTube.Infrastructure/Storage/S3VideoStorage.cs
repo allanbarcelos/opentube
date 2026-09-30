@@ -244,6 +244,21 @@ public class S3VideoStorage : IVideoStorage, IDisposable
         }, cancellationToken);
     }
 
+    public async Task PutBytesAsync(StorageBucket bucket, string key, byte[] content, string contentType, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        using var stream = new MemoryStream(content, writable: false);
+        await _client.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = BucketName(bucket),
+            Key = key,
+            InputStream = stream,
+            ContentType = contentType,
+            AutoCloseStream = false
+        }, cancellationToken);
+    }
+
     public async Task GetFileAsync(StorageBucket bucket, string key, string destinationPath, CancellationToken cancellationToken = default)
     {
         using var response = await _client.GetObjectAsync(BucketName(bucket), key, cancellationToken);

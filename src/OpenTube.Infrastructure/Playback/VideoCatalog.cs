@@ -123,7 +123,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         var linhas = await conexao.QueryAsync<HomeRow>(new CommandDefinition($"""
             {itens}
             SELECT Id, Slug, Title, Description, VideoCount, DurationSeconds, Visibility, Status,
-                   PublishedAt, CreatedAt, Tags, Kind, Favorite
+                   PublishedAt, CreatedAt, Tags, Kind, Favorite, ThumbnailVersion
               FROM itens
              ORDER BY Kind DESC, Favorite DESC, opentube_natural_sort_key(Title), Id
              LIMIT @Limite OFFSET @Salto
@@ -208,6 +208,40 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
             : new PlaylistListing(colecao.Id, colecao.Slug, colecao.Name, colecao.Description, colecao.IsFavorite, videos);
     }
 
+    /// <summary>
+    /// A coleção aparece para este espectador: não está excluída e tem ao menos um vídeo que
+    /// ele pode ver. É a mesma regra da página inicial.
+    /// </summary>
+    public async Task<bool> CollectionIsVisibleAsync(Viewer viewer, Guid collectionId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(viewer);
+
+        var conexao = db.Database.GetDbConnection();
+        var parametros = Parametros(viewer, null, 1, 1);
+        var filtro = FiltroDe(viewer);
+
+        return await conexao.ExecuteScalarAsync<bool>(new CommandDefinition($"""
+            SELECT EXISTS (
+                SELECT 1
+                  FROM collections c
+                  JOIN collection_videos cv ON cv.collection_id = c.id
+                  JOIN videos v ON v.id = cv.video_id
+                 WHERE c.id = @Colecao
+                   AND c.deleted_at IS NULL
+                   AND {filtro}
+            )
+            """, new
+        {
+            Colecao = collectionId,
+            parametros.Pronto,
+            parametros.Agora,
+            parametros.Email,
+            parametros.Dominio,
+            parametros.ConcessaoDeLink,
+            parametros.Usuario
+        }, cancellationToken: cancellationToken));
+    }
+
     /// <summary>Busca um vídeo pelo endereço legível, respeitando o acesso do espectador.</summary>
     public async Task<Video?> FindBySlugAsync(Viewer viewer, string slug, CancellationToken cancellationToken = default)
     {
@@ -260,7 +294,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    v.tags               AS Tags,
                    v.ordenacao          AS Ordenacao,
                    0                    AS Kind,
-                   false                AS Favorite
+                   false                AS Favorite,
+                   0::bigint            AS ThumbnailVersion
               FROM visiveis v
              WHERE NOT EXISTS (
                    SELECT 1
@@ -283,12 +318,13 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    1,
                    EXISTS (
                        SELECT 1 FROM collection_favorites f
-                        WHERE f.collection_id = c.id AND f.user_id = @Usuario)
+                        WHERE f.collection_id = c.id AND f.user_id = @Usuario),
+                   c.thumbnail_version
               FROM collections c
               JOIN collection_videos cv ON cv.collection_id = c.id
               JOIN visiveis v ON v.id = cv.video_id
              WHERE c.deleted_at IS NULL
-             GROUP BY c.id, c.slug, c.name, c.description
+             GROUP BY c.id, c.slug, c.name, c.description, c.thumbnail_version
         )
         """;
 
@@ -316,7 +352,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         (HomeCardKind)linha.Kind,
         linha.Id, linha.Slug, linha.Title, linha.Description, linha.VideoCount, linha.DurationSeconds,
         linha.Visibility, linha.Status, Momento(linha.PublishedAt), Momento(linha.CreatedAt) ?? DateTimeOffset.UnixEpoch,
-        linha.Tags ?? [], linha.Favorite);
+        linha.Tags ?? [], linha.Favorite, linha.ThumbnailVersion);
 
     /// <summary>
     /// O leitor devolve <c>timestamptz</c> como <see cref="DateTime"/> em UTC; o domínio
@@ -355,6 +391,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         public string[]? Tags { get; init; }
         public int Kind { get; init; }
         public bool Favorite { get; init; }
+        public long ThumbnailVersion { get; init; }
     }
 
     private sealed class CollectionHead

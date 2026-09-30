@@ -3,7 +3,7 @@
     Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 *@
 
-@* Cartão de coleção na página inicial. A miniatura é o título: a coleção não tem imagem própria. *@
+@* Cartão de coleção na página inicial. Sem imagem enviada, a capa é o nome. *@
 
 <div class="col">
     <div class="card h-100 shadow-sm position-relative">
@@ -13,9 +13,17 @@
                               Classe="collection-favorite" SobreCapa="true" />
         }
         <a class="text-decoration-none text-body" href="/collections/@Card.Slug">
-            <div class="card-img-top video-thumb collection-cover" aria-hidden="true">
-                <span>@Card.Title</span>
-            </div>
+            @if (Card.ThumbnailVersion > 0)
+            {
+                <img class="card-img-top video-thumb" src="/api/collections/@Card.Id/thumbnail?v=@Card.ThumbnailVersion"
+                     alt="@T.Format("Thumbnail of {0}", Card.Title)" loading="lazy" />
+            }
+            else
+            {
+                <div class="card-img-top video-thumb collection-cover" aria-hidden="true">
+                    <span>@Card.Title</span>
+                </div>
+            }
             <div class="card-body">
                 <h2 class="h6 card-title video-card-title mb-1">@Card.Title</h2>
                 <p class="card-text small text-body-secondary mb-0">

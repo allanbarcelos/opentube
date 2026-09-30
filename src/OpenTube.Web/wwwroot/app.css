@@ -27,7 +27,7 @@
     overflow: hidden;
 }
 
-/* Miniatura da coleção: não há imagem própria, o título é a capa. */
+/* Capa da coleção quando nenhuma imagem foi enviada: o título ocupa o lugar da miniatura. */
 .collection-cover {
     display: flex;
     align-items: center;

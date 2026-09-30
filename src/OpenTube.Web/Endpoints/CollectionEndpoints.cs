@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
 using Microsoft.AspNetCore.Mvc;
+using OpenTube.Infrastructure.Branding;
 using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
@@ -14,6 +15,26 @@ public static class CollectionEndpoints
 {
     public static IEndpointRouteBuilder MapCollectionEndpoints(this IEndpointRouteBuilder rotas)
     {
+        rotas.MapGet("/api/collections/{collectionId:guid}/thumbnail", async (
+            Guid collectionId,
+            CollectionThumbnailService miniaturas,
+            CurrentViewer espectadores,
+            HttpContext contexto,
+            CancellationToken cancellationToken) =>
+        {
+            var endereco = await miniaturas.GetUrlAsync(
+                collectionId, await espectadores.GetAsync(cancellationToken), cancellationToken);
+
+            if (endereco is null)
+                return Results.NotFound();
+
+            // O endereço da página leva a versão da imagem. A resposta daqui não pode ficar
+            // em cache: ela é o que decide se esta pessoa ainda pode ver a capa.
+            contexto.Response.Headers.CacheControl = "no-store";
+
+            return Results.Redirect(endereco);
+        });
+
         var grupo = rotas.MapGroup("/admin/collections").RequireAuthorization(Policies.Administrator);
 
         grupo.MapPost("/create", async (
@@ -87,6 +108,61 @@ public static class CollectionEndpoints
             await colecoes.RemoveVideoAsync(collectionId, videoId, cancellationToken);
 
             return Results.Redirect($"/admin/collections/{collectionId}?removido=1");
+        });
+
+        grupo.MapPost("/{collectionId:guid}/thumbnail", async (
+            Guid collectionId,
+            IFormFile? arquivo,
+            CollectionThumbnailService miniaturas,
+            HttpContext contexto,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                if (arquivo is null || arquivo.Length == 0)
+                    throw new ArgumentException("Choose an image.");
+
+                if (arquivo.Length > CollectionThumbnailProcessor.MaxUploadBytes)
+                    throw new ArgumentException("The image is larger than 5 MB.");
+
+                using var memoria = new MemoryStream((int)arquivo.Length);
+                await arquivo.CopyToAsync(memoria, cancellationToken);
+
+                await miniaturas.SetAsync(collectionId, memoria.ToArray(), cancellationToken);
+
+                await contexto.RegistrarAsync(
+                    AuditActions.ColecaoAlterada, AuditEntities.Colecao, collectionId,
+                    LocalText.Get("Collection thumbnail set"), cancellationToken);
+
+                return Results.Redirect($"/admin/collections/{collectionId}?capa=1");
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+            {
+                return Results.Redirect($"/admin/collections/{collectionId}?erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
+            }
+        });
+
+        grupo.MapPost("/{collectionId:guid}/thumbnail/remove", async (
+            Guid collectionId,
+            CollectionThumbnailService miniaturas,
+            HttpContext contexto,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                if (await miniaturas.RemoveAsync(collectionId, cancellationToken))
+                {
+                    await contexto.RegistrarAsync(
+                        AuditActions.ColecaoAlterada, AuditEntities.Colecao, collectionId,
+                        LocalText.Get("Collection thumbnail removed"), cancellationToken);
+                }
+
+                return Results.Redirect($"/admin/collections/{collectionId}?semcapa=1");
+            }
+            catch (InvalidOperationException e)
+            {
+                return Results.Redirect($"/admin/collections/{collectionId}?erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
+            }
         });
 
         grupo.MapPost("/{collectionId:guid}/delete", async (

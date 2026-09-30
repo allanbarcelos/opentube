@@ -56,6 +56,9 @@ public interface IVideoStorage
     /// <summary>Envia conteúdo em memória para o storage.</summary>
     Task PutTextAsync(StorageBucket bucket, string key, string content, string contentType, CancellationToken cancellationToken = default);
 
+    /// <summary>Envia bytes em memória para o storage. Usado pela miniatura da coleção.</summary>
+    Task PutBytesAsync(StorageBucket bucket, string key, byte[] content, string contentType, CancellationToken cancellationToken = default);
+
     /// <summary>Baixa um objeto para um arquivo local.</summary>
     Task GetFileAsync(StorageBucket bucket, string key, string destinationPath, CancellationToken cancellationToken = default);
 

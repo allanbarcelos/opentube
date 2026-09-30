@@ -161,4 +161,45 @@ public class CollectionTests
     {
         Assert.Throws<ArgumentNullException>(() => Nova().Replace(null!));
     }
+
+    [Fact]
+    public void Nasce_sem_miniatura()
+    {
+        var colecao = Nova();
+
+        Assert.False(colecao.HasThumbnail);
+        Assert.Equal(0, colecao.ThumbnailVersion);
+    }
+
+    [Fact]
+    public void Define_e_remove_a_miniatura()
+    {
+        var colecao = Nova();
+
+        colecao.SetThumbnail("collections/a/thumb-1.jpg", 10);
+
+        Assert.True(colecao.HasThumbnail);
+        Assert.Equal("collections/a/thumb-1.jpg", colecao.ThumbnailKey);
+        Assert.Equal(10, colecao.ThumbnailVersion);
+
+        colecao.ClearThumbnail();
+
+        Assert.False(colecao.HasThumbnail);
+        Assert.Null(colecao.ThumbnailKey);
+        Assert.Equal(0, colecao.ThumbnailVersion);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Miniatura_exige_caminho(string caminho)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => Nova().SetThumbnail(caminho, 1));
+    }
+
+    [Fact]
+    public void Miniatura_exige_versao_positiva()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => Nova().SetThumbnail("a.jpg", 0));
+    }
 }
