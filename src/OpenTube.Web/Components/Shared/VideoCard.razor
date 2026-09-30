@@ -6,7 +6,7 @@
 @* Cartão de vídeo usado na home, na busca e na área administrativa. *@
 
 <div class="col">
-    <a class="card h-100 text-decoration-none text-body shadow-sm" href="/watch/@Video.Slug">
+    <a class="card h-100 text-decoration-none text-body shadow-sm" href="@Endereco">
         @if (Video.Status == (int)VideoStatus.Ready)
         {
             <img class="card-img-top video-thumb" src="/api/videos/@Video.Id/thumbnail"
@@ -41,6 +41,13 @@
     /// <summary>Exibe o distintivo de visibilidade; usado apenas na área administrativa.</summary>
     [Parameter]
     public bool MostrarVisibilidade { get; set; }
+
+    /// <summary>
+    /// Vídeo que está numa coleção abre a coleção já nele. Os demais abrem a página do vídeo.
+    /// </summary>
+    private string Endereco => string.IsNullOrEmpty(Video.CollectionSlug)
+        ? $"/watch/{Video.Slug}"
+        : $"/watch/{Video.Slug}?collection={Uri.EscapeDataString(Video.CollectionSlug)}";
 
     private string EstadoTexto => (VideoStatus)Video.Status switch
     {

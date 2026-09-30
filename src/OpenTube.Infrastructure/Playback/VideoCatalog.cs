@@ -80,7 +80,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    v.status            AS Status,
                    v.published_at      AS PublishedAt,
                    v.created_at        AS CreatedAt,
-                   v.tags              AS Tags
+                   v.tags              AS Tags,
+                   {ColecaoDoVideo}    AS CollectionSlug
               FROM videos v
              WHERE {filtro} {busca}
              {ordem}
@@ -123,7 +124,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         var linhas = await conexao.QueryAsync<HomeRow>(new CommandDefinition($"""
             {itens}
             SELECT Id, Slug, Title, Description, VideoCount, DurationSeconds, Visibility, Status,
-                   PublishedAt, CreatedAt, Tags, Kind, Favorite, ThumbnailVersion
+                   PublishedAt, CreatedAt, Tags, Kind, Favorite, ThumbnailVersion, CollectionSlug
               FROM itens
              ORDER BY Kind DESC, Favorite DESC, opentube_natural_sort_key(Title), Id
              LIMIT @Limite OFFSET @Salto
@@ -295,7 +296,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    v.ordenacao          AS Ordenacao,
                    0                    AS Kind,
                    false                AS Favorite,
-                   0::bigint            AS ThumbnailVersion
+                   0::bigint            AS ThumbnailVersion,
+                   {ColecaoDoVideo}     AS CollectionSlug
               FROM visiveis v
              WHERE NOT EXISTS (
                    SELECT 1
@@ -319,7 +321,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    EXISTS (
                        SELECT 1 FROM collection_favorites f
                         WHERE f.collection_id = c.id AND f.user_id = @Usuario),
-                   c.thumbnail_version
+                   c.thumbnail_version,
+                   NULL::text
               FROM collections c
               JOIN collection_videos cv ON cv.collection_id = c.id
               JOIN visiveis v ON v.id = cv.video_id
@@ -346,13 +349,28 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
     private static VideoSummary Converter(VideoRow linha) => new(
         linha.Id, linha.Slug, linha.Title, linha.Description, linha.DurationSeconds,
         linha.Visibility, linha.Status, Momento(linha.PublishedAt), Momento(linha.CreatedAt)!.Value,
-        linha.Tags ?? []);
+        linha.Tags ?? [], linha.CollectionSlug);
 
     private static HomeCard ConverterHome(HomeRow linha) => new(
         (HomeCardKind)linha.Kind,
         linha.Id, linha.Slug, linha.Title, linha.Description, linha.VideoCount, linha.DurationSeconds,
         linha.Visibility, linha.Status, Momento(linha.PublishedAt), Momento(linha.CreatedAt) ?? DateTimeOffset.UnixEpoch,
-        linha.Tags ?? [], linha.Favorite, linha.ThumbnailVersion);
+        linha.Tags ?? [], linha.Favorite, linha.ThumbnailVersion, linha.CollectionSlug);
+
+    /// <summary>
+    /// Coleção não excluída em que o vídeo está. Se houver mais de uma, vale a primeira pelo
+    /// mesmo critério de nome da home. O clique abre essa coleção já neste vídeo.
+    /// </summary>
+    private const string ColecaoDoVideo = """
+        (
+            SELECT c.slug
+              FROM collection_videos cv
+              JOIN collections c ON c.id = cv.collection_id AND c.deleted_at IS NULL
+             WHERE cv.video_id = v.id
+             ORDER BY opentube_natural_sort_key(c.name), c.id
+             LIMIT 1
+        )
+        """;
 
     /// <summary>
     /// O leitor devolve <c>timestamptz</c> como <see cref="DateTime"/> em UTC; o domínio
@@ -374,6 +392,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         public DateTime? PublishedAt { get; init; }
         public DateTime CreatedAt { get; init; }
         public string[]? Tags { get; init; }
+        public string? CollectionSlug { get; init; }
     }
 
     private sealed class HomeRow
@@ -392,6 +411,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         public int Kind { get; init; }
         public bool Favorite { get; init; }
         public long ThumbnailVersion { get; init; }
+        public string? CollectionSlug { get; init; }
     }
 
     private sealed class CollectionHead

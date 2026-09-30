@@ -28,9 +28,10 @@ public sealed record HomeCard(
     DateTimeOffset CreatedAt,
     IReadOnlyList<string> Tags,
     bool IsFavorite,
-    long ThumbnailVersion = 0)
+    long ThumbnailVersion = 0,
+    string? CollectionSlug = null)
 {
     /// <summary>O mesmo cartão visto como vídeo, para reutilizar o cartão da listagem.</summary>
     public VideoSummary ToVideo() => new(
-        Id, Slug, Title, Description, DurationSeconds, Visibility, Status, PublishedAt, CreatedAt, Tags);
+        Id, Slug, Title, Description, DurationSeconds, Visibility, Status, PublishedAt, CreatedAt, Tags, CollectionSlug);
 }

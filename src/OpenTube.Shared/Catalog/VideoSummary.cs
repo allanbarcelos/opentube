@@ -16,6 +16,7 @@ namespace OpenTube.Shared.Catalog;
 /// <param name="PublishedAt">Quando ficou pronto pela primeira vez.</param>
 /// <param name="CreatedAt">Quando foi enviado.</param>
 /// <param name="Tags">Etiquetas.</param>
+/// <param name="CollectionSlug">Coleção em que o vídeo está, quando o clique deve abri-la nele.</param>
 public sealed record VideoSummary(
     Guid Id,
     string Slug,
@@ -26,7 +27,8 @@ public sealed record VideoSummary(
     int Status,
     DateTimeOffset? PublishedAt,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<string> Tags)
+    IReadOnlyList<string> Tags,
+    string? CollectionSlug = null)
 {
     /// <summary>Duração no formato <c>h:mm:ss</c>, ou <c>m:ss</c> em vídeos curtos.</summary>
     public string DurationLabel

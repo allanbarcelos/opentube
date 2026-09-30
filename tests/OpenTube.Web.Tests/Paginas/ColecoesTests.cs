@@ -224,7 +224,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         var busca = await visitante.GetStringAsync("/?q=abertura");
         Assert.Contains("Abertura", busca);
-        Assert.Contains($"/watch/{primeiro.Slug}", busca);
+        Assert.Contains($"/watch/{primeiro.Slug}?collection=treinamentos", busca);
         Assert.DoesNotContain("/collections/treinamentos", busca);
 
         var playlist = await visitante.GetStringAsync("/collections/treinamentos");
