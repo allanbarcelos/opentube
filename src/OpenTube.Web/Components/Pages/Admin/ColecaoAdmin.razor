@@ -48,6 +48,14 @@
                 </form>
             </div>
         }
+        @if (VideosPrivados > 0)
+        {
+            <div class="alert alert-warning" role="status">
+                @(VideosPrivados == 1
+                    ? T.Format("{0} video in this collection is private. To make it accessible, set it to Restricted or Public.", VideosPrivados)
+                    : T.Format("{0} videos in this collection are private. To make them accessible, set each one to Restricted or Public.", VideosPrivados))
+            </div>
+        }
 
         <div class="row g-4">
             <div class="col-lg-7">
@@ -71,6 +79,10 @@
                                 <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
                                     <div>
                                         <a href="/admin/videos/@video.Id" class="text-decoration-none">@video.Title</a>
+                                        @if (video.Visibility == (int)VideoVisibility.Private)
+                                        {
+                                            <span class="badge text-bg-secondary ms-2">@T["Private"]</span>
+                                        }
                                         <span class="d-block small text-body-secondary">@video.DurationLabel</span>
                                     </div>
                                     <form method="post" action="/admin/collections/@Colecao.Id/videos/remove">
@@ -182,6 +194,8 @@
     private IReadOnlyList<VideoSummary> Videos = [];
 
     private IReadOnlyList<VideoSummary> Disponiveis = [];
+
+    private int VideosPrivados => Videos.Count(v => v.Visibility == (int)VideoVisibility.Private);
 
     private IEnumerable<string> Avisos
     {

@@ -112,6 +112,39 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
     }
 
     [Fact]
+    public async Task Avisa_quando_ha_videos_privados_na_colecao()
+    {
+        using var storage = minio.CreateStorage();
+        var privado = await AcervoDeTeste.PublicarAsync(postgres, storage, "Plano Interno", VideoVisibility.Private);
+        var restrito = await AcervoDeTeste.PublicarAsync(postgres, storage, "Segurança da Informação", VideoVisibility.Restricted);
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Admin);
+        var colecao = await CriarColecaoAsync(cliente, "Treinamentos");
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = privado.Id.ToString() });
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = restrito.Id.ToString() });
+
+        var html = await cliente.GetStringAsync($"/admin/collections/{colecao}");
+
+        Assert.Contains("1 video in this collection is private. To make it accessible, set it to Restricted or Public.", html);
+        Assert.Contains(">Private<", html);
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/remove",
+            new Dictionary<string, string> { ["videoId"] = privado.Id.ToString() });
+
+        var semPrivados = await cliente.GetStringAsync($"/admin/collections/{colecao}");
+
+        Assert.DoesNotContain("is private", semPrivados);
+        Assert.DoesNotContain(">Private<", semPrivados);
+    }
+
+    [Fact]
     public async Task Renomear_a_colecao_nao_muda_o_endereco()
     {
         using var cliente = _app.CreateBrowser();
