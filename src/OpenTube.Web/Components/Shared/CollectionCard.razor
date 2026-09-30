@@ -1,0 +1,25 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@* Cartão de coleção na página inicial. A miniatura é o título: a coleção não tem imagem própria. *@
+
+<div class="col">
+    <a class="card h-100 text-decoration-none text-body shadow-sm" href="/collections/@Card.Slug">
+        <div class="card-img-top video-thumb collection-cover" aria-hidden="true">
+            <span>@Card.Title</span>
+        </div>
+        <div class="card-body">
+            <h2 class="h6 card-title video-card-title mb-1">@Card.Title</h2>
+            <p class="card-text small text-body-secondary mb-0">
+                @T.Format(Card.VideoCount == 1 ? "{0} video" : "{0} videos", Card.VideoCount)
+            </p>
+        </div>
+    </a>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public HomeCard Card { get; set; } = default!;
+}

@@ -27,6 +27,43 @@
     overflow: hidden;
 }
 
+/* Miniatura da coleção: não há imagem própria, o título é a capa. */
+.collection-cover {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1rem;
+    text-align: center;
+    background:
+        linear-gradient(160deg, rgba(255, 255, 255, 0.16), transparent 46%),
+        linear-gradient(145deg, #1f4b99, #0b1f3a);
+    color: #fff;
+}
+
+.collection-cover span {
+    font-weight: 600;
+    font-size: 1.15rem;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.playlist-thumb {
+    width: 120px;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    background-color: var(--bs-secondary-bg);
+    flex: 0 0 auto;
+}
+
+.playlist-lista {
+    max-height: 28rem;
+    overflow-y: auto;
+}
+
 .player-shell {
     aspect-ratio: 16 / 9;
     background-color: #000;
