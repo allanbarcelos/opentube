@@ -313,6 +313,73 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
     }
 
     [Fact]
+    public async Task A_home_poe_colecao_favorita_antes_do_video_favorito()
+    {
+        using var storage = minio.CreateStorage();
+        var dentro = await AcervoDeTeste.PublicarAsync(postgres, storage, "Dentro", VideoVisibility.Public);
+        var marcado = await AcervoDeTeste.PublicarAsync(postgres, storage, "Marcado", VideoVisibility.Public);
+        var solto = await AcervoDeTeste.PublicarAsync(postgres, storage, "Solto", VideoVisibility.Public);
+
+        using var admin = _app.CreateBrowser();
+        await EntrarAsync(admin, Admin);
+        var alfa = await CriarColecaoAsync(admin, "Alfa");
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, $"/admin/collections/{alfa}", $"/admin/collections/{alfa}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = dentro.Id.ToString() });
+
+        using var visitante = _app.CreateBrowser();
+        var anonima = await visitante.GetStringAsync("/");
+        Assert.DoesNotContain("Dentro", anonima);
+        Assert.DoesNotContain("/favorite", anonima);
+        Assert.True(Posicao(anonima, "Alfa") < Posicao(anonima, "Marcado"));
+        Assert.True(Posicao(anonima, "Marcado") < Posicao(anonima, "Solto"));
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, "/", "/collections/alfa/favorite",
+            new Dictionary<string, string> { ["destino"] = "/" });
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, "/", $"/videos/{marcado.Slug}/favorite",
+            new Dictionary<string, string> { ["destino"] = "/" });
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, "/", $"/videos/{dentro.Slug}/favorite",
+            new Dictionary<string, string> { ["destino"] = "/" });
+
+        var favorita = await admin.GetStringAsync("/");
+        Assert.True(Posicao(favorita, "Alfa") < Posicao(favorita, "Dentro"));
+        Assert.True(Posicao(favorita, "Dentro") < Posicao(favorita, "Marcado"));
+        Assert.True(Posicao(favorita, "Marcado") < Posicao(favorita, "Solto"));
+        Assert.Contains($"/watch/{dentro.Slug}?collection=alfa", favorita);
+        Assert.Contains("/collections/alfa", favorita);
+
+        var estrelaDentro = favorita.IndexOf($"/videos/{dentro.Slug}/favorite", StringComparison.Ordinal);
+        var estrelaMarcado = favorita.IndexOf($"/videos/{marcado.Slug}/favorite", StringComparison.Ordinal);
+        var estrelaSolto = favorita.IndexOf($"/videos/{solto.Slug}/favorite", StringComparison.Ordinal);
+        Assert.True(estrelaDentro >= 0 && estrelaDentro < estrelaMarcado && estrelaMarcado < estrelaSolto);
+        Assert.Contains("bi-star-fill", favorita[estrelaDentro..estrelaMarcado]);
+        Assert.Contains("bi-star-fill", favorita[estrelaMarcado..estrelaSolto]);
+        Assert.Contains("bi-star\"", favorita[estrelaSolto..]);
+
+        var assistir = await admin.GetStringAsync($"/watch/{marcado.Slug}");
+        Assert.Contains($"/videos/{marcado.Slug}/favorite", assistir);
+        Assert.Contains("bi-star-fill", assistir);
+
+        await using (var db = postgres.CreateContext())
+        {
+            db.Users.Add(OpenTube.Domain.Entities.User.Create(
+                OpenTube.Domain.ValueObjects.EmailAddress.Parse(Convidado), DateTimeOffset.UtcNow));
+            await db.SaveChangesAsync();
+        }
+
+        using var convidado = _app.CreateBrowser();
+        await EntrarAsync(convidado, Convidado);
+        var dele = await convidado.GetStringAsync("/");
+        Assert.DoesNotContain("Dentro", dele);
+        Assert.True(Posicao(dele, "Alfa") < Posicao(dele, "Marcado"));
+        Assert.DoesNotContain("bi-star-fill", dele);
+    }
+
+    [Fact]
     public async Task A_home_poe_2_antes_de_10_no_nome()
     {
         using var storage = minio.CreateStorage();

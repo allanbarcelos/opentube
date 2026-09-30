@@ -33,5 +33,6 @@ public sealed record HomeCard(
 {
     /// <summary>O mesmo cartão visto como vídeo, para reutilizar o cartão da listagem.</summary>
     public VideoSummary ToVideo() => new(
-        Id, Slug, Title, Description, DurationSeconds, Visibility, Status, PublishedAt, CreatedAt, Tags, CollectionSlug);
+        Id, Slug, Title, Description, DurationSeconds, Visibility, Status, PublishedAt, CreatedAt, Tags,
+        CollectionSlug, IsFavorite);
 }

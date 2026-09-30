@@ -125,6 +125,7 @@ app.MapAdminEndpoints();
 app.MapShareEndpoints();
 app.MapCollectionEndpoints();
 app.MapCollectionFavoriteEndpoints();
+app.MapVideoFavoriteEndpoints();
 app.MapAccessEndpoints();
 app.MapAnalyticsEndpoints();
 app.MapExportEndpoints();

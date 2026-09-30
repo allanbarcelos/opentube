@@ -45,7 +45,8 @@
         <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xxl-4 g-3">
             @foreach (var video in Busca.Items)
             {
-                <VideoCard Video="video" MostrarVisibilidade="Espectador.IsAdmin" />
+                <VideoCard Video="video" MostrarVisibilidade="Espectador.IsAdmin"
+                           PodeFavoritar="Espectador.IsAuthenticated" Destino="@DestinoDaBusca" />
             }
         </div>
 
@@ -62,7 +63,8 @@
                 }
                 else
                 {
-                    <VideoCard Video="item.ToVideo()" MostrarVisibilidade="Espectador.IsAdmin" />
+                    <VideoCard Video="item.ToVideo()" MostrarVisibilidade="Espectador.IsAdmin"
+                               PodeFavoritar="Espectador.IsAuthenticated" Destino="@DestinoDaHome" />
                 }
             }
         </div>
@@ -92,6 +94,20 @@
     private bool Vazio => Buscando ? Busca.Items.Count == 0 : Inicio.Items.Count == 0;
 
     private string DestinoDaHome => Pagina is > 1 ? $"/?page={Pagina}" : "/";
+
+    private string DestinoDaBusca
+    {
+        get
+        {
+            var partes = new List<string>();
+            if (!string.IsNullOrWhiteSpace(Q))
+                partes.Add("q=" + Uri.EscapeDataString(Q));
+            if (Pagina is > 1)
+                partes.Add($"page={Pagina}");
+
+            return partes.Count == 0 ? "/" : "/?" + string.Join('&', partes);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

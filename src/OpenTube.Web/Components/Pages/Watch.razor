@@ -13,6 +13,7 @@
 @inject OpenTube.Infrastructure.Services.CaptionService Legendas
 @inject OpenTube.Infrastructure.Services.VideoChapterService Sumarios
 @inject OpenTube.Infrastructure.Services.VideoRatingService Avaliacoes
+@inject OpenTube.Infrastructure.Services.VideoFavoriteService Favoritos
 @inject Microsoft.Extensions.Options.IOptions<OpenTube.Infrastructure.Options.SecurityOptions> Seguranca
 @inject NavigationManager Navegacao
 
@@ -70,7 +71,13 @@
                     }
                 </div>
 
-                <h1 class="h4 mt-3 mb-1">@Video.Title</h1>
+                <div class="d-flex align-items-center gap-2 mt-3 mb-1">
+                    <h1 class="h4 mb-0">@Video.Title</h1>
+                    @if (Espectador.IsAuthenticated)
+                    {
+                        <EstrelaDoVideo Slug="@Video.Slug" Favorito="VideoFavorito" Destino="@DestinoDoVideo" />
+                    }
+                </div>
                 <p class="text-body-secondary small mb-3">
                     @DuracaoTexto
                     @if (Video.PublishedAt is { } publicado)
@@ -181,6 +188,11 @@
     private string DestinoDaPlaylist =>
         $"/watch/{Video!.Slug}?collection={Uri.EscapeDataString(Playlist!.Slug)}";
 
+    /// <summary>A estrela do vídeo volta para esta reprodução, com a coleção quando ela está aberta.</summary>
+    private string DestinoDoVideo => Playlist is null ? $"/watch/{Video!.Slug}" : DestinoDaPlaylist;
+
+    private bool VideoFavorito;
+
     /// <summary>Próximo vídeo da playlist, com o pedido para começar sozinho.</summary>
     private string? Proximo
     {
@@ -268,6 +280,8 @@
             ListaDeLegendas = await Legendas.ListPlayableAsync(Video.Id, Http.RequestAborted);
             Capitulos = await Sumarios.ListAsync(Video.Id, Http.RequestAborted);
             MinhaNota = await Avaliacoes.GetMineAsync(Video.Id, Espectador, Http.RequestAborted);
+            VideoFavorito = Espectador.UserId is Guid usuario
+                && await Favoritos.IsFavoriteAsync(usuario, Video.Id, Http.RequestAborted);
             MontarSegmentos();
             Logo = await Marcas.GetInfoAsync(Http.RequestAborted);
         }

@@ -6,7 +6,13 @@
 @* Cartão de vídeo usado na home, na busca e na área administrativa. *@
 
 <div class="col">
-    <a class="card h-100 text-decoration-none text-body shadow-sm" href="@Endereco">
+    <div class="card h-100 shadow-sm position-relative">
+        @if (PodeFavoritar)
+        {
+            <EstrelaDoVideo Slug="@Video.Slug" Favorito="Video.IsFavorite" Destino="@Destino"
+                            Classe="collection-favorite" SobreCapa="true" />
+        }
+        <a class="text-decoration-none text-body" href="@Endereco">
         @if (Video.Status == (int)VideoStatus.Ready)
         {
             <img class="card-img-top video-thumb" src="/api/videos/@Video.Id/thumbnail"
@@ -31,7 +37,8 @@
                 }
             </p>
         </div>
-    </a>
+        </a>
+    </div>
 </div>
 
 @code {
@@ -41,6 +48,14 @@
     /// <summary>Exibe o distintivo de visibilidade; usado apenas na área administrativa.</summary>
     [Parameter]
     public bool MostrarVisibilidade { get; set; }
+
+    /// <summary>Quem entrou pode marcar o vídeo. Visitante anônimo só vê o cartão.</summary>
+    [Parameter]
+    public bool PodeFavoritar { get; set; }
+
+    /// <summary>Página atual, para a estrela devolver a pessoa ao mesmo lugar.</summary>
+    [Parameter]
+    public string Destino { get; set; } = "/";
 
     /// <summary>
     /// Vídeo que está numa coleção abre a coleção já nele. Os demais abrem a página do vídeo.

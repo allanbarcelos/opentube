@@ -81,7 +81,11 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    v.published_at      AS PublishedAt,
                    v.created_at        AS CreatedAt,
                    v.tags              AS Tags,
-                   {ColecaoDoVideo}    AS CollectionSlug
+                   {ColecaoDoVideo}    AS CollectionSlug,
+                   EXISTS (
+                       SELECT 1 FROM video_favorites f
+                        WHERE f.video_id = v.id AND f.user_id = @Usuario
+                   )                   AS IsFavorite
               FROM videos v
              WHERE {filtro} {busca}
              {ordem}
@@ -95,10 +99,11 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
 
     /// <summary>
     /// Página inicial sem busca. Um vídeo que está numa coleção não aparece sozinho: no lugar
-    /// dele entra a coleção, uma vez. A busca continua vídeo a vídeo, mesmo dentro de coleção.
-    /// A ordem é por nome: coleções favoritas desta pessoa, as outras coleções e, por último,
-    /// os vídeos que não estão em coleção. Maiúsculas e acentos não contam, e cada número
-    /// vale pelo valor, então 2 fica antes de 10.
+    /// dele entra a coleção, uma vez. A exceção é o vídeo que esta pessoa favoritou: ele
+    /// também aparece sozinho, e o clique continua abrindo a coleção nele. A busca continua
+    /// vídeo a vídeo, mesmo dentro de coleção. A ordem é por nome: coleções favoritas, vídeos
+    /// favoritos, as outras coleções e, por último, os vídeos que não estão em coleção.
+    /// Maiúsculas e acentos não contam, e cada número vale pelo valor, então 2 fica antes de 10.
     /// </summary>
     public async Task<PagedResult<HomeCard>> HomeAsync(
         Viewer viewer,
@@ -126,7 +131,13 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
             SELECT Id, Slug, Title, Description, VideoCount, DurationSeconds, Visibility, Status,
                    PublishedAt, CreatedAt, Tags, Kind, Favorite, ThumbnailVersion, CollectionSlug
               FROM itens
-             ORDER BY Kind DESC, Favorite DESC, opentube_natural_sort_key(Title), Id
+             ORDER BY CASE
+                          WHEN Kind = 1 AND Favorite THEN 0
+                          WHEN Kind = 0 AND Favorite THEN 1
+                          WHEN Kind = 1 THEN 2
+                          ELSE 3
+                      END,
+                      opentube_natural_sort_key(Title), Id
              LIMIT @Limite OFFSET @Salto
             """, parametros, cancellationToken: cancellationToken));
 
@@ -295,7 +306,9 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    v.tags               AS Tags,
                    v.ordenacao          AS Ordenacao,
                    0                    AS Kind,
-                   false                AS Favorite,
+                   EXISTS (
+                       SELECT 1 FROM video_favorites f
+                        WHERE f.video_id = v.id AND f.user_id = @Usuario) AS Favorite,
                    0::bigint            AS ThumbnailVersion,
                    {ColecaoDoVideo}     AS CollectionSlug
               FROM visiveis v
@@ -304,6 +317,9 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                      FROM collection_videos cv
                      JOIN collections c ON c.id = cv.collection_id AND c.deleted_at IS NULL
                     WHERE cv.video_id = v.id)
+                OR EXISTS (
+                   SELECT 1 FROM video_favorites f
+                    WHERE f.video_id = v.id AND f.user_id = @Usuario)
             UNION ALL
             SELECT c.id,
                    c.slug,
@@ -349,7 +365,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
     private static VideoSummary Converter(VideoRow linha) => new(
         linha.Id, linha.Slug, linha.Title, linha.Description, linha.DurationSeconds,
         linha.Visibility, linha.Status, Momento(linha.PublishedAt), Momento(linha.CreatedAt)!.Value,
-        linha.Tags ?? [], linha.CollectionSlug);
+        linha.Tags ?? [], linha.CollectionSlug, linha.IsFavorite);
 
     private static HomeCard ConverterHome(HomeRow linha) => new(
         (HomeCardKind)linha.Kind,
@@ -393,6 +409,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         public DateTime CreatedAt { get; init; }
         public string[]? Tags { get; init; }
         public string? CollectionSlug { get; init; }
+        public bool IsFavorite { get; init; }
     }
 
     private sealed class HomeRow
