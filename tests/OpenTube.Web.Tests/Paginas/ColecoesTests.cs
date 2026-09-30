@@ -185,8 +185,88 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         using var convidado = _app.CreateBrowser();
         await EntrarAsync(convidado, Convidado);
 
-        Assert.Contains("Segurança da Informação", await convidado.GetStringAsync("/"));
+        var home = await convidado.GetStringAsync("/");
+        Assert.Contains("Treinamentos", home);
+        Assert.Contains("/collections/treinamentos", home);
+        Assert.DoesNotContain("Segurança da Informação", home);
+        Assert.Contains("Segurança da Informação", await convidado.GetStringAsync("/collections/treinamentos"));
         Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_home_agrupa_a_colecao_e_a_busca_mostra_o_video()
+    {
+        using var storage = minio.CreateStorage();
+        var primeiro = await AcervoDeTeste.PublicarAsync(postgres, storage, "Abertura", VideoVisibility.Public);
+        var segundo = await AcervoDeTeste.PublicarAsync(postgres, storage, "Encerramento", VideoVisibility.Public);
+        await AcervoDeTeste.PublicarAsync(postgres, storage, "Aviso Avulso", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Admin);
+        var colecao = await CriarColecaoAsync(cliente, "Treinamentos");
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = primeiro.Id.ToString() });
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = segundo.Id.ToString() });
+
+        using var visitante = _app.CreateBrowser();
+        var home = await visitante.GetStringAsync("/");
+
+        Assert.Contains("Treinamentos", home);
+        Assert.Contains("collection-cover", home);
+        Assert.Contains("/collections/treinamentos", home);
+        Assert.Contains("Aviso Avulso", home);
+        Assert.DoesNotContain("Abertura", home);
+        Assert.DoesNotContain("Encerramento", home);
+
+        var busca = await visitante.GetStringAsync("/?q=abertura");
+        Assert.Contains("Abertura", busca);
+        Assert.Contains($"/watch/{primeiro.Slug}", busca);
+        Assert.DoesNotContain("/collections/treinamentos", busca);
+
+        var playlist = await visitante.GetStringAsync("/collections/treinamentos");
+        var posicaoPrimeiro = playlist.IndexOf("Abertura", StringComparison.Ordinal);
+        var posicaoSegundo = playlist.IndexOf("Encerramento", StringComparison.Ordinal);
+        Assert.True(posicaoPrimeiro >= 0 && posicaoPrimeiro < posicaoSegundo);
+        Assert.Contains($"/watch/{primeiro.Slug}?collection=treinamentos", playlist);
+
+        var assistir = await visitante.GetStringAsync($"/watch/{primeiro.Slug}?collection=treinamentos");
+        Assert.Contains("data-autoplay", assistir);
+        Assert.Contains("Autoplay", assistir);
+        Assert.Contains($"/watch/{segundo.Slug}?collection=treinamentos&amp;autoplay=1", assistir);
+
+        var ultimo = await visitante.GetStringAsync($"/watch/{segundo.Slug}?collection=treinamentos");
+        Assert.DoesNotContain("data-proximo", ultimo);
+    }
+
+    [Fact]
+    public async Task Colecao_so_com_video_privado_nao_aparece_nem_abre()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Plano Interno", VideoVisibility.Private);
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Admin);
+        var colecao = await CriarColecaoAsync(cliente, "Sigilosa");
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = video.Id.ToString() });
+
+        using var visitante = _app.CreateBrowser();
+        var home = await visitante.GetStringAsync("/");
+        Assert.DoesNotContain("Sigilosa", home);
+        Assert.DoesNotContain("Plano Interno", home);
+
+        var resposta = await visitante.GetAsync("/collections/sigilosa");
+        var html = await resposta.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
+        Assert.DoesNotContain("Sigilosa", html);
+        Assert.DoesNotContain("Plano Interno", html);
     }
 
     [Fact]

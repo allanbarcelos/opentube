@@ -46,6 +46,7 @@
                            disableremoteplayback x-webkit-airplay="deny"
                            poster="/api/videos/@Video.Id/thumbnail" crossorigin="use-credentials"
                            data-manifest="/api/videos/@Video.Id/master.m3u8" data-video-id="@Video.Id"
+                           data-proximo="@Proximo"
                            data-unsupported="@T["This browser cannot play the video."]">
                         @foreach (var legenda in ListaDeLegendas)
                         {
@@ -96,6 +97,22 @@
             </div>
 
             <div class="col-lg-4">
+                @if (Playlist is not null)
+                {
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center gap-2">
+                            <a class="text-decoration-none text-truncate" href="/collections/@Playlist.Slug">@Playlist.Name</a>
+                            <div class="form-check form-switch mb-0 flex-shrink-0">
+                                <input class="form-check-input" type="checkbox" role="switch" id="autoplay-colecao"
+                                       data-autoplay checked />
+                                <label class="form-check-label" for="autoplay-colecao">@T["Autoplay"]</label>
+                            </div>
+                        </div>
+                        <ListaDaPlaylist Videos="Playlist.Videos" CollectionSlug="Playlist.Slug" Atual="Video.Id"
+                                         Classe="list-group-flush playlist-lista" />
+                    </div>
+                }
+
                 @if (Capitulos.Count > 0)
                 {
                     <div class="card mb-3" data-sumario-lista>
@@ -105,7 +122,7 @@
                             {
                                 var capitulo = Capitulos[i];
                                 <a class="list-group-item list-group-item-action d-flex gap-3 sumario-item"
-                                   href="/watch/@Video.Slug?t=@capitulo.StartSeconds" data-instante="@capitulo.StartSeconds"
+                                   href="@EnderecoDoCapitulo(capitulo.StartSeconds)" data-instante="@capitulo.StartSeconds"
                                    data-capitulo="@i">
                                     <span class="font-monospace small text-body-secondary pt-1">@VideoTimestamps.Format(TimeSpan.FromSeconds(capitulo.StartSeconds))</span>
                                     <span>@capitulo.Title</span>
@@ -145,9 +162,29 @@
     [Parameter]
     public string Slug { get; set; } = string.Empty;
 
+    [SupplyParameterFromQuery(Name = "collection")]
+    private string? ColecaoSlug { get; set; }
+
     private Viewer Espectador = Viewer.Anonymous;
 
     private Video? Video;
+
+    private PlaylistListing? Playlist;
+
+    /// <summary>Próximo vídeo da playlist, com o pedido para começar sozinho.</summary>
+    private string? Proximo
+    {
+        get
+        {
+            if (Video is null || Playlist is null)
+                return null;
+
+            var seguinte = Playlist.NextAfter(Video.Id);
+            return seguinte is null
+                ? null
+                : $"/watch/{seguinte.Slug}?collection={Uri.EscapeDataString(Playlist.Slug)}&autoplay=1";
+        }
+    }
 
     /// <summary>
     /// Identificação exibida sobre o vídeo. Não impede a gravação de tela, mas identifica a
@@ -214,6 +251,10 @@
 
         if (Video is not null)
         {
+            var playlist = await Catalogo.PlaylistAsync(Espectador, ColecaoSlug, Http.RequestAborted);
+            if (playlist is not null && playlist.Contains(Video.Id))
+                Playlist = playlist;
+
             ListaDeLegendas = await Legendas.ListPlayableAsync(Video.Id, Http.RequestAborted);
             Capitulos = await Sumarios.ListAsync(Video.Id, Http.RequestAborted);
             MinhaNota = await Avaliacoes.GetMineAsync(Video.Id, Espectador, Http.RequestAborted);
@@ -235,6 +276,14 @@
         // "não existe" e "existe mas não é para você" já seria informação sobre o acervo.
         if (Video is null)
             Navegacao.NotFound();
+    }
+
+    private string EnderecoDoCapitulo(int segundos)
+    {
+        var endereco = $"/watch/{Video!.Slug}?t={segundos}";
+        return Playlist is null
+            ? endereco
+            : endereco + "&collection=" + Uri.EscapeDataString(Playlist.Slug);
     }
 
     private void MontarSegmentos()

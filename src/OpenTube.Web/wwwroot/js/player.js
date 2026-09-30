@@ -269,6 +269,77 @@ window.openTubePlayer = (function () {
         }
     }, true);
 
+    // O interruptor da playlist, no estilo do YouTube. Ausente no armazenamento significa ligado.
+    function preferenciaAutoplay() {
+        try {
+            return localStorage.getItem('opentube.autoplay') !== '0';
+        } catch (_) {
+            return true;
+        }
+    }
+
+    function guardarAutoplay(ligado) {
+        try {
+            localStorage.setItem('opentube.autoplay', ligado ? '1' : '0');
+        } catch (_) {
+            // Sessão privada pode recusar o armazenamento; o interruptor vale só nesta página.
+        }
+    }
+
+    function prepararAutoplay() {
+        document.querySelectorAll('[data-autoplay]').forEach(function (interruptor) {
+            if (interruptor.dataset.ligado === '1') {
+                return;
+            }
+
+            interruptor.dataset.ligado = '1';
+            interruptor.checked = preferenciaAutoplay();
+            interruptor.addEventListener('change', function () {
+                guardarAutoplay(interruptor.checked);
+            });
+        });
+
+        document.querySelectorAll('video[data-proximo]').forEach(function (video) {
+            if (!video.dataset.proximo || video.dataset.autoplayPronto === '1') {
+                return;
+            }
+
+            video.dataset.autoplayPronto = '1';
+            video.addEventListener('ended', function () {
+                if (preferenciaAutoplay() && video.dataset.proximo) {
+                    window.location.assign(video.dataset.proximo);
+                }
+            });
+        });
+    }
+
+    // "?autoplay=1" pede para o vídeo seguinte começar sozinho. O navegador pode recusar
+    // sem um gesto; os controles ficam, e a pessoa carrega no play.
+    function reproduzirSePedido(video) {
+        if (new URLSearchParams(window.location.search).get('autoplay') !== '1') {
+            return;
+        }
+
+        if (video.dataset.autoplayPedido === '1') {
+            return;
+        }
+
+        video.dataset.autoplayPedido = '1';
+
+        const tocar = function () {
+            const pedido = video.play();
+            if (pedido && pedido.catch) {
+                pedido.catch(function () { });
+            }
+        };
+
+        if (video.readyState >= 3) {
+            tocar();
+        } else {
+            video.addEventListener('canplay', tocar, { once: true });
+        }
+    }
+
     // Monta os players descritos na página e encerra os que saíram dela. Roda na carga
     // inicial e a cada navegação aprimorada; montar duas vezes o mesmo vídeo não faz nada.
     function montar() {
@@ -279,6 +350,8 @@ window.openTubePlayer = (function () {
         });
 
         document.querySelectorAll('video[data-manifest]').forEach(function (video) {
+            reproduzirSePedido(video);
+
             const manifest = video.dataset.manifest;
 
             if (!video.id || video.dataset.montado === manifest) {
@@ -302,6 +375,8 @@ window.openTubePlayer = (function () {
         if (window.openTubeMarcaDagua) {
             window.openTubeMarcaDagua.montar();
         }
+
+        prepararAutoplay();
     }
 
     if (document.readyState === 'loading') {

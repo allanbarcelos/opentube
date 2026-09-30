@@ -1,0 +1,44 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@* Vídeos da coleção, na ordem da playlist. Cada um abre já dentro dela, para o seguinte poder começar sozinho. *@
+
+<div class="list-group @Classe">
+    @foreach (var video in Videos)
+    {
+        var atual = video.Id == Atual;
+        <a class="list-group-item list-group-item-action d-flex gap-3 align-items-center @(atual ? "active" : "")"
+           href="/watch/@video.Slug?collection=@Uri.EscapeDataString(CollectionSlug)"
+           aria-current="@(atual ? "true" : null)">
+            @if (video.Status == (int)VideoStatus.Ready)
+            {
+                <img class="playlist-thumb rounded" src="/api/videos/@video.Id/thumbnail" alt="" />
+            }
+            else
+            {
+                <span class="playlist-thumb rounded d-inline-block"></span>
+            }
+            <span class="min-w-0">
+                <span class="d-block text-truncate">@video.Title</span>
+                <span class="small @(atual ? "" : "text-body-secondary")">@video.DurationLabel</span>
+            </span>
+        </a>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<VideoSummary> Videos { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public string CollectionSlug { get; set; } = string.Empty;
+
+    /// <summary>Vídeo que está a tocar, para o destacar na lista.</summary>
+    [Parameter]
+    public Guid? Atual { get; set; }
+
+    [Parameter]
+    public string? Classe { get; set; }
+}

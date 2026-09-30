@@ -38,9 +38,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
 
         // O filtro de acesso é aplicado na consulta, e não depois: trazer tudo e esconder na
         // interface deixaria títulos restritos passarem pela contagem e pela paginação.
-        var filtro = viewer.IsAdmin
-            ? "v.deleted_at IS NULL"
-            : $"v.deleted_at IS NULL AND v.status = @Pronto AND {GrantSql.VideoVisivel}";
+        var filtro = FiltroDe(viewer);
 
         var busca = termo is null
             ? string.Empty
@@ -62,17 +60,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                        v.id DESC
               """;
 
-        var parametros = new
-        {
-            Pronto = (int)VideoStatus.Ready,
-            Termo = termo,
-            Limite = pageSize,
-            Salto = (page - 1) * pageSize,
-            Agora = clock.GetUtcNow(),
-            Email = viewer.Email,
-            Dominio = viewer.EmailDomain,
-            ConcessaoDeLink = viewer.LinkGrantId
-        };
+        var parametros = Parametros(viewer, termo, page, pageSize);
 
         var total = await conexao.ExecuteScalarAsync<int>(new CommandDefinition(
             $"SELECT COUNT(*) FROM videos v WHERE {filtro} {busca}", parametros, cancellationToken: cancellationToken));
@@ -104,6 +92,113 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         return new PagedResult<VideoSummary>(itens, total, page, pageSize);
     }
 
+    /// <summary>
+    /// Página inicial sem busca. Um vídeo que está numa coleção não aparece sozinho: no lugar
+    /// dele entra a coleção, uma vez. A busca continua vídeo a vídeo, mesmo dentro de coleção.
+    /// </summary>
+    public async Task<PagedResult<HomeCard>> HomeAsync(
+        Viewer viewer,
+        int page = 1,
+        int pageSize = DefaultPageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(viewer);
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var conexao = db.Database.GetDbConnection();
+        var itens = ItensDaHome(FiltroDe(viewer));
+        var parametros = Parametros(viewer, null, page, pageSize);
+
+        var total = await conexao.ExecuteScalarAsync<int>(new CommandDefinition(
+            $"{itens} SELECT COUNT(*)::int FROM itens", parametros, cancellationToken: cancellationToken));
+
+        if (total == 0)
+            return PagedResult<HomeCard>.Empty(pageSize);
+
+        var linhas = await conexao.QueryAsync<HomeRow>(new CommandDefinition($"""
+            {itens}
+            SELECT Id, Slug, Title, Description, VideoCount, DurationSeconds, Visibility, Status,
+                   PublishedAt, CreatedAt, Tags, Kind
+              FROM itens
+             ORDER BY Ordenacao DESC, Id DESC
+             LIMIT @Limite OFFSET @Salto
+            """, parametros, cancellationToken: cancellationToken));
+
+        return new PagedResult<HomeCard>(linhas.Select(ConverterHome).ToList(), total, page, pageSize);
+    }
+
+    /// <summary>
+    /// Vídeos de uma coleção na ordem da playlist. Devolve nulo quando a coleção não existe,
+    /// está excluída, ou não tem nenhum vídeo que este espectador possa ver: o nome também
+    /// não pode vazar.
+    /// </summary>
+    public async Task<PlaylistListing?> PlaylistAsync(
+        Viewer viewer, string? slug, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(viewer);
+
+        if (string.IsNullOrWhiteSpace(slug))
+            return null;
+
+        var conexao = db.Database.GetDbConnection();
+        var parametros = Parametros(viewer, null, 1, 1);
+        var filtro = FiltroDe(viewer);
+
+        var colecao = await conexao.QuerySingleOrDefaultAsync<CollectionHead>(new CommandDefinition("""
+            SELECT c.id          AS Id,
+                   c.slug        AS Slug,
+                   c.name        AS Name,
+                   c.description AS Description
+              FROM collections c
+             WHERE c.slug = @Slug AND c.deleted_at IS NULL
+            """, new
+        {
+            Slug = slug.Trim(),
+            parametros.Pronto,
+            parametros.Agora,
+            parametros.Email,
+            parametros.Dominio,
+            parametros.ConcessaoDeLink
+        }, cancellationToken: cancellationToken));
+
+        if (colecao is null)
+            return null;
+
+        var linhas = await conexao.QueryAsync<VideoRow>(new CommandDefinition($"""
+            SELECT v.id                AS Id,
+                   v.slug              AS Slug,
+                   v.title             AS Title,
+                   v.description       AS Description,
+                   v.duration_seconds  AS DurationSeconds,
+                   v.visibility        AS Visibility,
+                   v.status            AS Status,
+                   v.published_at      AS PublishedAt,
+                   v.created_at        AS CreatedAt,
+                   v.tags              AS Tags
+              FROM collection_videos cv
+              JOIN videos v ON v.id = cv.video_id
+             WHERE cv.collection_id = @Colecao
+               AND {filtro}
+             ORDER BY cv.position, v.id
+            """, new
+        {
+            Colecao = colecao.Id,
+            parametros.Pronto,
+            parametros.Agora,
+            parametros.Email,
+            parametros.Dominio,
+            parametros.ConcessaoDeLink
+        }, cancellationToken: cancellationToken));
+
+        var videos = linhas.Select(Converter).ToList();
+
+        return videos.Count == 0
+            ? null
+            : new PlaylistListing(colecao.Slug, colecao.Name, colecao.Description, videos);
+    }
+
     /// <summary>Busca um vídeo pelo endereço legível, respeitando o acesso do espectador.</summary>
     public async Task<Video?> FindBySlugAsync(Viewer viewer, string slug, CancellationToken cancellationToken = default)
     {
@@ -122,9 +217,91 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         return resultado.Allowed ? video : null;
     }
 
+    /// <summary>
+    /// Vídeos que o espectador pode ver. Coleção excluída não conta: o vídeo volta a aparecer
+    /// sozinho, porque o agrupamento deixou de existir.
+    /// </summary>
+    private static string ItensDaHome(string filtro) => $"""
+        WITH visiveis AS (
+            SELECT v.id,
+                   v.slug,
+                   v.title,
+                   v.description,
+                   v.duration_seconds,
+                   v.visibility,
+                   v.status,
+                   v.published_at,
+                   v.created_at,
+                   v.tags,
+                   COALESCE(v.published_at, v.created_at) AS ordenacao
+              FROM videos v
+             WHERE {filtro}
+        ),
+        itens AS (
+            SELECT v.id                 AS Id,
+                   v.slug               AS Slug,
+                   v.title              AS Title,
+                   v.description        AS Description,
+                   1                    AS VideoCount,
+                   v.duration_seconds   AS DurationSeconds,
+                   v.visibility         AS Visibility,
+                   v.status             AS Status,
+                   v.published_at       AS PublishedAt,
+                   v.created_at         AS CreatedAt,
+                   v.tags               AS Tags,
+                   v.ordenacao          AS Ordenacao,
+                   0                    AS Kind
+              FROM visiveis v
+             WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM collection_videos cv
+                     JOIN collections c ON c.id = cv.collection_id AND c.deleted_at IS NULL
+                    WHERE cv.video_id = v.id)
+            UNION ALL
+            SELECT c.id,
+                   c.slug,
+                   c.name,
+                   c.description,
+                   COUNT(*)::int,
+                   COALESCE(SUM(v.duration_seconds), 0),
+                   0,
+                   0,
+                   MAX(v.ordenacao),
+                   MAX(v.ordenacao),
+                   ARRAY[]::text[],
+                   MAX(v.ordenacao),
+                   1
+              FROM collections c
+              JOIN collection_videos cv ON cv.collection_id = c.id
+              JOIN visiveis v ON v.id = cv.video_id
+             WHERE c.deleted_at IS NULL
+             GROUP BY c.id, c.slug, c.name, c.description
+        )
+        """;
+
+    private static string FiltroDe(Viewer viewer) => viewer.IsAdmin
+        ? "v.deleted_at IS NULL"
+        : $"v.deleted_at IS NULL AND v.status = @Pronto AND {GrantSql.VideoVisivel}";
+
+    private CatalogParameters Parametros(Viewer viewer, string? termo, int page, int pageSize) => new(
+        (int)VideoStatus.Ready,
+        termo,
+        pageSize,
+        (page - 1) * pageSize,
+        clock.GetUtcNow(),
+        viewer.Email,
+        viewer.EmailDomain,
+        viewer.LinkGrantId);
+
     private static VideoSummary Converter(VideoRow linha) => new(
         linha.Id, linha.Slug, linha.Title, linha.Description, linha.DurationSeconds,
         linha.Visibility, linha.Status, Momento(linha.PublishedAt), Momento(linha.CreatedAt)!.Value,
+        linha.Tags ?? []);
+
+    private static HomeCard ConverterHome(HomeRow linha) => new(
+        (HomeCardKind)linha.Kind,
+        linha.Id, linha.Slug, linha.Title, linha.Description, linha.VideoCount, linha.DurationSeconds,
+        linha.Visibility, linha.Status, Momento(linha.PublishedAt), Momento(linha.CreatedAt) ?? DateTimeOffset.UnixEpoch,
         linha.Tags ?? []);
 
     /// <summary>
@@ -148,4 +325,38 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         public DateTime CreatedAt { get; init; }
         public string[]? Tags { get; init; }
     }
+
+    private sealed class HomeRow
+    {
+        public Guid Id { get; init; }
+        public string Slug { get; init; } = string.Empty;
+        public string Title { get; init; } = string.Empty;
+        public string? Description { get; init; }
+        public int VideoCount { get; init; }
+        public double DurationSeconds { get; init; }
+        public int Visibility { get; init; }
+        public int Status { get; init; }
+        public DateTime? PublishedAt { get; init; }
+        public DateTime CreatedAt { get; init; }
+        public string[]? Tags { get; init; }
+        public int Kind { get; init; }
+    }
+
+    private sealed class CollectionHead
+    {
+        public Guid Id { get; init; }
+        public string Slug { get; init; } = string.Empty;
+        public string Name { get; init; } = string.Empty;
+        public string? Description { get; init; }
+    }
+
+    private sealed record CatalogParameters(
+        int Pronto,
+        string? Termo,
+        int Limite,
+        int Salto,
+        DateTimeOffset Agora,
+        string? Email,
+        string? Dominio,
+        Guid? ConcessaoDeLink);
 }

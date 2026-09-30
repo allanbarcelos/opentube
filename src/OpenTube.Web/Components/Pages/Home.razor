@@ -14,17 +14,17 @@
     @if (!string.IsNullOrWhiteSpace(Q))
     {
         <h1 class="h4 mb-1">@T.Format("Results for “{0}”", Q)</h1>
-        <p class="text-body-secondary">@T.Format(Resultado.Total == 1 ? "{0} video found" : "{0} videos found", Resultado.Total)</p>
+        <p class="text-body-secondary">@T.Format(Busca.Total == 1 ? "{0} video found" : "{0} videos found", Busca.Total)</p>
     }
     else
     {
         <h1 class="h4 mb-3">@T["Videos"]</h1>
     }
 
-    @if (Resultado.Items.Count == 0)
+    @if (Vazio)
     {
         <div class="alert alert-light border text-center py-5">
-            @if (!string.IsNullOrWhiteSpace(Q))
+            @if (Buscando)
             {
                 <p class="mb-1">@T["No videos match your search."]</p>
                 <a href="/">@T["See all videos"]</a>
@@ -40,16 +40,34 @@
             }
         </div>
     }
-    else
+    else if (Buscando)
     {
         <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xxl-4 g-3">
-            @foreach (var video in Resultado.Items)
+            @foreach (var video in Busca.Items)
             {
                 <VideoCard Video="video" MostrarVisibilidade="Espectador.IsAdmin" />
             }
         </div>
 
-        <Paginacao Resultado="Resultado" Termo="@Q" />
+        <Paginacao Resultado="Busca" Termo="@Q" />
+    }
+    else
+    {
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xxl-4 g-3">
+            @foreach (var item in Inicio.Items)
+            {
+                @if (item.Kind == HomeCardKind.Collection)
+                {
+                    <CollectionCard Card="item" />
+                }
+                else
+                {
+                    <VideoCard Video="item.ToVideo()" MostrarVisibilidade="Espectador.IsAdmin" />
+                }
+            }
+        </div>
+
+        <Paginacao Resultado="Inicio" />
     }
 </div>
 
@@ -65,11 +83,23 @@
 
     private Viewer Espectador = Viewer.Anonymous;
 
-    private PagedResult<VideoSummary> Resultado = PagedResult<VideoSummary>.Empty(VideoCatalog.DefaultPageSize);
+    private PagedResult<VideoSummary> Busca = PagedResult<VideoSummary>.Empty(VideoCatalog.DefaultPageSize);
+
+    private PagedResult<HomeCard> Inicio = PagedResult<HomeCard>.Empty(VideoCatalog.DefaultPageSize);
+
+    private bool Buscando => !string.IsNullOrWhiteSpace(Q);
+
+    private bool Vazio => Buscando ? Busca.Items.Count == 0 : Inicio.Items.Count == 0;
 
     protected override async Task OnInitializedAsync()
     {
         Espectador = await Espectadores.GetAsync(Http.RequestAborted);
-        Resultado = await Catalogo.BrowseAsync(Espectador, Q, Pagina ?? 1, cancellationToken: Http.RequestAborted);
+
+        // A busca mostra o vídeo mesmo quando ele está numa coleção. Sem busca, a coleção
+        // ocupa o lugar dos vídeos dela.
+        if (Buscando)
+            Busca = await Catalogo.BrowseAsync(Espectador, Q, Pagina ?? 1, cancellationToken: Http.RequestAborted);
+        else
+            Inicio = await Catalogo.HomeAsync(Espectador, Pagina ?? 1, cancellationToken: Http.RequestAborted);
     }
 }

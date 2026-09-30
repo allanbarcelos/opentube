@@ -45,7 +45,19 @@ public sealed record VideoSummary(
 /// <param name="Total">Total de itens que atendem ao filtro.</param>
 /// <param name="Page">Página atual, começando em 1.</param>
 /// <param name="PageSize">Tamanho da página.</param>
-public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize)
+/// <summary>O que a paginação precisa, sem depender do tipo de cada item.</summary>
+public interface IPaged
+{
+    int Page { get; }
+
+    int PageCount { get; }
+
+    bool HasPrevious { get; }
+
+    bool HasNext { get; }
+}
+
+public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize) : IPaged
 {
     public int PageCount => PageSize <= 0 ? 0 : (int)Math.Ceiling(Total / (double)PageSize);
 
