@@ -133,11 +133,13 @@
                                           maxlength="10000">@Video.Description</textarea>
                             </div>
 
-                            <div class="mb-3">
+                            @* O etiquetas.js troca o campo por badges; o valor segue separado por vírgula. *@
+                            <div class="mb-3" data-etiquetas data-limite="30"
+                                 data-remover="@T["Remove the tag {0}"]" data-placeholder="@T["Type a tag and press Enter or comma"]">
                                 <label class="form-label" for="etiquetas">@T["Tags"]</label>
-                                <input class="form-control" id="etiquetas" name="etiquetas"
-                                       value="@string.Join(", ", Video.Tags)" />
-                                <div class="form-text">@T["Separate with commas. They are included in search."]</div>
+                                <input class="form-control" id="etiquetas" name="etiquetas" data-etiquetas-valor
+                                       aria-describedby="ajuda-etiquetas" value="@string.Join(", ", Video.Tags)" />
+                                <div class="form-text" id="ajuda-etiquetas">@T["Enter, comma or semicolon adds the tag; up to 30. They are included in search."]</div>
                             </div>
 
                             <fieldset class="mb-3">

@@ -1013,3 +1013,62 @@
             "aviso aviso";
     }
 }
+
+/* Campo de etiquetas (etiquetas.js): os badges e a digitação dividem a mesma caixa. */
+.caixa-etiquetas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: calc(1.5em + 0.75rem + 2px);
+    cursor: text;
+}
+
+.caixa-etiquetas:focus-within {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.caixa-etiquetas-lista {
+    display: contents;
+}
+
+.caixa-etiquetas-digitacao {
+    flex: 1 1 8rem;
+    min-width: 8rem;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: inherit;
+}
+
+.caixa-etiquetas.cheia .caixa-etiquetas-digitacao {
+    display: none;
+}
+
+.etiqueta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.3rem 0.35rem 0.3rem 0.65rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.etiqueta-remover {
+    display: inline-flex;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--bs-secondary-color);
+    line-height: 1;
+}
+
+.etiqueta-remover:hover,
+.etiqueta-remover:focus-visible {
+    background: var(--bs-secondary-bg);
+    color: var(--bs-danger);
+    outline: none;
+}
