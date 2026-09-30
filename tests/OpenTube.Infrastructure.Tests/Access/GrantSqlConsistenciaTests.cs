@@ -156,7 +156,7 @@ public class GrantSqlConsistenciaTests(PostgresFixture postgres) : IAsyncLifetim
         await using var db = postgres.CreateContext();
 
         var colecao = Collection.Create("Treinamentos", $"tre-{Guid.CreateVersion7():n}"[..20], Admin, Agora);
-        colecao.Add(videoId);
+        colecao.Add(videoId, Agora);
 
         db.Collections.Add(colecao);
         await db.SaveChangesAsync();

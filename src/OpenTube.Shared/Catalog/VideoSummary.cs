@@ -18,6 +18,7 @@ namespace OpenTube.Shared.Catalog;
 /// <param name="Tags">Etiquetas.</param>
 /// <param name="CollectionSlug">Coleção em que o vídeo está, quando o clique deve abri-la nele.</param>
 /// <param name="IsFavorite">Se esta pessoa marcou o vídeo.</param>
+/// <param name="IsNew">Se o vídeo chegou numa coleção depois desta pessoa e ela ainda não o abriu.</param>
 public sealed record VideoSummary(
     Guid Id,
     string Slug,
@@ -30,7 +31,8 @@ public sealed record VideoSummary(
     DateTimeOffset CreatedAt,
     IReadOnlyList<string> Tags,
     string? CollectionSlug = null,
-    bool IsFavorite = false)
+    bool IsFavorite = false,
+    bool IsNew = false)
 {
     /// <summary>Duração no formato <c>h:mm:ss</c>, ou <c>m:ss</c> em vídeos curtos.</summary>
     public string DurationLabel

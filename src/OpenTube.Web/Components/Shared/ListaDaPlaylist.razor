@@ -21,7 +21,13 @@
                 <span class="playlist-thumb rounded d-inline-block"></span>
             }
             <span class="min-w-0">
-                <span class="d-block text-truncate">@video.Title</span>
+                <span class="d-block text-truncate">
+                    @video.Title
+                    @if (video.IsNew)
+                    {
+                        <span class="badge text-bg-primary video-new ms-1">@T["New"]</span>
+                    }
+                </span>
                 <span class="small @(atual ? "" : "text-body-secondary")">
                     @video.DurationLabel
                     <span class="mx-1" aria-hidden="true">&middot;</span>

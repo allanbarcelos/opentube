@@ -131,7 +131,7 @@ public class CollectionThumbnailServiceTests(PostgresFixture postgres, MinioFixt
             video.ChangeVisibility(visibilidade);
 
         var colecao = Collection.Create(nome, $"c-{videoId:n}", Admin, Agora);
-        colecao.Add(video.Id);
+        colecao.Add(video.Id, Agora);
 
         db.Videos.Add(video);
         db.Collections.Add(colecao);

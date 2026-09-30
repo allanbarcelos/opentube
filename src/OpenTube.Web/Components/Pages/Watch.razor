@@ -14,6 +14,7 @@
 @inject OpenTube.Infrastructure.Services.VideoChapterService Sumarios
 @inject OpenTube.Infrastructure.Services.VideoRatingService Avaliacoes
 @inject OpenTube.Infrastructure.Services.VideoFavoriteService Favoritos
+@inject OpenTube.Infrastructure.Services.CollectionNoticeService Avisos
 @inject Microsoft.Extensions.Options.IOptions<OpenTube.Infrastructure.Options.SecurityOptions> Seguranca
 @inject NavigationManager Navegacao
 
@@ -273,6 +274,13 @@
 
         if (Video is not null)
         {
+            // Abrir o vídeo é o clique que apaga o distintivo. A playlist já sai sem ele.
+            if (Espectador.UserId is Guid usuario)
+            {
+                await Avisos.MarkSeenAsync(usuario, Video.Id, Http.RequestAborted);
+                VideoFavorito = await Favoritos.IsFavoriteAsync(usuario, Video.Id, Http.RequestAborted);
+            }
+
             var playlist = await Catalogo.PlaylistAsync(Espectador, ColecaoSlug, Http.RequestAborted);
             if (playlist is not null && playlist.Contains(Video.Id))
                 Playlist = playlist;
@@ -280,8 +288,6 @@
             ListaDeLegendas = await Legendas.ListPlayableAsync(Video.Id, Http.RequestAborted);
             Capitulos = await Sumarios.ListAsync(Video.Id, Http.RequestAborted);
             MinhaNota = await Avaliacoes.GetMineAsync(Video.Id, Espectador, Http.RequestAborted);
-            VideoFavorito = Espectador.UserId is Guid usuario
-                && await Favoritos.IsFavoriteAsync(usuario, Video.Id, Http.RequestAborted);
             MontarSegmentos();
             Logo = await Marcas.GetInfoAsync(Http.RequestAborted);
         }

@@ -16,6 +16,10 @@
     {
         <div class="d-flex align-items-center gap-2 mb-1">
             <h1 class="h4 mb-0">@Lista.Name</h1>
+            @if (Lista.Videos.Any(v => v.IsNew))
+            {
+                <span class="badge text-bg-primary video-new">@T["New"]</span>
+            }
             @if (Espectador.IsAuthenticated)
             {
                 <EstrelaDaColecao Slug="@Lista.Slug" Favorita="Lista.IsFavorite" Destino="@($"/collections/{Lista.Slug}")" />

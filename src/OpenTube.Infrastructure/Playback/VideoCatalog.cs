@@ -85,7 +85,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    EXISTS (
                        SELECT 1 FROM video_favorites f
                         WHERE f.video_id = v.id AND f.user_id = @Usuario
-                   )                   AS IsFavorite
+                   )                   AS IsFavorite,
+                   {NovidadeDoVideo}   AS IsNew
               FROM videos v
              WHERE {filtro} {busca}
              {ordem}
@@ -130,7 +131,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         var linhas = await conexao.QueryAsync<HomeRow>(new CommandDefinition($"""
             {itens}
             SELECT Id, Slug, Title, Description, VideoCount, DurationSeconds, Visibility, Status,
-                   PublishedAt, CreatedAt, Tags, Kind, Favorite, ThumbnailVersion, CollectionSlug
+                   PublishedAt, CreatedAt, Tags, Kind, Favorite, ThumbnailVersion, CollectionSlug, HasNew
               FROM itens
              ORDER BY CASE
                           WHEN Kind = 1 AND Favorite THEN 0
@@ -197,7 +198,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    v.status            AS Status,
                    v.published_at      AS PublishedAt,
                    v.created_at        AS CreatedAt,
-                   v.tags              AS Tags
+                   v.tags              AS Tags,
+                   {NovidadeNestaColecao} AS IsNew
               FROM collection_videos cv
               JOIN videos v ON v.id = cv.video_id
              WHERE cv.collection_id = @Colecao
@@ -298,7 +300,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                        SELECT 1 FROM video_favorites f
                         WHERE f.video_id = v.id AND f.user_id = @Usuario) AS Favorite,
                    0::bigint            AS ThumbnailVersion,
-                   {ColecaoDoVideo}     AS CollectionSlug
+                   {ColecaoDoVideo}     AS CollectionSlug,
+                   {NovidadeDoVideo}    AS HasNew
               FROM visiveis v
             """;
 
@@ -316,7 +319,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
             : string.Empty;
 
         var colecoes = agrupar
-            ? """
+            ? $"""
               UNION ALL
               SELECT c.id,
                      c.slug,
@@ -335,7 +338,8 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                          SELECT 1 FROM collection_favorites f
                           WHERE f.collection_id = c.id AND f.user_id = @Usuario),
                      c.thumbnail_version,
-                     NULL::text
+                     NULL::text,
+                     {NovidadeDaColecao}
                 FROM collections c
                 JOIN collection_videos cv ON cv.collection_id = c.id
                 JOIN visiveis v ON v.id = cv.video_id
@@ -386,13 +390,13 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
     private static VideoSummary Converter(VideoRow linha) => new(
         linha.Id, linha.Slug, linha.Title, linha.Description, linha.DurationSeconds,
         linha.Visibility, linha.Status, Momento(linha.PublishedAt), Momento(linha.CreatedAt)!.Value,
-        linha.Tags ?? [], linha.CollectionSlug, linha.IsFavorite);
+        linha.Tags ?? [], linha.CollectionSlug, linha.IsFavorite, linha.IsNew);
 
     private static HomeCard ConverterHome(HomeRow linha) => new(
         (HomeCardKind)linha.Kind,
         linha.Id, linha.Slug, linha.Title, linha.Description, linha.VideoCount, linha.DurationSeconds,
         linha.Visibility, linha.Status, Momento(linha.PublishedAt), Momento(linha.CreatedAt) ?? DateTimeOffset.UnixEpoch,
-        linha.Tags ?? [], linha.Favorite, linha.ThumbnailVersion, linha.CollectionSlug);
+        linha.Tags ?? [], linha.Favorite, linha.ThumbnailVersion, linha.CollectionSlug, linha.HasNew);
 
     /// <summary>
     /// Coleção não excluída em que o vídeo está. Se houver mais de uma, vale a primeira pelo
@@ -406,6 +410,55 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
              WHERE cv.video_id = v.id
              ORDER BY opentube_natural_sort_key(c.name), c.id
              LIMIT 1
+        )
+        """;
+
+    /// <summary>
+    /// O vídeo chegou numa coleção depois que esta pessoa foi criada, e ela ainda não o abriu.
+    /// </summary>
+    private const string NovidadeDoVideo = """
+        EXISTS (
+            SELECT 1
+              FROM collection_videos cvn
+              JOIN collections cn ON cn.id = cvn.collection_id AND cn.deleted_at IS NULL
+              JOIN users un ON un.id = @Usuario
+             WHERE cvn.video_id = v.id
+               AND cvn.added_at > un.created_at
+               AND NOT EXISTS (
+                   SELECT 1 FROM collection_video_seen sn
+                    WHERE sn.user_id = @Usuario
+                      AND sn.collection_id = cvn.collection_id
+                      AND sn.video_id = cvn.video_id)
+        )
+        """;
+
+    /// <summary>A coleção tem algum vídeo visível que chegou depois desta pessoa, ainda não aberto.</summary>
+    private const string NovidadeDaColecao = """
+        EXISTS (
+            SELECT 1
+              FROM collection_videos cvn
+              JOIN visiveis vn ON vn.id = cvn.video_id
+              JOIN users un ON un.id = @Usuario
+             WHERE cvn.collection_id = c.id
+               AND cvn.added_at > un.created_at
+               AND NOT EXISTS (
+                   SELECT 1 FROM collection_video_seen sn
+                    WHERE sn.user_id = @Usuario
+                      AND sn.collection_id = cvn.collection_id
+                      AND sn.video_id = cvn.video_id)
+        )
+        """;
+
+    /// <summary>Este item da playlist é novo para a pessoa e ela ainda não o abriu.</summary>
+    private const string NovidadeNestaColecao = """
+        (
+            @Usuario IS NOT NULL
+            AND cv.added_at > (SELECT u.created_at FROM users u WHERE u.id = @Usuario)
+            AND NOT EXISTS (
+                SELECT 1 FROM collection_video_seen sn
+                 WHERE sn.user_id = @Usuario
+                   AND sn.collection_id = cv.collection_id
+                   AND sn.video_id = cv.video_id)
         )
         """;
 
@@ -431,6 +484,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         public string[]? Tags { get; init; }
         public string? CollectionSlug { get; init; }
         public bool IsFavorite { get; init; }
+        public bool IsNew { get; init; }
     }
 
     private sealed class HomeRow
@@ -450,6 +504,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         public bool Favorite { get; init; }
         public long ThumbnailVersion { get; init; }
         public string? CollectionSlug { get; init; }
+        public bool HasNew { get; init; }
     }
 
     private sealed class CollectionHead

@@ -12,6 +12,10 @@
             <EstrelaDaColecao Slug="@Card.Slug" Favorita="Card.IsFavorite" Destino="@Destino"
                               Classe="collection-favorite" SobreCapa="true" />
         }
+        @if (Card.HasNew)
+        {
+            <span class="badge text-bg-primary video-new video-new-capa">@T["New"]</span>
+        }
         <a class="text-decoration-none text-body" href="/collections/@Card.Slug">
             @if (Card.ThumbnailVersion > 0)
             {

@@ -413,7 +413,7 @@ internal sealed class Gerador(
         var colecao = Collection.Create(plano.Nome, plano.Slug, admin.Id, agora, plano.Descricao);
 
         foreach (var slug in plano.Videos)
-            colecao.Add(videos.First(v => v.Slug == slug).Id);
+            colecao.Add(videos.First(v => v.Slug == slug).Id, agora);
 
         if (midia.CapasDeColecao.TryGetValue(plano.Slug, out var caminho))
         {

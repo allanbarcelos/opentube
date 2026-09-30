@@ -300,6 +300,84 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
     }
 
     [Fact]
+    public async Task Colecao_ganha_badge_ate_cada_video_novo_ser_aberto()
+    {
+        using var storage = minio.CreateStorage();
+        var antigo = await AcervoDeTeste.PublicarAsync(postgres, storage, "Antigo", VideoVisibility.Public);
+        var novo = await AcervoDeTeste.PublicarAsync(postgres, storage, "Novo", VideoVisibility.Public);
+        var outro = await AcervoDeTeste.PublicarAsync(postgres, storage, "Outro", VideoVisibility.Public);
+
+        using var admin = _app.CreateBrowser();
+        await EntrarAsync(admin, Admin);
+        var alfa = await CriarColecaoAsync(admin, "Alfa");
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, $"/admin/collections/{alfa}", $"/admin/collections/{alfa}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = antigo.Id.ToString() });
+
+        await using (var db = postgres.CreateContext())
+        {
+            await db.Database.ExecuteSqlRawAsync("UPDATE collection_videos SET added_at = TIMESTAMPTZ '1970-01-01+00'");
+            db.Users.Add(OpenTube.Domain.Entities.User.Create(
+                OpenTube.Domain.ValueObjects.EmailAddress.Parse(Convidado), DateTimeOffset.UtcNow));
+            await db.SaveChangesAsync();
+        }
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, $"/admin/collections/{alfa}", $"/admin/collections/{alfa}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = novo.Id.ToString() });
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, $"/admin/collections/{alfa}", $"/admin/collections/{alfa}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = outro.Id.ToString() });
+
+        using var visitante = _app.CreateBrowser();
+        Assert.DoesNotContain("video-new", await visitante.GetStringAsync("/"));
+
+        var home = await admin.GetStringAsync("/");
+        Assert.Contains("video-new", home);
+        Assert.Contains("Alfa", home);
+        Assert.DoesNotContain("Novo", home);
+        Assert.DoesNotContain("Outro", home);
+
+        var playlist = await admin.GetStringAsync("/collections/alfa");
+        Assert.Contains("video-new", playlist);
+        Assert.Contains("video-new", await admin.GetStringAsync("/collections/alfa"));
+
+        await admin.GetAsync($"/watch/{antigo.Slug}?collection=alfa");
+        Assert.Contains("video-new", await admin.GetStringAsync("/"));
+
+        await admin.GetAsync($"/watch/{novo.Slug}?collection=alfa");
+        var depoisDoPrimeiro = await admin.GetStringAsync("/collections/alfa");
+        var posicaoNovo = depoisDoPrimeiro.IndexOf("Novo", StringComparison.Ordinal);
+        var posicaoOutro = depoisDoPrimeiro.IndexOf("Outro", StringComparison.Ordinal);
+        Assert.True(posicaoNovo >= 0 && posicaoNovo < posicaoOutro);
+        Assert.DoesNotContain("video-new", depoisDoPrimeiro[posicaoNovo..posicaoOutro]);
+        Assert.Contains("video-new", depoisDoPrimeiro[posicaoOutro..]);
+        Assert.Contains("video-new", await admin.GetStringAsync("/"));
+
+        await admin.GetAsync($"/watch/{outro.Slug}?collection=alfa");
+        Assert.DoesNotContain("video-new", await admin.GetStringAsync("/"));
+        Assert.DoesNotContain("video-new", await admin.GetStringAsync("/collections/alfa"));
+
+        using var convidado = _app.CreateBrowser();
+        await EntrarAsync(convidado, Convidado);
+        Assert.Contains("video-new", await convidado.GetStringAsync("/"));
+        Assert.Contains("video-new", await convidado.GetStringAsync("/collections/alfa"));
+
+        await using (var db = postgres.CreateContext())
+        {
+            db.Users.Add(OpenTube.Domain.Entities.User.Create(
+                OpenTube.Domain.ValueObjects.EmailAddress.Parse("tarde@empresa.com"),
+                DateTimeOffset.UtcNow.AddHours(1)));
+            await db.SaveChangesAsync();
+        }
+
+        using var tardio = _app.CreateBrowser();
+        await EntrarAsync(tardio, "tarde@empresa.com");
+        Assert.Contains("Alfa", await tardio.GetStringAsync("/"));
+        Assert.DoesNotContain("video-new", await tardio.GetStringAsync("/"));
+    }
+
+    [Fact]
     public async Task A_home_poe_colecoes_por_nome_e_o_favorito_na_frente()
     {
         using var storage = minio.CreateStorage();

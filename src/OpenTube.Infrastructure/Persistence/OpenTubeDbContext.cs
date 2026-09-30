@@ -21,6 +21,7 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<Collection> Collections => Set<Collection>();
     public DbSet<CollectionVideo> CollectionVideos => Set<CollectionVideo>();
     public DbSet<CollectionFavorite> CollectionFavorites => Set<CollectionFavorite>();
+    public DbSet<CollectionVideoSeen> CollectionVideoSeens => Set<CollectionVideoSeen>();
     public DbSet<VideoFavorite> VideoFavorites => Set<VideoFavorite>();
     public DbSet<PlaybackSession> PlaybackSessions => Set<PlaybackSession>();
     public DbSet<PlaybackInterval> PlaybackIntervals => Set<PlaybackInterval>();

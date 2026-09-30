@@ -76,27 +76,34 @@ public class Collection
         ThumbnailVersion = 0;
     }
 
-    /// <summary>Acrescenta um vídeo ao fim da coleção, sem duplicar.</summary>
-    public void Add(Guid videoId)
+    /// <summary>Acrescenta um vídeo ao fim da coleção, sem duplicar. A hora marca a chegada.</summary>
+    public void Add(Guid videoId, DateTimeOffset addedAt)
     {
         if (_videos.Any(v => v.VideoId == videoId))
             return;
 
-        _videos.Add(CollectionVideo.Create(Id, videoId, ProximaPosicao()));
+        _videos.Add(CollectionVideo.Create(Id, videoId, ProximaPosicao(), addedAt));
     }
 
     public void Remove(Guid videoId) => _videos.RemoveAll(v => v.VideoId == videoId);
 
-    /// <summary>Redefine o conteúdo da coleção na ordem informada.</summary>
-    public void Replace(IEnumerable<Guid> videoIds)
+    /// <summary>
+    /// Redefine o conteúdo da coleção na ordem informada. Quem já estava nela guarda a hora
+    /// em que chegou; só o vídeo que entra agora fica com a hora desta redefinição.
+    /// </summary>
+    public void Replace(IEnumerable<Guid> videoIds, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(videoIds);
 
+        var anteriores = _videos.ToDictionary(v => v.VideoId, v => v.AddedAt);
         _videos.Clear();
 
         var posicao = 0;
         foreach (var videoId in videoIds.Distinct())
-            _videos.Add(CollectionVideo.Create(Id, videoId, posicao++));
+        {
+            var quando = anteriores.TryGetValue(videoId, out var antigo) ? antigo : now;
+            _videos.Add(CollectionVideo.Create(Id, videoId, posicao++, quando));
+        }
     }
 
     public void SoftDelete(DateTimeOffset now) => DeletedAt ??= now;
@@ -115,10 +122,14 @@ public class CollectionVideo
     public Guid VideoId { get; private set; }
     public int Position { get; private set; }
 
-    public static CollectionVideo Create(Guid collectionId, Guid videoId, int position) => new()
+    /// <summary>Quando o vídeo passou a fazer parte da coleção. É o que torna a chegada nova.</summary>
+    public DateTimeOffset AddedAt { get; private set; }
+
+    public static CollectionVideo Create(Guid collectionId, Guid videoId, int position, DateTimeOffset addedAt) => new()
     {
         CollectionId = collectionId,
         VideoId = videoId,
-        Position = position
+        Position = position,
+        AddedAt = addedAt
     };
 }

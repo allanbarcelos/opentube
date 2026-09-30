@@ -38,8 +38,8 @@ public class CollectionTests
         var a = Guid.CreateVersion7();
         var b = Guid.CreateVersion7();
 
-        colecao.Add(a);
-        colecao.Add(b);
+        colecao.Add(a, Agora);
+        colecao.Add(b, Agora);
 
         Assert.Equal([a, b], colecao.Videos.OrderBy(v => v.Position).Select(v => v.VideoId));
         Assert.Equal([0, 1], colecao.Videos.OrderBy(v => v.Position).Select(v => v.Position));
@@ -51,8 +51,8 @@ public class CollectionTests
         var colecao = Nova();
         var video = Guid.CreateVersion7();
 
-        colecao.Add(video);
-        colecao.Add(video);
+        colecao.Add(video, Agora);
+        colecao.Add(video, Agora);
 
         Assert.Single(colecao.Videos);
     }
@@ -63,8 +63,8 @@ public class CollectionTests
         var colecao = Nova();
         var a = Guid.CreateVersion7();
         var b = Guid.CreateVersion7();
-        colecao.Add(a);
-        colecao.Add(b);
+        colecao.Add(a, Agora);
+        colecao.Add(b, Agora);
 
         colecao.Remove(a);
 
@@ -88,11 +88,25 @@ public class CollectionTests
         var a = Guid.CreateVersion7();
         var b = Guid.CreateVersion7();
         var c = Guid.CreateVersion7();
-        colecao.Add(a);
+        colecao.Add(a, Agora);
 
-        colecao.Replace([c, b, c]);
+        colecao.Replace([c, b, c], Agora.AddHours(1));
 
         Assert.Equal([c, b], colecao.Videos.OrderBy(v => v.Position).Select(v => v.VideoId));
+    }
+
+    [Fact]
+    public void Redefinir_guarda_a_hora_de_quem_ja_estava()
+    {
+        var colecao = Nova();
+        var antigo = Guid.CreateVersion7();
+        var novo = Guid.CreateVersion7();
+        colecao.Add(antigo, Agora);
+
+        colecao.Replace([novo, antigo], Agora.AddHours(2));
+
+        Assert.Equal(Agora, colecao.Videos.Single(v => v.VideoId == antigo).AddedAt);
+        Assert.Equal(Agora.AddHours(2), colecao.Videos.Single(v => v.VideoId == novo).AddedAt);
     }
 
     [Fact]
@@ -102,11 +116,11 @@ public class CollectionTests
         var a = Guid.CreateVersion7();
         var b = Guid.CreateVersion7();
         var c = Guid.CreateVersion7();
-        colecao.Add(a);
-        colecao.Add(b);
+        colecao.Add(a, Agora);
+        colecao.Add(b, Agora);
         colecao.Remove(a);
 
-        colecao.Add(c);
+        colecao.Add(c, Agora);
 
         // O novo vídeo entra no fim, sem colidir com a posição de quem ficou.
         Assert.Equal(2, colecao.Videos.Single(v => v.VideoId == c).Position);
@@ -159,7 +173,7 @@ public class CollectionTests
     [Fact]
     public void Exige_a_lista_ao_redefinir()
     {
-        Assert.Throws<ArgumentNullException>(() => Nova().Replace(null!));
+        Assert.Throws<ArgumentNullException>(() => Nova().Replace(null!, Agora));
     }
 
     [Fact]

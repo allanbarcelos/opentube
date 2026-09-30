@@ -308,7 +308,7 @@ public class AnalyticsQueriesTests(PostgresFixture postgres) : IAsyncLifetime
         await using (var db = postgres.CreateContext())
         {
             var colecao = Collection.Create("Treinamentos", "treinamentos", Admin, Agora);
-            colecao.Add(video.Id);
+            colecao.Add(video.Id, Agora);
             db.Collections.Add(colecao);
 
             db.AccessGrants.Add(AccessGrant.ForUser(

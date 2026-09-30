@@ -157,7 +157,7 @@ public class VideoUploadService(
         var tamanho = await storage.CompleteUploadAsync(video.OriginalKey, uploadId, parts, cancellationToken);
 
         video.MarkUploaded(tamanho);
-        colecao?.Add(video.Id);
+        colecao?.Add(video.Id, clock.GetUtcNow());
         await db.SaveChangesAsync(cancellationToken);
 
         await queue.EnqueueAsync(

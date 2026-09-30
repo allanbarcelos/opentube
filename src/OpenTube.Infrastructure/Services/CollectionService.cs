@@ -63,7 +63,7 @@ public class CollectionService(OpenTubeDbContext db, TimeProvider clock, ILogger
         var colecao = await CarregarAsync(collectionId, cancellationToken);
         var existentes = await FiltrarExistentesAsync(videoIds, cancellationToken);
 
-        colecao.Replace(existentes);
+        colecao.Replace(existentes, clock.GetUtcNow());
         await db.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Coleção {ColecaoId} agora tem {Quantidade} vídeos", collectionId, existentes.Count);
@@ -78,7 +78,7 @@ public class CollectionService(OpenTubeDbContext db, TimeProvider clock, ILogger
         if (!await db.Videos.AnyAsync(v => v.Id == videoId && v.DeletedAt == null, cancellationToken))
             throw new InvalidOperationException("Video not found");
 
-        colecao.Add(videoId);
+        colecao.Add(videoId, clock.GetUtcNow());
         await db.SaveChangesAsync(cancellationToken);
     }
 

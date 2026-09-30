@@ -12,6 +12,10 @@
             <EstrelaDoVideo Slug="@Video.Slug" Favorito="Video.IsFavorite" Destino="@Destino"
                             Classe="collection-favorite" SobreCapa="true" />
         }
+        @if (Video.IsNew)
+        {
+            <span class="badge text-bg-primary video-new video-new-capa">@T["New"]</span>
+        }
         <a class="text-decoration-none text-body" href="@Endereco">
         @if (Video.Status == (int)VideoStatus.Ready)
         {

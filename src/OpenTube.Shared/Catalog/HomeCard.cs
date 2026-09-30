@@ -29,10 +29,11 @@ public sealed record HomeCard(
     IReadOnlyList<string> Tags,
     bool IsFavorite,
     long ThumbnailVersion = 0,
-    string? CollectionSlug = null)
+    string? CollectionSlug = null,
+    bool HasNew = false)
 {
     /// <summary>O mesmo cartão visto como vídeo, para reutilizar o cartão da listagem.</summary>
     public VideoSummary ToVideo() => new(
         Id, Slug, Title, Description, DurationSeconds, Visibility, Status, PublishedAt, CreatedAt, Tags,
-        CollectionSlug, IsFavorite);
+        CollectionSlug, IsFavorite, HasNew);
 }

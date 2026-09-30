@@ -108,7 +108,7 @@ public class AccessServiceTests(PostgresFixture postgres) : IAsyncLifetime
     {
         var video = await VideoRestritoAsync();
         var colecao = Collection.Create("Treinamentos", "treinamentos", Admin, Agora);
-        colecao.Add(video.Id);
+        colecao.Add(video.Id, Agora);
 
         await using (var db = postgres.CreateContext())
         {
@@ -127,7 +127,7 @@ public class AccessServiceTests(PostgresFixture postgres) : IAsyncLifetime
     {
         var video = await VideoRestritoAsync();
         var colecao = Collection.Create("Treinamentos", "treinamentos", Admin, Agora);
-        colecao.Add(video.Id);
+        colecao.Add(video.Id, Agora);
 
         await using (var db = postgres.CreateContext())
         {

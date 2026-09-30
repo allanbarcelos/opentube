@@ -62,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<CollectionService>();
         services.AddScoped<CollectionFavoriteService>();
         services.AddScoped<VideoFavoriteService>();
+        services.AddScoped<CollectionNoticeService>();
         services.AddScoped<CollectionThumbnailService>();
         services.AddScoped<CaptionService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
