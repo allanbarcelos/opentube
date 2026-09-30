@@ -4,8 +4,7 @@
 namespace OpenTube.Domain.Entities;
 
 /// <summary>
-/// Uma tentativa registrada para fins de limitação de taxa. Sem senha no sistema, o limite de
-/// pedidos e de digitações é a única barreira contra a força bruta num código de seis dígitos.
+/// Um pedido de código registrado para a janela curta do mesmo email.
 /// </summary>
 public class AuthAttempt
 {
@@ -13,7 +12,7 @@ public class AuthAttempt
 
     public long Id { get; private set; }
 
-    /// <summary>Chave do balde: o email, o domínio ou o resumo do endereço de origem.</summary>
+    /// <summary>Chave do balde: o email de quem pediu o código.</summary>
     public string Scope { get; private set; } = string.Empty;
 
     public DateTimeOffset OccurredAt { get; private set; }

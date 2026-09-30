@@ -31,9 +31,7 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
         CodeLifetime = TimeSpan.FromMinutes(15),
         InviteLifetime = TimeSpan.FromDays(7),
         SessionLifetime = TimeSpan.FromDays(30),
-        CodesPerHourPerIp = 5,
-        CodesPerDayPerEmail = 10,
-        CodesPerDayPerDomain = 100,
+        CodesPerWindow = 5,
         PublicUrl = "https://opentube.org"
     };
 
@@ -513,50 +511,35 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
     }
 
     [Fact]
-    public async Task Barra_depois_do_limite_de_pedidos_por_origem()
+    public async Task Barra_depois_de_varios_pedidos_do_mesmo_email()
     {
         await CriarUsuarioAsync();
         var (servico, db) = Criar();
         await using var _ = db;
 
-        for (var i = 0; i < _seguranca.CodesPerHourPerIp; i++)
-            Assert.True((await servico.RequestCodeAsync(Convidado, ip: "203.0.113.5")).Sent);
-
-        var barrado = await servico.RequestCodeAsync(Convidado, ip: "203.0.113.5");
-
-        Assert.False(barrado.Sent);
-        Assert.Equal(AuthFailure.RateLimited, barrado.Failure);
-        Assert.Equal(_seguranca.CodesPerHourPerIp, _email.Sent.Count);
-    }
-
-    [Fact]
-    public async Task O_limite_por_origem_se_solta_depois_da_janela()
-    {
-        await CriarUsuarioAsync();
-        var (servico, db) = Criar();
-        await using var _ = db;
-
-        for (var i = 0; i < _seguranca.CodesPerHourPerIp; i++)
-            await servico.RequestCodeAsync(Convidado, ip: "203.0.113.5");
-
-        _relogio.Advance(TimeSpan.FromHours(1) + TimeSpan.FromMinutes(1));
-
-        Assert.True((await servico.RequestCodeAsync(Convidado, ip: "203.0.113.5")).Sent);
-    }
-
-    [Fact]
-    public async Task Trocar_de_origem_nao_contorna_o_limite_por_email()
-    {
-        await CriarUsuarioAsync();
-        var (servico, db) = Criar();
-        await using var _ = db;
-
-        for (var i = 0; i < _seguranca.CodesPerDayPerEmail; i++)
-            await servico.RequestCodeAsync(Convidado, ip: $"203.0.113.{i}");
+        for (var i = 0; i < _seguranca.CodesPerWindow; i++)
+            Assert.True((await servico.RequestCodeAsync(Convidado, ip: $"203.0.113.{i}")).Sent);
 
         var barrado = await servico.RequestCodeAsync(Convidado, ip: "198.51.100.1");
 
         Assert.False(barrado.Sent);
         Assert.Equal(AuthFailure.RateLimited, barrado.Failure);
+        Assert.InRange(barrado.RetryAfter, TimeSpan.FromSeconds(1), AuthRateLimiter.Janela);
+        Assert.Equal(_seguranca.CodesPerWindow, _email.Sent.Count);
+    }
+
+    [Fact]
+    public async Task O_mesmo_email_volta_a_receber_codigo_depois_de_dez_minutos()
+    {
+        await CriarUsuarioAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        for (var i = 0; i < _seguranca.CodesPerWindow; i++)
+            await servico.RequestCodeAsync(Convidado, ip: "203.0.113.5");
+
+        _relogio.Advance(AuthRateLimiter.Janela + TimeSpan.FromSeconds(1));
+
+        Assert.True((await servico.RequestCodeAsync(Convidado, ip: "198.51.100.9")).Sent);
     }
 }

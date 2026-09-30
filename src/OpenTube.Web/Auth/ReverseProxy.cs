@@ -7,9 +7,9 @@ namespace OpenTube.Web.Auth;
 
 /// <summary>
 /// Leitura do endereço real de quem acessa quando a aplicação está atrás do servidor da frente.
-/// Sem isto, toda requisição parece vir do Caddy: o limite de pedidos de código por origem vira
-/// um limite do site inteiro, o limite de reproduções simultâneas não distingue ninguém e os
-/// cookies saem sem a marca de conexão segura, porque a aplicação só enxerga HTTP.
+/// Sem isto, toda requisição parece vir do Caddy: o limite de reproduções simultâneas não
+/// distingue ninguém e os cookies saem sem a marca de conexão segura, porque a aplicação
+/// só enxerga HTTP.
 /// </summary>
 public static class ReverseProxy
 {

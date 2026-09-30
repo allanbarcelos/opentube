@@ -23,9 +23,7 @@ public class AuthRateLimiterTests(PostgresFixture postgres) : IAsyncLifetime
     {
         TokenPepper = "x",
         IpHashPepper = "y",
-        CodesPerHourPerIp = 3,
-        CodesPerDayPerEmail = 5,
-        CodesPerDayPerDomain = 7
+        CodesPerWindow = 3
     };
 
     public Task InitializeAsync() => postgres.ResetAsync();
@@ -45,116 +43,71 @@ public class AuthRateLimiterTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Barra_ao_estourar_o_limite_por_origem()
+    public async Task Barra_o_mesmo_email_dentro_da_janela_e_diz_quanto_falta()
     {
         await using var db = postgres.CreateContext();
         var limitador = Criar(db);
 
-        for (var i = 0; i < _opcoes.CodesPerHourPerIp; i++)
-            await limitador.RecordAsync(Email, "ip-hash");
-
-        var resultado = await limitador.CheckAsync(Email, "ip-hash");
-
-        Assert.False(resultado.Allowed);
-        Assert.Equal("origem", resultado.Scope);
-        Assert.Equal(TimeSpan.FromHours(1), resultado.RetryAfter);
-    }
-
-    [Fact]
-    public async Task Outra_origem_nao_herda_o_bloqueio()
-    {
-        await using var db = postgres.CreateContext();
-        var limitador = Criar(db);
-
-        for (var i = 0; i < _opcoes.CodesPerHourPerIp; i++)
-            await limitador.RecordAsync(EmailAddress.Parse($"pessoa{i}@outrodominio.dev"), "ip-bloqueado");
-
-        Assert.True((await limitador.CheckAsync(Email, "ip-livre")).Allowed);
-    }
-
-    [Fact]
-    public async Task Barra_ao_estourar_o_limite_por_email_mesmo_trocando_de_origem()
-    {
-        await using var db = postgres.CreateContext();
-        var limitador = Criar(db);
-
-        for (var i = 0; i < _opcoes.CodesPerDayPerEmail; i++)
+        for (var i = 0; i < _opcoes.CodesPerWindow; i++)
             await limitador.RecordAsync(Email, $"ip-{i}");
 
+        _relogio.Advance(TimeSpan.FromMinutes(4));
         var resultado = await limitador.CheckAsync(Email, "ip-novo");
 
         Assert.False(resultado.Allowed);
         Assert.Equal("email", resultado.Scope);
+        Assert.Equal(AuthRateLimiter.Janela - TimeSpan.FromMinutes(4), resultado.RetryAfter);
     }
 
     [Fact]
-    public async Task Barra_ao_estourar_o_limite_por_dominio()
+    public async Task Outro_email_nao_herda_o_bloqueio()
     {
         await using var db = postgres.CreateContext();
         var limitador = Criar(db);
 
-        for (var i = 0; i < _opcoes.CodesPerDayPerDomain; i++)
-            await limitador.RecordAsync(EmailAddress.Parse($"pessoa{i}@barcelos.dev"), $"ip-{i}");
-
-        var resultado = await limitador.CheckAsync(Email, "ip-novo");
-
-        Assert.False(resultado.Allowed);
-        Assert.Equal("domínio", resultado.Scope);
-    }
-
-    [Fact]
-    public async Task Pedido_sem_origem_conhecida_ainda_conta_para_email_e_dominio()
-    {
-        await using var db = postgres.CreateContext();
-        var limitador = Criar(db);
-
-        for (var i = 0; i < _opcoes.CodesPerDayPerEmail; i++)
-            await limitador.RecordAsync(Email, null);
-
-        Assert.False((await limitador.CheckAsync(Email, null)).Allowed);
-    }
-
-    [Fact]
-    public async Task A_janela_por_origem_se_solta_em_uma_hora()
-    {
-        await using var db = postgres.CreateContext();
-        var limitador = Criar(db);
-
-        for (var i = 0; i < _opcoes.CodesPerHourPerIp; i++)
+        for (var i = 0; i < _opcoes.CodesPerWindow; i++)
             await limitador.RecordAsync(Email, "ip-hash");
 
-        _relogio.Advance(TimeSpan.FromHours(1) + TimeSpan.FromSeconds(1));
-
-        Assert.True((await limitador.CheckAsync(Email, "ip-hash")).Allowed);
+        Assert.True((await limitador.CheckAsync(EmailAddress.Parse("outra@barcelos.dev"), "ip-hash")).Allowed);
     }
 
     [Fact]
-    public async Task A_janela_por_email_se_solta_em_um_dia()
+    public async Task A_janela_se_solta_em_dez_minutos()
     {
         await using var db = postgres.CreateContext();
         var limitador = Criar(db);
 
-        for (var i = 0; i < _opcoes.CodesPerDayPerEmail; i++)
-            await limitador.RecordAsync(Email, $"ip-{i}");
+        for (var i = 0; i < _opcoes.CodesPerWindow; i++)
+            await limitador.RecordAsync(Email, null);
 
-        _relogio.Advance(TimeSpan.FromDays(1) + TimeSpan.FromSeconds(1));
+        _relogio.Advance(AuthRateLimiter.Janela + TimeSpan.FromSeconds(1));
 
-        Assert.True((await limitador.CheckAsync(Email, "ip-novo")).Allowed);
+        Assert.True((await limitador.CheckAsync(Email, null)).Allowed);
     }
 
     [Fact]
-    public async Task A_limpeza_descarta_apenas_o_que_nao_influencia_mais()
+    public async Task Zero_nao_barra_o_primeiro_pedido()
+    {
+        _opcoes.CodesPerWindow = 0;
+        await using var db = postgres.CreateContext();
+        var limitador = Criar(db);
+
+        Assert.True((await limitador.CheckAsync(Email, null)).Allowed);
+    }
+
+    [Fact]
+    public async Task A_limpeza_descarta_apenas_o_que_saiu_da_janela()
     {
         await using var db = postgres.CreateContext();
         var limitador = Criar(db);
 
-        await limitador.RecordAsync(Email, "ip-antigo");
-        _relogio.Advance(TimeSpan.FromDays(2));
-        await limitador.RecordAsync(Email, "ip-recente");
+        await limitador.RecordAsync(Email, null);
+        _relogio.Advance(AuthRateLimiter.Janela + TimeSpan.FromMinutes(1));
+        await limitador.RecordAsync(Email, null);
 
         var descartados = await limitador.PruneAsync();
 
-        Assert.Equal(3, descartados);
-        Assert.Equal(3, await db.AuthAttempts.CountAsync());
+        Assert.Equal(1, descartados);
+        Assert.Equal(1, await db.AuthAttempts.CountAsync());
     }
 }

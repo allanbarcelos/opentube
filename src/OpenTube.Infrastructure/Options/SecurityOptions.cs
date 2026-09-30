@@ -30,14 +30,11 @@ public class SecurityOptions
     /// <summary>Duração da sessão, renovada a cada acesso.</summary>
     public TimeSpan SessionLifetime { get; set; } = TimeSpan.FromDays(30);
 
-    /// <summary>Quantos códigos um mesmo endereço de origem pode pedir por hora.</summary>
-    public int CodesPerHourPerIp { get; set; } = 5;
-
-    /// <summary>Quantos códigos um mesmo email pode receber por dia.</summary>
-    public int CodesPerDayPerEmail { get; set; } = 10;
-
-    /// <summary>Quantos códigos um mesmo domínio pode receber por dia.</summary>
-    public int CodesPerDayPerDomain { get; set; } = 100;
+    /// <summary>
+    /// Quantos códigos o mesmo email pode pedir em dez minutos.
+    /// Zero ou negativo cai no padrão de cinco: um valor vazio não pode barrar o primeiro pedido.
+    /// </summary>
+    public int CodesPerWindow { get; set; } = 5;
 
     /// <summary>
     /// Quantas origens distintas podem reproduzir ao mesmo tempo com a mesma conta. Zero

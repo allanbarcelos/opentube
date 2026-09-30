@@ -20,8 +20,8 @@ public readonly record struct RateLimitResult(bool Allowed, string? Scope, TimeS
 }
 
 /// <summary>
-/// Limita o envio e a conferência de códigos. Como o sistema não tem senha, este é o único
-/// obstáculo real entre um atacante e um código de seis dígitos.
+/// Limita o envio de códigos do mesmo email a uma janela de dez minutos. A digitação errada
+/// continua limitada no próprio código.
 /// </summary>
 public interface IAuthRateLimiter
 {
@@ -35,61 +35,53 @@ public interface IAuthRateLimiter
 
 public class AuthRateLimiter(OpenTubeDbContext db, IOptions<SecurityOptions> options, TimeProvider clock) : IAuthRateLimiter
 {
-    private static readonly TimeSpan JanelaIp = TimeSpan.FromHours(1);
-    private static readonly TimeSpan JanelaDiaria = TimeSpan.FromDays(1);
+    /// <summary>Única espera possível. Dez minutos depois do pedido mais antigo da janela, libera.</summary>
+    public static readonly TimeSpan Janela = TimeSpan.FromMinutes(10);
+
+    private const int TetoPadrao = 5;
 
     private readonly SecurityOptions _options = options.Value;
 
     public async Task<RateLimitResult> CheckAsync(EmailAddress email, string? ipHash, CancellationToken cancellationToken = default)
     {
+        // A origem não conta. Um endereço compartilhado não pode segurar as outras pessoas.
+        _ = ipHash;
+
         var agora = clock.GetUtcNow();
+        var desde = agora - Janela;
+        var ocorrencias = await db.AuthAttempts
+            .Where(a => a.Scope == EscopoEmail(email) && a.OccurredAt >= desde)
+            .Select(a => a.OccurredAt)
+            .ToListAsync(cancellationToken);
 
-        if (!string.IsNullOrWhiteSpace(ipHash))
-        {
-            var porIp = await ContarAsync(EscopoIp(ipHash), agora - JanelaIp, cancellationToken);
-            if (porIp >= _options.CodesPerHourPerIp)
-                return new RateLimitResult(false, "origem", JanelaIp);
-        }
+        if (ocorrencias.Count < Teto)
+            return RateLimitResult.Ok();
 
-        var porEmail = await ContarAsync(EscopoEmail(email), agora - JanelaDiaria, cancellationToken);
-        if (porEmail >= _options.CodesPerDayPerEmail)
-            return new RateLimitResult(false, "email", JanelaDiaria);
+        var espera = ocorrencias.Min() + Janela - agora;
+        if (espera < TimeSpan.Zero)
+            espera = TimeSpan.Zero;
 
-        var porDominio = await ContarAsync(EscopoDominio(email), agora - JanelaDiaria, cancellationToken);
-        if (porDominio >= _options.CodesPerDayPerDomain)
-            return new RateLimitResult(false, "domínio", JanelaDiaria);
-
-        return RateLimitResult.Ok();
+        return new RateLimitResult(false, "email", espera);
     }
 
     public async Task RecordAsync(EmailAddress email, string? ipHash, CancellationToken cancellationToken = default)
     {
-        var agora = clock.GetUtcNow();
+        _ = ipHash;
 
-        db.AuthAttempts.Add(AuthAttempt.Record(EscopoEmail(email), agora));
-        db.AuthAttempts.Add(AuthAttempt.Record(EscopoDominio(email), agora));
-
-        if (!string.IsNullOrWhiteSpace(ipHash))
-            db.AuthAttempts.Add(AuthAttempt.Record(EscopoIp(ipHash), agora));
-
+        db.AuthAttempts.Add(AuthAttempt.Record(EscopoEmail(email), clock.GetUtcNow()));
         await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<int> PruneAsync(CancellationToken cancellationToken = default)
     {
-        var corte = clock.GetUtcNow() - JanelaDiaria - TimeSpan.FromHours(1);
+        var corte = clock.GetUtcNow() - Janela;
 
         return await db.AuthAttempts
             .Where(a => a.OccurredAt < corte)
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    private Task<int> ContarAsync(string escopo, DateTimeOffset desde, CancellationToken cancellationToken) =>
-        db.AuthAttempts.CountAsync(a => a.Scope == escopo && a.OccurredAt >= desde, cancellationToken);
-
-    private static string EscopoIp(string ipHash) => "ip:" + ipHash;
+    private int Teto => _options.CodesPerWindow < 1 ? TetoPadrao : _options.CodesPerWindow;
 
     private static string EscopoEmail(EmailAddress email) => "email:" + email.Value;
-
-    private static string EscopoDominio(EmailAddress email) => "dominio:" + email.Domain;
 }
