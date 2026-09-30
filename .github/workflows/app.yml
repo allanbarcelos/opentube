@@ -92,6 +92,17 @@ jobs:
         run: |
           # shellcheck disable=SC2086
           IMAGE=$(bash .github/scripts/changed.sh "${{ github.event.before }}" $IMAGE_PATHS)
+          # O envio anterior pode ter mudado o código e falhado nos testes, sem gerar tag.
+          # O seguinte, se só corrige teste, não muda estes caminhos em relação ao envio
+          # de agora — e a imagem publicada ficaria sem esse código. A última tag é a
+          # imagem que realmente saiu.
+          if [ "$IMAGE" != "true" ]; then
+            LAST_TAG=$(git tag -l "app-v*" --sort=-v:refname | head -1)
+            if [ -n "$LAST_TAG" ]; then
+              # shellcheck disable=SC2086
+              IMAGE=$(bash .github/scripts/changed.sh "$LAST_TAG" $IMAGE_PATHS)
+            fi
+          fi
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           if [ "$IMAGE" = "true" ]; then
             echo "App image inputs changed: building." >> "$GITHUB_STEP_SUMMARY"
