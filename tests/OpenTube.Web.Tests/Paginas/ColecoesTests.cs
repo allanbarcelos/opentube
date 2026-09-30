@@ -244,6 +244,62 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
     }
 
     [Fact]
+    public async Task O_agrupamento_começa_ligado_e_pode_ser_desligado()
+    {
+        using var storage = minio.CreateStorage();
+        var dentro = await AcervoDeTeste.PublicarAsync(postgres, storage, "Dentro", VideoVisibility.Public);
+        var marcado = await AcervoDeTeste.PublicarAsync(postgres, storage, "Marcado", VideoVisibility.Public);
+        await AcervoDeTeste.PublicarAsync(postgres, storage, "Solto", VideoVisibility.Public);
+
+        using var admin = _app.CreateBrowser();
+        await EntrarAsync(admin, Admin);
+        var alfa = await CriarColecaoAsync(admin, "Alfa");
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, $"/admin/collections/{alfa}", $"/admin/collections/{alfa}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = dentro.Id.ToString() });
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, "/", $"/videos/{marcado.Slug}/favorite",
+            new Dictionary<string, string> { ["destino"] = "/" });
+
+        var agrupada = await admin.GetStringAsync("/");
+        Assert.Contains("Group collections", agrupada);
+        Assert.Contains("name=\"agrupar\" value=\"0\"", agrupada);
+        Assert.DoesNotContain("Dentro", agrupada);
+        Assert.True(Posicao(agrupada, "Marcado") < Posicao(agrupada, "Alfa"));
+        Assert.True(Posicao(agrupada, "Alfa") < Posicao(agrupada, "Solto"));
+
+        var resposta = await FormularioHelpers.EnviarFormularioAsync(
+            admin, "/", "/listing/grouping",
+            new Dictionary<string, string> { ["agrupar"] = "0", ["destino"] = "/" });
+        Assert.Equal(HttpStatusCode.Redirect, resposta.StatusCode);
+        var solta = await admin.GetStringAsync("/");
+        Assert.DoesNotContain("Alfa", solta);
+        Assert.Contains($"/watch/{dentro.Slug}?collection=alfa", solta);
+        Assert.Contains("name=\"agrupar\" value=\"1\"", solta);
+        Assert.True(Posicao(solta, "Marcado") < Posicao(solta, "Dentro"));
+        Assert.True(Posicao(solta, "Dentro") < Posicao(solta, "Solto"));
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            admin, "/", "/listing/grouping",
+            new Dictionary<string, string> { ["agrupar"] = "1", ["destino"] = "/" });
+        var outra = await admin.GetStringAsync("/");
+        Assert.Contains("Alfa", outra);
+        Assert.DoesNotContain("Dentro", outra);
+        Assert.Contains("name=\"agrupar\" value=\"0\"", outra);
+
+        using var visitante = _app.CreateBrowser();
+        var anonima = await visitante.GetStringAsync("/");
+        Assert.Contains("Alfa", anonima);
+        Assert.DoesNotContain("Dentro", anonima);
+        await FormularioHelpers.EnviarFormularioAsync(
+            visitante, "/", "/listing/grouping",
+            new Dictionary<string, string> { ["agrupar"] = "0", ["destino"] = "/" });
+        var soltaAnonima = await visitante.GetStringAsync("/");
+        Assert.DoesNotContain("Alfa", soltaAnonima);
+        Assert.Contains("Dentro", soltaAnonima);
+    }
+
+    [Fact]
     public async Task A_home_poe_colecoes_por_nome_e_o_favorito_na_frente()
     {
         using var storage = minio.CreateStorage();

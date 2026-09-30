@@ -109,6 +109,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         Viewer viewer,
         int page = 1,
         int pageSize = DefaultPageSize,
+        bool groupCollections = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(viewer);
@@ -117,7 +118,7 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var conexao = db.Database.GetDbConnection();
-        var itens = ItensDaHome(FiltroDe(viewer));
+        var itens = ItensDaHome(FiltroDe(viewer), groupCollections);
         var parametros = Parametros(viewer, null, page, pageSize);
 
         var total = await conexao.ExecuteScalarAsync<int>(new CommandDefinition(
@@ -273,26 +274,13 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
     }
 
     /// <summary>
-    /// Vídeos que o espectador pode ver. Coleção excluída não conta: o vídeo volta a aparecer
-    /// sozinho, porque o agrupamento deixou de existir.
+    /// Vídeos que o espectador pode ver. Com o agrupamento ligado, a coleção ocupa o lugar
+    /// dos vídeos dela, exceto o que esta pessoa favoritou. Desligado, cada vídeo aparece
+    /// sozinho. Coleção excluída não conta: o vídeo volta a aparecer sozinho.
     /// </summary>
-    private static string ItensDaHome(string filtro) => $"""
-        WITH visiveis AS (
-            SELECT v.id,
-                   v.slug,
-                   v.title,
-                   v.description,
-                   v.duration_seconds,
-                   v.visibility,
-                   v.status,
-                   v.published_at,
-                   v.created_at,
-                   v.tags,
-                   COALESCE(v.published_at, v.created_at) AS ordenacao
-              FROM videos v
-             WHERE {filtro}
-        ),
-        itens AS (
+    private static string ItensDaHome(string filtro, bool agrupar)
+    {
+        var videos = $"""
             SELECT v.id                 AS Id,
                    v.slug               AS Slug,
                    v.title              AS Title,
@@ -312,40 +300,73 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
                    0::bigint            AS ThumbnailVersion,
                    {ColecaoDoVideo}     AS CollectionSlug
               FROM visiveis v
-             WHERE NOT EXISTS (
-                   SELECT 1
-                     FROM collection_videos cv
-                     JOIN collections c ON c.id = cv.collection_id AND c.deleted_at IS NULL
-                    WHERE cv.video_id = v.id)
-                OR EXISTS (
-                   SELECT 1 FROM video_favorites f
-                    WHERE f.video_id = v.id AND f.user_id = @Usuario)
-            UNION ALL
-            SELECT c.id,
-                   c.slug,
-                   c.name,
-                   c.description,
-                   COUNT(*)::int,
-                   COALESCE(SUM(v.duration_seconds), 0),
-                   0,
-                   0,
-                   MAX(v.ordenacao),
-                   MAX(v.ordenacao),
-                   ARRAY[]::text[],
-                   MAX(v.ordenacao),
-                   1,
-                   EXISTS (
-                       SELECT 1 FROM collection_favorites f
-                        WHERE f.collection_id = c.id AND f.user_id = @Usuario),
-                   c.thumbnail_version,
-                   NULL::text
-              FROM collections c
-              JOIN collection_videos cv ON cv.collection_id = c.id
-              JOIN visiveis v ON v.id = cv.video_id
-             WHERE c.deleted_at IS NULL
-             GROUP BY c.id, c.slug, c.name, c.description, c.thumbnail_version
-        )
-        """;
+            """;
+
+        var soSoltos = agrupar
+            ? """
+              WHERE NOT EXISTS (
+                    SELECT 1
+                      FROM collection_videos cv
+                      JOIN collections c ON c.id = cv.collection_id AND c.deleted_at IS NULL
+                     WHERE cv.video_id = v.id)
+                 OR EXISTS (
+                    SELECT 1 FROM video_favorites f
+                     WHERE f.video_id = v.id AND f.user_id = @Usuario)
+              """
+            : string.Empty;
+
+        var colecoes = agrupar
+            ? """
+              UNION ALL
+              SELECT c.id,
+                     c.slug,
+                     c.name,
+                     c.description,
+                     COUNT(*)::int,
+                     COALESCE(SUM(v.duration_seconds), 0),
+                     0,
+                     0,
+                     MAX(v.ordenacao),
+                     MAX(v.ordenacao),
+                     ARRAY[]::text[],
+                     MAX(v.ordenacao),
+                     1,
+                     EXISTS (
+                         SELECT 1 FROM collection_favorites f
+                          WHERE f.collection_id = c.id AND f.user_id = @Usuario),
+                     c.thumbnail_version,
+                     NULL::text
+                FROM collections c
+                JOIN collection_videos cv ON cv.collection_id = c.id
+                JOIN visiveis v ON v.id = cv.video_id
+               WHERE c.deleted_at IS NULL
+               GROUP BY c.id, c.slug, c.name, c.description, c.thumbnail_version
+              """
+            : string.Empty;
+
+        return $"""
+            WITH visiveis AS (
+                SELECT v.id,
+                       v.slug,
+                       v.title,
+                       v.description,
+                       v.duration_seconds,
+                       v.visibility,
+                       v.status,
+                       v.published_at,
+                       v.created_at,
+                       v.tags,
+                       COALESCE(v.published_at, v.created_at) AS ordenacao
+                  FROM videos v
+                 WHERE {filtro}
+            ),
+            itens AS (
+                {videos}
+                {soSoltos}
+                {colecoes}
+            )
+            """;
+    }
 
     private static string FiltroDe(Viewer viewer) => viewer.IsAdmin
         ? "v.deleted_at IS NULL"
