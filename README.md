@@ -512,9 +512,11 @@ flowchart TD
 
 ### Passwordless authentication
 
-No password is ever generated, transmitted, or stored. The invitation carries a **single-use link**
-and a **6-digit code** (for when the email client breaks the link). Both are stored only as hashes
-and expire in 15 minutes (code) and 7 days (invitation). The first use creates a 30-day cookie
+No password is ever generated, transmitted, or stored. The invitation email says what was shared
+and until when, and links to the sign-in page with the address already filled in; it carries no
+code. The code is requested there, at the moment of signing in, and arrives by email with a
+**single-use link** as an alternative to typing it. Both are stored only as hashes and expire in 15
+minutes. After the code, the person lands on the shared video. Signing in creates a 30-day cookie
 session, which is renewable and can be revoked immediately by the administrator.
 
 ### Domain access

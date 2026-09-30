@@ -84,7 +84,6 @@ public sealed record ShareLink(Guid GrantId, string Url);
 /// </summary>
 public class GrantService(
     OpenTubeDbContext db,
-    PasswordlessAuthService auth,
     IEmailSender email,
     IOptions<SecurityOptions> options,
     TimeProvider clock,
@@ -120,6 +119,7 @@ public class GrantService(
             throw new InvalidOperationException("No valid email address was given.");
 
         var rotulo = await DescreverAlvoAsync(targetType, targetId, cancellationToken);
+        var destino = await DestinoDoAlvoAsync(targetType, targetId, cancellationToken);
 
         var convite = Invitation.Create(InvitationKind.People, targetType, targetId, adminId, clock.GetUtcNow(),
             validity.ExpiresAt, validity.DurationAfterFirstUse, note: note);
@@ -139,10 +139,8 @@ public class GrantService(
 
             if (sendEmail)
             {
-                var acesso = await auth.IssueInviteAsync(endereco, concessao.Id, cancellationToken);
-
                 await email.SendAsync(EmailTemplates.Invite(
-                    endereco.Value, acesso.Code, acesso.Link, rotulo, validity.Describe(), acesso.Validity),
+                    endereco.Value, rotulo, validity.Describe(), EnderecoDeEntrada(endereco, destino)),
                     cancellationToken);
 
                 enviado = true;
@@ -353,6 +351,20 @@ public class GrantService(
     }
 
     /// <summary>Nome do que foi liberado, para aparecer no convite.</summary>
+    /// <summary>
+    /// Onde a pessoa convidada cai depois de entrar: o vídeo liberado ou, para uma coleção ou o
+    /// acervo, a página inicial, que lista o que ela pode ver.
+    /// </summary>
+    private async Task<string> DestinoDoAlvoAsync(GrantTargetType tipo, Guid? alvoId, CancellationToken cancellationToken) =>
+        tipo is GrantTargetType.Video
+        && await db.Videos.Where(v => v.Id == alvoId).Select(v => v.Slug).FirstOrDefaultAsync(cancellationToken) is { } slug
+            ? $"/watch/{slug}"
+            : "/";
+
+    /// <summary>Página de entrada com o endereço já preenchido e o destino depois do código.</summary>
+    private string EnderecoDeEntrada(EmailAddress endereco, string destino) =>
+        $"{_options.PublicUrl.TrimEnd('/')}/sign-in?email={Uri.EscapeDataString(endereco.Value)}&voltar={Uri.EscapeDataString(destino)}";
+
     private async Task<string> DescreverAlvoAsync(GrantTargetType tipo, Guid? alvoId, CancellationToken cancellationToken) => tipo switch
     {
         GrantTargetType.All => LocalText.Get("The whole library"),

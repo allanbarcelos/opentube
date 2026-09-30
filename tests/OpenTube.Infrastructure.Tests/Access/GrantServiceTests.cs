@@ -45,11 +45,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var db = postgres.CreateContext();
         var opcoes = Microsoft.Extensions.Options.Options.Create(_seguranca);
 
-        var auth = new PasswordlessAuthService(
-            db, _emails, new AuthRateLimiter(db, opcoes, _relogio), new PrivacyHasher(opcoes),
-            opcoes, _relogio, NullLogger<PasswordlessAuthService>.Instance);
-
-        return (new GrantService(db, auth, _emails, opcoes, _relogio, NullLogger<GrantService>.Instance), db);
+        return (new GrantService(db, _emails, opcoes, _relogio, NullLogger<GrantService>.Instance), db);
     }
 
     private async Task<Video> VideoRestritoAsync(string titulo = "Plano Confidencial")
@@ -107,8 +103,12 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
 
         Assert.Contains("Reunião Trimestral", mensagem.Subject);
         Assert.Contains("30 days from the first visit", mensagem.TextBody);
-        Assert.Contains("https://opentube.org/sign-in/", mensagem.TextBody);
-        Assert.Matches(@"\b\d{6}\b", mensagem.TextBody);
+        Assert.Contains($"https://opentube.org/sign-in?email=allan%40barcelos.dev&voltar=%2Fwatch%2F{video.Slug}", mensagem.TextBody);
+
+        // Sem código nem link de uso único: o código é pedido na hora de entrar.
+        Assert.DoesNotMatch(@"\b\d{6}\b", mensagem.TextBody);
+        await using var leitura = postgres.CreateContext();
+        Assert.Equal(0, await leitura.LoginCodes.CountAsync());
     }
 
     [Fact]
@@ -461,7 +461,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task O_convite_permite_entrar_pelo_link_recebido()
+    public async Task O_convidado_entra_pedindo_o_codigo_com_o_proprio_email()
     {
         var video = await VideoRestritoAsync();
         var (servico, db) = Criar();
@@ -474,7 +474,9 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
             db, _emails, new AuthRateLimiter(db, opcoes, _relogio), new PrivacyHasher(opcoes),
             opcoes, _relogio, NullLogger<PasswordlessAuthService>.Instance);
 
-        var entrada = await auth.VerifyTokenAsync(_emails.LastToken());
+        // Ainda não é usuário: a concessão é o que deixa pedir o código.
+        await auth.RequestCodeAsync("allan@barcelos.dev", AuthPurpose.Login);
+        var entrada = await auth.VerifyCodeAsync("allan@barcelos.dev", _emails.LastCode());
 
         Assert.True(entrada.Succeeded);
         // O convidado passa a existir como usuário só agora, na primeira entrada.

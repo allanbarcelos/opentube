@@ -31,6 +31,7 @@
                         <form method="post" action="/sign-in/verify">
                             <AntiforgeryToken />
                             <input type="hidden" name="email" value="@Email" />
+                            <input type="hidden" name="voltar" value="@Destino" />
 
                             <div class="mb-3">
                                 <label class="form-label" for="codigo">@T["Code you received"]</label>
@@ -45,6 +46,7 @@
                         <form method="post" action="/sign-in/code" class="mt-3 text-center">
                             <AntiforgeryToken />
                             <input type="hidden" name="email" value="@Email" />
+                            <input type="hidden" name="voltar" value="@Destino" />
                             <button class="btn btn-link btn-sm" type="submit">@T["Send another code"]</button>
                         </form>
                     }
@@ -52,6 +54,7 @@
                     {
                         <form method="post" action="/sign-in/code">
                             <AntiforgeryToken />
+                            <input type="hidden" name="voltar" value="@Destino" />
 
                             <div class="mb-3">
                                 <label class="form-label" for="email">@T["Your email"]</label>
@@ -83,4 +86,13 @@
     private string? Erro { get; set; }
 
     private bool Enviado => EnviadoBruto == "1" && !string.IsNullOrWhiteSpace(Email);
+
+    /// <summary>Para onde ir depois de entrar: o do convite ou, sem ele, o que o login interrompeu.</summary>
+    [SupplyParameterFromQuery(Name = "voltar")]
+    private string? Voltar { get; set; }
+
+    [SupplyParameterFromQuery(Name = "ReturnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    private string? Destino => Voltar ?? ReturnUrl;
 }

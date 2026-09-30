@@ -16,31 +16,25 @@ public static class EmailTemplates
 {
     /// <summary>
     /// Convite enviado pelo administrador junto com uma concessão. Diz o que foi liberado e
-    /// até quando, porque quem recebe precisa saber o que ganhou sem ter de entrar para
-    /// descobrir.
+    /// até quando, e leva à página de entrada com o endereço já preenchido. Não traz código:
+    /// ele é pedido na hora de entrar, e um código mandado antes deixaria de valer assim que a
+    /// pessoa pedisse outro na página.
     /// </summary>
     public static EmailMessage Invite(
         string to,
-        string code,
-        string link,
         string whatWasShared,
         string validityDescription,
-        TimeSpan linkValidity)
+        string signInUrl)
     {
-        var dias = Math.Max(1, (int)Math.Round(linkValidity.TotalDays));
-        var prazo = LocalText.Format("The link and the code are valid for {0} days and can be used only once. After that, ask for a new code on the sign-in page with this same email.", dias);
+        var comoEntrar = LocalText.Get("Sign in with this email address. A code is sent to it at that moment; there is no password.");
 
         var texto = $"""
             {LocalText.Format("You were given access to {0} on OpenTube.", whatWasShared)}
 
             {LocalText.Format("Access ends: {0}", validityDescription)}
 
-            {LocalText.Get("Sign in with this link:")}
-            {link}
-
-            {LocalText.Format("Or use the code: {0}", code)}
-
-            {prazo}
+            {comoEntrar}
+            {signInUrl}
             """;
 
         var html = $"""
@@ -49,11 +43,9 @@ public static class EmailTemplates
               <p style="margin:0 0 8px">{WebUtility.HtmlEncode(LocalText.Format("You were given access to {0}.", whatWasShared))}</p>
               <p style="margin:0 0 24px;color:#6c757d">{WebUtility.HtmlEncode(LocalText.Format("Access ends: {0}", validityDescription))}</p>
               <p style="margin:0 0 24px">
-                <a href="{WebUtility.HtmlEncode(link)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">{WebUtility.HtmlEncode(LocalText.Get("See the videos"))}</a>
+                <a href="{WebUtility.HtmlEncode(signInUrl)}" style="background:#0d6efd;color:#fff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block">{WebUtility.HtmlEncode(LocalText.Get("Sign in to watch"))}</a>
               </p>
-              <p style="margin:0 0 8px">{WebUtility.HtmlEncode(LocalText.Get("Or use the code:"))}</p>
-              <p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:0 0 24px">{WebUtility.HtmlEncode(code)}</p>
-              <p style="font-size:14px;color:#6c757d;margin:0">{WebUtility.HtmlEncode(prazo)}</p>
+              <p style="font-size:14px;color:#6c757d;margin:0">{WebUtility.HtmlEncode(comoEntrar)}</p>
             </div>
             """;
 

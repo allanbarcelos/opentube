@@ -512,10 +512,12 @@ flowchart TD
 
 ### Autenticação sem senha
 
-Nenhuma senha é gerada, trafegada ou armazenada. O convite traz um **link de uso único** e um
-**código de 6 dígitos** (para quando o cliente de email quebra o link). Ambos ficam no banco apenas
-como hash, expiram em 15 minutos (código) e 7 dias (convite), e o primeiro uso cria uma sessão em
-cookie de 30 dias, renovável e revogável de imediato pelo administrador.
+Nenhuma senha é gerada, trafegada ou armazenada. O email do convite diz o que foi liberado e até
+quando, e leva à página de entrada com o endereço já preenchido; ele não traz código. O código é
+pedido ali, na hora de entrar, e chega por email junto com um **link de uso único** que dispensa
+digitá-lo. Os dois ficam no banco apenas como hash e expiram em 15 minutos. Depois do código, a
+pessoa cai no vídeo compartilhado. A entrada cria uma sessão em cookie de 30 dias, renovável e
+revogável de imediato pelo administrador.
 
 ### Acesso por domínio
 

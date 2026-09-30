@@ -77,12 +77,50 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
             });
 
         Assert.Contains("convidados=1", resposta.Headers.Location!.ToString());
-        Assert.Single(_app.Emails.Sent);
+        var convite = Assert.Single(_app.Emails.Sent);
+
+        // O convite não traz código: leva à entrada com o endereço preenchido e o vídeo como destino.
+        var entrada = System.Text.RegularExpressions.Regex.Match(convite.TextBody, @"http://localhost(/sign-in\?\S+)").Groups[1].Value;
+        Assert.Equal($"/sign-in?email={Uri.EscapeDataString(Convidado)}&voltar={Uri.EscapeDataString($"/watch/{video.Slug}")}", entrada);
+        Assert.DoesNotMatch(@"\b\d{6}\b", convite.TextBody);
 
         using var convidado = _app.CreateBrowser();
-        await convidado.GetAsync($"/sign-in/{_app.Emails.LastToken()}");
+        var pagina = await convidado.GetStringAsync(entrada);
+        Assert.Contains($"value=\"{Convidado}\"", pagina);
+        Assert.Contains($"name=\"voltar\" value=\"/watch/{video.Slug}\"", pagina);
 
+        // O código é pedido na hora e, depois dele, a pessoa cai no vídeo.
+        _app.Emails.Clear();
+        await FormularioHelpers.EnviarFormularioAsync(
+            convidado, entrada, "/sign-in/code",
+            new Dictionary<string, string> { ["email"] = Convidado, ["voltar"] = $"/watch/{video.Slug}" });
+
+        var verificacao = await FormularioHelpers.EnviarFormularioAsync(
+            convidado,
+            $"/sign-in?email={Uri.EscapeDataString(Convidado)}&voltar={Uri.EscapeDataString($"/watch/{video.Slug}")}&enviado=1",
+            "/sign-in/verify",
+            new Dictionary<string, string> { ["email"] = Convidado, ["codigo"] = _app.Emails.LastCode(), ["voltar"] = $"/watch/{video.Slug}" });
+
+        Assert.Equal($"/watch/{video.Slug}", verificacao.Headers.Location!.ToString());
         Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Destino_fora_do_site_e_ignorado_depois_de_entrar()
+    {
+        using var cliente = _app.CreateBrowser();
+        _app.Emails.Clear();
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, "/sign-in", "/sign-in/code", new Dictionary<string, string> { ["email"] = Admin });
+
+        var verificacao = await FormularioHelpers.EnviarFormularioAsync(
+            cliente,
+            $"/sign-in?email={Uri.EscapeDataString(Admin)}&enviado=1",
+            "/sign-in/verify",
+            new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode(), ["voltar"] = "//outro.site/x" });
+
+        Assert.Equal("/admin", verificacao.Headers.Location!.ToString());
     }
 
     [Fact]
@@ -264,7 +302,7 @@ public class AcessosTests(PostgresFixture postgres, MinioFixture minio) : IAsync
             });
 
         using var convidado = _app.CreateBrowser();
-        await convidado.GetAsync($"/sign-in/{_app.Emails.LastToken()}");
+        await EntrarAsync(convidado, Convidado);
         Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
 
         Guid concessaoId;

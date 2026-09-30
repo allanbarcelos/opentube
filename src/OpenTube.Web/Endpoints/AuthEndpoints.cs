@@ -21,6 +21,7 @@ public static class AuthEndpoints
     {
         rotas.MapPost("/sign-in/code", async (
             [FromForm] string email,
+            [FromForm] string? voltar,
             PasswordlessAuthService auth,
             HttpContext contexto,
             CancellationToken cancellationToken) =>
@@ -35,15 +36,16 @@ public static class AuthEndpoints
             // entregaria a lista de convidados a quem perguntasse.
             return resultado.Failure switch
             {
-                AuthFailure.InvalidEmail => Redirecionar(email, erro: LocalText.Get("Invalid email address.")),
-                AuthFailure.RateLimited => Redirecionar(email, erro: LocalText.Get("Too many requests. Wait a few minutes.")),
-                _ => Redirecionar(email, enviado: true)
+                AuthFailure.InvalidEmail => Redirecionar(email, voltar, erro: LocalText.Get("Invalid email address.")),
+                AuthFailure.RateLimited => Redirecionar(email, voltar, erro: LocalText.Get("Too many requests. Wait a few minutes.")),
+                _ => Redirecionar(email, voltar, enviado: true)
             };
         });
 
         rotas.MapPost("/sign-in/verify", async (
             [FromForm] string email,
             [FromForm] string codigo,
+            [FromForm] string? voltar,
             PasswordlessAuthService auth,
             HttpContext contexto,
             CancellationToken cancellationToken) =>
@@ -56,11 +58,12 @@ public static class AuthEndpoints
                 cancellationToken);
 
             if (!resultado.Succeeded)
-                return Redirecionar(email, enviado: true, erro: Mensagem(resultado.Failure));
+                return Redirecionar(email, voltar, enviado: true, erro: Mensagem(resultado.Failure));
 
             await EntrarAsync(contexto, resultado);
 
-            return Results.Redirect(resultado.User!.IsAdmin ? "/admin" : "/");
+            // O convite leva ao vídeo liberado; só vale caminho do próprio site.
+            return Results.Redirect(Retorno.EhLocal(voltar) ? voltar! : resultado.User!.IsAdmin ? "/admin" : "/");
         });
 
         rotas.MapGet("/sign-in/{token}", async (
@@ -76,7 +79,7 @@ public static class AuthEndpoints
                 cancellationToken);
 
             if (!resultado.Succeeded)
-                return Redirecionar(null, erro: Mensagem(resultado.Failure));
+                return Redirecionar(null, null, erro: Mensagem(resultado.Failure));
 
             await EntrarAsync(contexto, resultado);
 
@@ -98,12 +101,15 @@ public static class AuthEndpoints
         return rotas;
     }
 
-    private static IResult Redirecionar(string? email, bool enviado = false, string? erro = null)
+    private static IResult Redirecionar(string? email, string? voltar, bool enviado = false, string? erro = null)
     {
         var parametros = new List<string>();
 
         if (!string.IsNullOrWhiteSpace(email))
             parametros.Add("email=" + Uri.EscapeDataString(email));
+
+        if (Retorno.EhLocal(voltar))
+            parametros.Add("voltar=" + Uri.EscapeDataString(voltar!));
 
         if (enviado)
             parametros.Add("enviado=1");
