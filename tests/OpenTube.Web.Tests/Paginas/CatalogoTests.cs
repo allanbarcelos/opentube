@@ -60,6 +60,7 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         Assert.Contains("Boas-vindas", html);
         Assert.Contains($"/watch/{publico.Slug}", html);
+        Assert.Contains($"<time datetime=\"{publico.CreatedAt.UtcDateTime:yyyy-MM-ddTHH:mm:ss}Z\">", html);
     }
 
     [Fact]

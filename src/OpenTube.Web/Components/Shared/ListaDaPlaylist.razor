@@ -22,7 +22,11 @@
             }
             <span class="min-w-0">
                 <span class="d-block text-truncate">@video.Title</span>
-                <span class="small @(atual ? "" : "text-body-secondary")">@video.DurationLabel</span>
+                <span class="small @(atual ? "" : "text-body-secondary")">
+                    @video.DurationLabel
+                    <span class="mx-1" aria-hidden="true">&middot;</span>
+                    <time datetime="@video.UploadedStamp">@video.UploadedLabel</time>
+                </span>
             </span>
         </a>
     }

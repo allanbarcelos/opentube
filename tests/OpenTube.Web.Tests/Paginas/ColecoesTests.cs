@@ -232,6 +232,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var posicaoSegundo = playlist.IndexOf("Encerramento", StringComparison.Ordinal);
         Assert.True(posicaoPrimeiro >= 0 && posicaoPrimeiro < posicaoSegundo);
         Assert.Contains($"/watch/{primeiro.Slug}?collection=treinamentos", playlist);
+        Assert.Contains($"<time datetime=\"{primeiro.CreatedAt.UtcDateTime:yyyy-MM-ddTHH:mm:ss}Z\">", playlist);
 
         var assistir = await visitante.GetStringAsync($"/watch/{primeiro.Slug}?collection=treinamentos");
         Assert.Contains("data-autoplay", assistir);

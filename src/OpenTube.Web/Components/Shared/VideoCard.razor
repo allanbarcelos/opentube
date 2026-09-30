@@ -23,6 +23,8 @@
             <h2 class="h6 card-title video-card-title mb-1">@Video.Title</h2>
             <p class="card-text small text-body-secondary mb-0">
                 @Video.DurationLabel
+                <span class="mx-1" aria-hidden="true">&middot;</span>
+                <time datetime="@Video.UploadedStamp">@Video.UploadedLabel</time>
                 @if (MostrarVisibilidade)
                 {
                     <span class="badge @DistintivoClasse ms-2">@VisibilidadeTexto</span>

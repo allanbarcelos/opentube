@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
+using System.Globalization;
+
 namespace OpenTube.Shared.Catalog;
 
 /// <summary>Resumo de um vídeo para listagens e resultados de busca.</summary>
@@ -38,6 +40,13 @@ public sealed record VideoSummary(
                 : $"{tempo.Minutes}:{tempo.Seconds:D2}";
         }
     }
+
+    /// <summary>Data e hora do envio, no fuso e no calendário de quem está vendo.</summary>
+    public string UploadedLabel => CreatedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
+
+    /// <summary>O mesmo instante, em UTC, para o atributo <c>datetime</c>.</summary>
+    public string UploadedStamp =>
+        CreatedAt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss'Z'", CultureInfo.InvariantCulture);
 }
 
 /// <summary>Uma página de resultados.</summary>
