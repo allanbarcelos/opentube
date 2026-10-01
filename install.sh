@@ -41,6 +41,10 @@ IFS=$'\n\t'
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
 APP_IMAGE="ghcr.io/allanbarcelos/opentube/app:latest"
+# Last community MinIO release (2025.5.24), pinned by digest (multi-arch index): the
+# bitnamilegacy namespace is no longer maintained, and a "latest" pushed there later would
+# reach every installation on its next update without anyone reviewing it.
+MINIO_IMAGE="bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c"
 WORKER_IMAGE="ghcr.io/allanbarcelos/opentube/worker:latest"
 WHISPER_IMAGE_BASE="ghcr.io/allanbarcelos/opentube/whisper"
 
@@ -1413,10 +1417,10 @@ chmod 700 "${APP_DIR}" "${APP_DIR}/data" "${APP_DIR}/etc" "${MINIO_DATA_DIR}" ||
 
 info "Pulling base images so the volume owners can be set..."
 docker pull postgres:17-alpine >/dev/null
-docker pull bitnamilegacy/minio:latest >/dev/null
+docker pull "$MINIO_IMAGE" >/dev/null
 docker pull caddy:2-alpine >/dev/null
 
-MINIO_UID="$(docker run --rm --entrypoint id bitnamilegacy/minio:latest -u 2>/dev/null || echo 1001)"
+MINIO_UID="$(docker run --rm --entrypoint id "$MINIO_IMAGE" -u 2>/dev/null || echo 1001)"
 CADDY_UID="$(docker run --rm --entrypoint id caddy:2-alpine -u 2>/dev/null || echo 1000)"
 chown -R "${MINIO_UID}:${MINIO_UID}" "${MINIO_DATA_DIR}" || true
 chown -R "${CADDY_UID}:${CADDY_UID}" "${APP_DIR}/data/caddy" || true
@@ -1734,7 +1738,7 @@ services:
         delay: 5s
 
   minio:
-    image: bitnamilegacy/minio:latest
+    image: ${MINIO_IMAGE}
     environment:
       MINIO_ROOT_USER_FILE: /run/secrets/${STACK_NAME}_minio_root_user
       MINIO_ROOT_PASSWORD_FILE: /run/secrets/${STACK_NAME}_minio_root_password
