@@ -98,7 +98,12 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-app.MapPost("/language", (HttpContext contexto, [FromForm] string? idioma, [FromForm] string? voltar) =>
+// Todo endereço que altera alguma coisa exige o token antifalsificação, inclusive os que não
+// leem campos de formulário. Ficam de fora só a coleta do player (enviada por sendBeacon, que
+// não leva cabeçalho próprio) e a autorização de segmento, que é GET.
+var rotas = app.MapGroup(string.Empty).ExigirAntifalsificacao();
+
+rotas.MapPost("/language", (HttpContext contexto, [FromForm] string? idioma, [FromForm] string? voltar) =>
 {
     var escolhido = idioma is "en" or "pt" or "fr" ? idioma : "en";
 
@@ -115,22 +120,22 @@ app.MapPost("/language", (HttpContext contexto, [FromForm] string? idioma, [From
     return Results.Redirect(Retorno.EhLocal(voltar) && !voltar!.Contains('\\') ? voltar : "/");
 });
 
-app.MapAuthEndpoints();
-app.MapPlaybackEndpoints();
-app.MapAdminEndpoints();
-app.MapShareEndpoints();
-app.MapCollectionEndpoints();
-app.MapCollectionFavoriteEndpoints();
-app.MapListingPreferenceEndpoints();
-app.MapVideoFavoriteEndpoints();
-app.MapAccessEndpoints();
+rotas.MapAuthEndpoints();
+rotas.MapPlaybackEndpoints();
+rotas.MapAdminEndpoints();
+rotas.MapShareEndpoints();
+rotas.MapCollectionEndpoints();
+rotas.MapCollectionFavoriteEndpoints();
+rotas.MapListingPreferenceEndpoints();
+rotas.MapVideoFavoriteEndpoints();
+rotas.MapAccessEndpoints();
+rotas.MapExportEndpoints();
+rotas.MapSupportEndpoints();
+rotas.MapCaptionEndpoints();
+rotas.MapRatingEndpoints();
+rotas.MapWatermarkEndpoints();
 app.MapAnalyticsEndpoints();
-app.MapExportEndpoints();
-app.MapSupportEndpoints();
-app.MapCaptionEndpoints();
-app.MapRatingEndpoints();
 app.MapSegmentAuthorization();
-app.MapWatermarkEndpoints();
 app.MapHealthChecks("/health");
 
 await PrepararAsync(app);

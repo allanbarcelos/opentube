@@ -268,6 +268,40 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/admin/videos/{video.Id}")).StatusCode);
     }
 
+    [Theory]
+    [InlineData("delete")]
+    [InlineData("reprocess")]
+    [InlineData("chapters")]
+    public async Task Pedido_sem_token_antifalsificacao_e_recusado(string acao)
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Admin);
+
+        // O que um site de fora conseguiria mandar: o cookie da sessão, sem o token da página.
+        var resposta = await cliente.PostAsync(
+            $"/admin/videos/{video.Id}/{acao}", new FormUrlEncodedContent(new Dictionary<string, string>()));
+
+        Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
+
+        await using var db = postgres.CreateContext();
+        Assert.Contains(await db.Videos.Select(v => v.Id).ToListAsync(), id => id == video.Id);
+    }
+
+    [Fact]
+    public async Task Sair_sem_token_antifalsificacao_nao_encerra_a_sessao()
+    {
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Admin);
+
+        var resposta = await cliente.PostAsync("/sign-out", new FormUrlEncodedContent(new Dictionary<string, string>()));
+
+        Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync("/admin")).StatusCode);
+    }
+
     [Fact]
     public async Task Reprocessar_sem_o_original_mostra_o_motivo()
     {

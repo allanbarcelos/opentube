@@ -152,7 +152,7 @@ public static class CaptionEndpoints
             {
                 return Results.BadRequest(new { erro = Mensagem(e) });
             }
-        }).AddEndpointFilter(ValidarAntifalsificacaoAsync);
+        });
 
         // Arquivo para corrigir fora do sistema, com nome que diz de qual vídeo e idioma é.
         administracao.MapGet("/{assetId:guid}/download", async (
@@ -215,24 +215,6 @@ public static class CaptionEndpoints
     private static string Mensagem(Exception e) => e is CaptionFormatException formato
         ? LocalText.Format(formato.Key, [.. formato.Args])
         : LocalText.Get(e.Message);
-
-    /// <summary>O editor envia por script: a proteção contra falsificação é conferida à mão.</summary>
-    private static async ValueTask<object?> ValidarAntifalsificacaoAsync(
-        EndpointFilterInvocationContext contexto, EndpointFilterDelegate proximo)
-    {
-        var antifalsificacao = contexto.HttpContext.RequestServices.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
-
-        try
-        {
-            await antifalsificacao.ValidateRequestAsync(contexto.HttpContext);
-        }
-        catch (Microsoft.AspNetCore.Antiforgery.AntiforgeryValidationException)
-        {
-            return Results.BadRequest(new { erro = LocalText.Get("The page expired. Reload it and try again.") });
-        }
-
-        return await proximo(contexto);
-    }
 }
 
 /// <summary>Legenda editada, já em WebVTT.</summary>

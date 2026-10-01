@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
-using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
@@ -61,11 +60,10 @@ public static class AdminEndpoints
 
     private static void MapEnvio(IEndpointRouteBuilder rotas)
     {
-        // O envio é conduzido por JavaScript, então a proteção contra falsificação precisa
-        // ser conferida à mão: a validação automática só cobre formulários comuns.
+        // O envio é conduzido por JavaScript, com o token no cabeçalho; quem confere é o filtro
+        // aplicado a todos os endereços (Antifalsificacao).
         var grupo = rotas.MapGroup("/api/admin/uploads")
-            .RequireAuthorization(Policies.Administrator)
-            .AddEndpointFilter(ValidarAntifalsificacaoAsync);
+            .RequireAuthorization(Policies.Administrator);
 
         grupo.MapPost("/start", async (
             [FromBody] IniciarEnvio pedido,
@@ -330,22 +328,4 @@ public static class AdminEndpoints
         string.IsNullOrWhiteSpace(texto)
             ? []
             : texto.Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-    private static async ValueTask<object?> ValidarAntifalsificacaoAsync(
-        EndpointFilterInvocationContext contexto,
-        EndpointFilterDelegate proximo)
-    {
-        var antifalsificacao = contexto.HttpContext.RequestServices.GetRequiredService<IAntiforgery>();
-
-        try
-        {
-            await antifalsificacao.ValidateRequestAsync(contexto.HttpContext);
-        }
-        catch (AntiforgeryValidationException)
-        {
-            return Results.BadRequest(new { erro = LocalText.Get("Request is missing the security credential.") });
-        }
-
-        return await proximo(contexto);
-    }
 }
