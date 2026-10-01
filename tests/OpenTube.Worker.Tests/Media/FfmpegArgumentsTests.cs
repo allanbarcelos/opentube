@@ -181,4 +181,28 @@ public class FfmpegArgumentsTests
         Assert.Contains("/tmp/meu video.mp4", argumentos);
         Assert.DoesNotContain(argumentos, a => a.StartsWith("-i "));
     }
+
+    public static TheoryData<string> ComandosQueLeemOEnvio => ["inspecao", "transcodificacao", "miniatura", "folha"];
+
+    private static IReadOnlyList<string> Comando(string qual) => qual switch
+    {
+        "inspecao" => FfmpegArguments.Probe("/tmp/a.mp4"),
+        "transcodificacao" => FfmpegArguments.Transcode("/tmp/a.mp4", "/tmp/saida", Ladder, 30, hasAudio: true),
+        "miniatura" => FfmpegArguments.Thumbnail("/tmp/a.mp4", "/tmp/thumb.jpg", 10),
+        _ => FfmpegArguments.Sprite("/tmp/a.mp4", "/tmp/sprite.jpg", SpriteLayout.For(600, 1920, 1080))
+    };
+
+    [Theory]
+    [MemberData(nameof(ComandosQueLeemOEnvio))]
+    public void O_arquivo_enviado_so_e_lido_como_conteiner_de_video_local(string qual)
+    {
+        var argumentos = Comando(qual).ToList();
+        var entrada = argumentos.LastIndexOf("/tmp/a.mp4");
+
+        Assert.Equal("file", ValorDe(argumentos, "-protocol_whitelist"));
+        Assert.Equal(FfmpegArguments.AllowedDemuxers, ValorDe(argumentos, "-format_whitelist"));
+        Assert.True(argumentos.IndexOf("-format_whitelist") < entrada, "a restrição precisa vir antes do arquivo");
+        Assert.DoesNotContain("hls", FfmpegArguments.AllowedDemuxers.Split(','));
+        Assert.DoesNotContain("concat", FfmpegArguments.AllowedDemuxers.Split(','));
+    }
 }

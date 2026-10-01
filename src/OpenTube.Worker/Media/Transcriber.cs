@@ -92,6 +92,7 @@ public static class AudioForTranscription
 
         var extracao = await runner.RunAsync(ffmpeg, [
             "-y", "-hide_banner", "-loglevel", "error",
+            .. FfmpegArguments.UntrustedInput(),
             "-i", mediaPath,
             "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
             audio

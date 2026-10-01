@@ -25,6 +25,21 @@ public static class FfmpegArguments
     /// <summary>Nome da playlist principal gerada pelo FFmpeg.</summary>
     public const string MasterFileName = "master.m3u8";
 
+    /// <summary>
+    /// Leitores de contêiner aceitos para o arquivo enviado: os dos formatos que a tela de envio
+    /// oferece (mp4/mov/m4v, mkv/webm, avi, mpg, ts/mts/m2ts, wmv, flv), mais ogg, mxf e dv.
+    /// </summary>
+    public const string AllowedDemuxers = "mov,matroska,avi,mpeg,mpegts,asf,flv,ogg,mxf,dv";
+
+    /// <summary>
+    /// Opções que vêm antes do arquivo enviado. O FFmpeg reconhece o formato pelo conteúdo, e
+    /// formatos como playlist HLS e concat mandam ler outros arquivos ou endereços: um envio
+    /// malicioso faria o worker abrir arquivos locais (os segredos estão no mesmo usuário) e
+    /// gravá-los no vídeo. Só leitores de contêiner de vídeo e só o arquivo local.
+    /// </summary>
+    public static IReadOnlyList<string> UntrustedInput() =>
+        ["-protocol_whitelist", "file", "-format_whitelist", AllowedDemuxers];
+
     public static IReadOnlyList<string> Probe(string inputPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
@@ -32,6 +47,7 @@ public static class FfmpegArguments
         return
         [
             "-v", "error",
+            .. UntrustedInput(),
             "-print_format", "json",
             "-show_format",
             "-show_streams",
@@ -60,10 +76,11 @@ public static class FfmpegArguments
         var gop = RenditionLadder.KeyFrameInterval(frameRate);
         var argumentos = new List<string>
         {
-            "-y", "-hide_banner", "-loglevel", "error",
-            "-i", inputPath,
-            "-filter_complex", FiltroDeEscala(ladder)
+            "-y", "-hide_banner", "-loglevel", "error"
         };
+
+        argumentos.AddRange(UntrustedInput());
+        argumentos.AddRange(["-i", inputPath, "-filter_complex", FiltroDeEscala(ladder)]);
 
         for (var i = 0; i < ladder.Count; i++)
         {
@@ -122,6 +139,7 @@ public static class FfmpegArguments
             // O posicionamento vem antes da entrada para que o FFmpeg salte direto ao
             // ponto, em vez de decodificar tudo até lá.
             "-ss", Segundos(atSecond),
+            .. UntrustedInput(),
             "-i", inputPath,
             "-frames:v", "1",
             "-vf", $"scale={width}:-2",
@@ -141,6 +159,7 @@ public static class FfmpegArguments
         return
         [
             "-y", "-hide_banner", "-loglevel", "error",
+            .. UntrustedInput(),
             "-i", inputPath,
             "-vf", filtro,
             "-frames:v", "1",

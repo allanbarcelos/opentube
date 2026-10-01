@@ -139,4 +139,35 @@ public class TranscodePipelineTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             Criar().RunAsync(Path.Combine(_trabalho, "nao-existe.mp4"), _trabalho));
     }
+
+    [FfmpegFact]
+    public async Task Recusa_playlist_que_manda_ler_outro_arquivo_local()
+    {
+        // O "segredo" é um vídeo válido ao lado do envio: sem a restrição, o FFmpeg seguiria a
+        // playlist, leria o arquivo e o publicaria como se fosse o vídeo enviado.
+        await MediaTools.CreateSampleAsync(_trabalho, seconds: 2, width: 320, height: 240, fileName: "segredo.mp4");
+        var playlist = Path.Combine(_trabalho, "enviado.m3u8");
+        await File.WriteAllTextAsync(playlist,
+            "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegredo.mp4\n#EXT-X-ENDLIST\n");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Criar().RunAsync(playlist, _trabalho));
+    }
+
+    [FfmpegFact]
+    public async Task Aceita_os_conteineres_oferecidos_no_envio()
+    {
+        foreach (var extensao in new[] { "mkv", "webm", "avi", "mpg", "ts", "flv", "wmv", "mov" })
+        {
+            var amostra = await MediaTools.CreateSampleAsync(_trabalho, seconds: 2, width: 320, height: 240, fileName: "base.mp4");
+            var convertido = Path.Combine(_trabalho, "envio." + extensao);
+            var conversao = await new ProcessRunner(NullLogger<ProcessRunner>.Instance)
+                .RunAsync("ffmpeg", ["-y", "-loglevel", "error", "-i", amostra, convertido]);
+            Assert.True(conversao.Succeeded, conversao.ShortError());
+
+            var pasta = Path.Combine(_trabalho, "saida-" + extensao);
+            var saida = await Criar().RunAsync(convertido, pasta);
+
+            Assert.True(saida.Info.DurationSeconds > 0, extensao);
+        }
+    }
 }
