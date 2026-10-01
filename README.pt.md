@@ -15,7 +15,7 @@ de email inteiro, com validade opcional e registro detalhado de quem assistiu o 
 - [Requisitos do servidor](#requisitos-do-servidor)
 - [Instalação em produção](#instalação-em-produção) — [antes de começar](#antes-de-começar) ·
   [instalar](#instalar) · [modos de acesso](#modos-de-acesso) · [o que é montado](#o-que-o-instalador-monta) ·
-  [legendas automáticas](#legendas-automáticas-em-produção) · [operação](#operação) ·
+  [legendas automáticas](#legendas-automáticas-em-produção) · [operação](#operação) · [reverter](#reverter-uma-atualização) ·
   [desinstalar](#desinstalar)
 - [Desenvolvimento](#desenvolvimento) — [pré-requisitos](#pré-requisitos) · [início rápido](#início-rápido) ·
   [`make watch`](#make-watch--hot-reload) · [`make up`](#make-up--pilha-inteira-em-container) ·
@@ -190,6 +190,8 @@ por um interno, e os limites por origem passariam a valer para todo mundo de uma
 | `/opt/<nome>/data/` | PostgreSQL, certificados do Caddy e modelos do Whisper |
 | Disco do MinIO (escolhido) | Originais e vídeos publicados |
 | `/opt/<nome>/scripts/update.sh` | Atualiza tudo para a versão mais recente (veja [operação](#operação)) |
+| `/opt/<nome>/scripts/snapshot.sh`, `rollback.sh` | Snapshot da instalação, tirado antes de cada atualização, e a restauração dele (veja [reverter](#reverter-uma-atualização)) |
+| `/opt/<nome>/snapshots/` | Os 5 snapshots mais recentes (modo 700) |
 | `/opt/<nome>/logs/` | Logs dos scripts de manutenção |
 
 ### Legendas automáticas em produção
@@ -254,6 +256,8 @@ A pilha leva o nome da aplicação (`opentube` por padrão; hífens viram sublin
 | Tarefa | Como |
 | --- | --- |
 | Atualizar para a versão mais recente | `sudo /opt/<nome>/scripts/update.sh` |
+| Desfazer a última atualização | `sudo /opt/<nome>/scripts/rollback.sh` |
+| Tirar um snapshot agora | `sudo /opt/<nome>/scripts/snapshot.sh` |
 | Ver os serviços | `docker stack services <pilha>` |
 | Acompanhar os logs de um serviço | `docker service logs -f <pilha>_app` (também `_worker`, `_whisper`, `_caddy`) |
 | Mudar uma configuração | Rodar o instalador de novo |
@@ -267,6 +271,37 @@ uma correção de código. Nada que exija decisão acontece sozinho: instalar o 
 reiniciar o Docker ou ligar as legendas numa instalação que nunca as teve fica para uma execução
 interativa. Um download cortado, ou que não seja o instalador, é recusado antes de rodar qualquer
 coisa, e cada execução é acrescentada em `logs/update.log`.
+
+### Reverter uma atualização
+
+Antes de mudar qualquer coisa, toda atualização tira um snapshot da instalação. Se o snapshot
+falhar, a atualização não roda (`OPENTUBE_SKIP_SNAPSHOT=1` atualiza sem ele). Um snapshot guarda:
+
+- a imagem que cada serviço está rodando, fixada pelo digest — o `:latest` muda, o digest não;
+- o arquivo da pilha, o `etc/` (Caddyfile, `install.conf`, certificado) e o `scripts/`;
+- um dump do banco, conferido com `pg_restore` antes de o snapshot valer.
+
+Ele fica em `/opt/<nome>/snapshots/<data>-<hora>/`, legível só pelo root. Os 5 mais recentes são
+mantidos (`OPENTUBE_SNAPSHOT_KEEP=<n>` mantém outro número).
+
+Se algo der errado, o `rollback.sh` restaura o snapshot mais recente (ou o indicado, da lista de
+`rollback.sh --list`). Ele pede o id do snapshot para confirmar (`--yes` pula a pergunta), para a
+aplicação e o worker, guarda o banco atual ao lado do snapshot (`before-rollback-*.dump`),
+substitui o banco pelo do snapshot, devolve os arquivos e sobe cada serviço na imagem que rodava
+então.
+
+O que um rollback não desfaz:
+
+- **O que foi gravado depois do snapshot se perde** — entradas, visualizações, comentários,
+  acessos, legendas, registros de vídeo. O dump `before-rollback` guarda isso, se for preciso
+  recuperar.
+- **Os arquivos de vídeo não estão no snapshot.** Uma atualização não mexe no disco do MinIO, e ele
+  costuma ser muito maior que todo o resto; faça backup dele à parte. Arquivos enviados depois do
+  snapshot ficam no disco sem registro apontando para eles.
+- As regras de firewall e os pacotes instalados ficam como estão.
+
+Depois de um rollback, o `update.sh` instala de novo a versão mais recente: rode-o quando o
+problema estiver corrigido.
 
 Instalações anteriores a este `update.sh` só baixam imagens; para passá-las para o novo, rode uma
 vez:

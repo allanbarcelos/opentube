@@ -28,7 +28,8 @@
 #       mode the origin port only answers Cloudflare, in UFW and in DOCKER-USER.
 #   11. scripts/update.sh, which fetches the latest installer and runs it with --update:
 #       images, stack, Caddy, firewall, and update.sh itself come out as the latest
-#       version describes them, reusing the answers in etc/install.conf
+#       version describes them, reusing the answers in etc/install.conf. Before that it
+#       runs scripts/snapshot.sh; scripts/rollback.sh restores the latest snapshot.
 #   12. Wait for the services
 #   13. Summary. The password is shown only this first time: Swarm does not return it.
 #
@@ -979,6 +980,298 @@ case "$(uname -m)" in
 esac
 command -v openssl >/dev/null 2>&1 || die "Install openssl before continuing."
 
+# snapshot.sh and rollback.sh. Written before an update changes anything — so the snapshot
+# of that update comes from them — and again with the rest of the installation.
+write_maintenance_scripts() {
+  mkdir -p "${APP_DIR}/scripts"
+
+  cat > "${APP_DIR}/scripts/snapshot.sh" <<'SNAPSHOT'
+#!/usr/bin/env bash
+# Snapshot of this installation, taken by update.sh before every update and on demand: the
+# image each service is running (pinned by digest), the stack file, etc/ and scripts/, and a
+# dump of the database. rollback.sh puts the installation back the way a snapshot found it.
+#
+# The video files (the MinIO disk) are not copied: an update does not touch them, and they are
+# usually far larger than everything else. Make a separate backup of that disk.
+#
+# Usage: sudo /opt/<name>/scripts/snapshot.sh
+#        OPENTUBE_SNAPSHOT_KEEP=<n> keeps the latest n snapshots (default 5).
+main() {
+  set -euo pipefail
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
+  [[ $EUID -eq 0 ]] || { echo "Run as root: sudo $0" >&2; exit 1; }
+
+  local app_dir conf stack keep id base pg services svc image digest size
+  app_dir="$(cd "$(dirname "$0")/.." && pwd)"
+  conf="${app_dir}/etc/install.conf"
+  [[ -f "$conf" ]] || { echo "No installation at ${app_dir} (etc/install.conf is missing)." >&2; exit 1; }
+  stack="$(grep -m1 '^STACK_NAME=' "$conf" | cut -d= -f2- | sed "s/^'//;s/'\$//")"
+  keep="${OPENTUBE_SNAPSHOT_KEEP:-5}"
+  [[ "$keep" =~ ^[1-9][0-9]*$ ]] || { echo "OPENTUBE_SNAPSHOT_KEEP must be a positive number." >&2; exit 1; }
+
+  services="$(docker stack services "$stack" --format '{{.Name}}' 2>/dev/null | sort || true)"
+  [[ -n "$services" ]] || { echo "Stack ${stack} is not running: there is nothing to snapshot." >&2; exit 1; }
+
+  pg="$(docker ps -q -f "name=^${stack}_postgres\." | head -1)"
+  [[ -n "$pg" ]] || { echo "The database container is not running: there is nothing to snapshot." >&2; exit 1; }
+
+  id="$(date -u '+%Y%m%d-%H%M%S')"
+  base="${app_dir}/snapshots"
+  mkdir -p "$base"
+  chmod 700 "$base"
+
+  # Written under a temporary name and renamed only when complete: rollback.sh never picks a
+  # half-written snapshot. Global, not local: the cleanup runs after main() returns.
+  OPENTUBE_SNAPSHOT_PARTIAL="${base}/.${id}.partial"
+  trap 'rm -rf "${OPENTUBE_SNAPSHOT_PARTIAL:-}"' EXIT
+  local dir="$OPENTUBE_SNAPSHOT_PARTIAL"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+
+  echo "Snapshot ${id} of ${stack}"
+
+  # The image of each service as it runs now. A tag such as :latest moves; the digest does not.
+  : > "${dir}/images.txt"
+  while IFS= read -r svc; do
+    [[ -z "$svc" ]] && continue
+    image="$(docker service inspect "$svc" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')"
+    if [[ "$image" != *@sha256:* ]]; then
+      digest="$(docker image inspect "$image" --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null | head -1 || true)"
+      if [[ -n "$digest" ]]; then
+        image="$digest"
+      else
+        echo "  warning: ${svc} runs ${image} with no digest; rollback will use that tag." >&2
+      fi
+    fi
+    echo "${svc#"${stack}_"} ${image}" >> "${dir}/images.txt"
+    echo "  ${svc#"${stack}_"}: ${image}"
+  done <<< "$services"
+
+  cp -a "${app_dir}/docker-compose.prod.yml" "${dir}/docker-compose.prod.yml"
+  cp -a "${app_dir}/etc" "${dir}/etc"
+  cp -a "${app_dir}/scripts" "${dir}/scripts"
+
+  # The same stack, with each service on the digest it runs now: what rollback.sh deploys.
+  awk 'NR == FNR { img[$1] = $2; next }
+       /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { svc = $1; sub(/:$/, "", svc) }
+       /^    image:/ && (svc in img) { print "    image: " img[svc]; next }
+       { print }' "${dir}/images.txt" "${dir}/docker-compose.prod.yml" > "${dir}/stack.pinned.yml"
+
+  echo "  database: dumping..."
+  docker exec "$pg" sh -c 'pg_dump -U "$(cat /run/secrets/*_db_user)" -d "$POSTGRES_DB" -Fc' > "${dir}/database.dump"
+  # A dump that pg_restore cannot list is no snapshot.
+  docker exec -i "$pg" pg_restore -l < "${dir}/database.dump" > /dev/null \
+    || { echo "The database dump is not readable; the snapshot was discarded." >&2; exit 1; }
+
+  {
+    echo "id=${id}"
+    echo "created=$(date '+%Y-%m-%d %H:%M:%S %Z')"
+    echo "stack=${stack}"
+    echo "app_image=$(grep -m1 '^app ' "${dir}/images.txt" | cut -d' ' -f2)"
+  } > "${dir}/snapshot.info"
+
+  chmod -R go-rwx "$dir"
+  mv "$dir" "${base}/${id}"
+  OPENTUBE_SNAPSHOT_PARTIAL=""
+
+  # Only the latest ones stay.
+  find "$base" -mindepth 1 -maxdepth 1 -type d -name '2*' | sort | head -n "-${keep}" | xargs -r rm -rf
+
+  size="$(du -sh "${base}/${id}" | cut -f1)"
+  echo "Snapshot ${id} saved in ${base}/${id} (${size}). Restore it with: sudo ${app_dir}/scripts/rollback.sh"
+}
+
+main "$@"; exit $?
+SNAPSHOT
+  chmod 755 "${APP_DIR}/scripts/snapshot.sh"
+
+  cat > "${APP_DIR}/scripts/rollback.sh" <<'ROLLBACK'
+#!/usr/bin/env bash
+# Puts the installation back the way a snapshot (snapshot.sh) found it: the images each service
+# ran, the stack file, etc/ and scripts/, and the database.
+#
+# The database goes back to the moment of the snapshot: whatever was written after it — sign-ins,
+# views, comments, grants, captions, video records — is lost. Before replacing it, the current
+# database is dumped next to the snapshot (before-rollback-*.dump). Video files uploaded after
+# the snapshot stay on the MinIO disk with no record pointing at them. The firewall and the
+# installed packages are left as they are.
+#
+# Usage: sudo /opt/<name>/scripts/rollback.sh             the latest snapshot
+#        sudo /opt/<name>/scripts/rollback.sh <id>        a specific one
+#        sudo /opt/<name>/scripts/rollback.sh --list      the snapshots there are
+#        --yes skips the confirmation.
+#
+# Everything runs inside main(): bash reads the whole function before running it, so the
+# restore can replace files in scripts/ while it runs.
+main() {
+  set -euo pipefail
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
+  [[ $EUID -eq 0 ]] || { echo "Run as root: sudo $0" >&2; exit 1; }
+
+  local app_dir base wanted="" yes="n" list="n" arg
+  app_dir="$(cd "$(dirname "$0")/.." && pwd)"
+  base="${app_dir}/snapshots"
+
+  for arg in "$@"; do
+    case "$arg" in
+      --yes|-y) yes="y" ;;
+      --list|-l) list="y" ;;
+      -*) echo "Unknown option: ${arg}" >&2; exit 1 ;;
+      *) wanted="$arg" ;;
+    esac
+  done
+
+  local snapshots
+  snapshots="$(find "$base" -mindepth 1 -maxdepth 1 -type d -name '2*' -printf '%f\n' 2>/dev/null | sort -r || true)"
+  [[ -n "$snapshots" ]] || { echo "No snapshot in ${base}. snapshot.sh takes one; update.sh takes one before every update." >&2; exit 1; }
+
+  if [[ "$list" == "y" ]]; then
+    local s
+    while IFS= read -r s; do
+      echo "${s}  $(grep -m1 '^created=' "${base}/${s}/snapshot.info" | cut -d= -f2-)  app $(grep -m1 '^app_image=' "${base}/${s}/snapshot.info" | sed -n 's/.*@sha256:\([0-9a-f]\{12\}\).*/\1/p')"
+    done <<< "$snapshots"
+    return 0
+  fi
+
+  local id="${wanted:-$(head -1 <<< "$snapshots")}"
+  local dir="${base}/${id}"
+  local f
+  for f in snapshot.info images.txt stack.pinned.yml docker-compose.prod.yml database.dump etc scripts; do
+    [[ -e "${dir}/${f}" ]] || { echo "Snapshot ${id} is missing ${f}; nothing changed." >&2; exit 1; }
+  done
+
+  local stack created
+  stack="$(grep -m1 '^stack=' "${dir}/snapshot.info" | cut -d= -f2-)"
+  created="$(grep -m1 '^created=' "${dir}/snapshot.info" | cut -d= -f2-)"
+
+  echo "Rollback of ${stack} to snapshot ${id} (${created})"
+  sed 's/^/  /' "${dir}/images.txt"
+  echo ""
+  echo "The database goes back to ${created}: everything written after that is lost."
+  if [[ "$yes" != "y" ]]; then
+    [[ -r /dev/tty ]] || { echo "No terminal to confirm on; run again with --yes." >&2; exit 1; }
+    local answer
+    read -r -p "Type the snapshot id (${id}) to continue: " answer < /dev/tty
+    [[ "$answer" == "$id" ]] || { echo "Not confirmed; nothing changed."; exit 1; }
+  fi
+
+  local log="${app_dir}/logs/rollback.log"
+  mkdir -p "${app_dir}/logs"
+  echo "$(date '+%Y-%m-%d %H:%M:%S %Z') rollback to ${id}" >> "$log"
+
+  # 1. The database must be up to be restored. If the update left it down, the stack from the
+  #    snapshot brings it back first.
+  local pg
+  pg="$(postgres_container "$stack")"
+  if [[ -z "$pg" ]]; then
+    echo "The database is not running; deploying the snapshot's stack first."
+    docker stack deploy --compose-file "${dir}/stack.pinned.yml" --resolve-image never --prune "$stack"
+    pg="$(wait_postgres "$stack")" || { echo "The database did not come up; see: docker service ps ${stack}_postgres --no-trunc" >&2; exit 1; }
+  fi
+  pg="$(wait_postgres "$stack")" || { echo "The database is not answering; nothing changed." >&2; exit 1; }
+
+  # 2. Nothing writes to the database while it is replaced.
+  local svc scale=()
+  for svc in app worker; do
+    docker service inspect "${stack}_${svc}" > /dev/null 2>&1 && scale+=("${stack}_${svc}=0")
+  done
+  if [[ ${#scale[@]} -gt 0 ]]; then
+    echo "Stopping the application and the worker..."
+    docker service scale --detach=false "${scale[@]}" > /dev/null
+  fi
+
+  # 3. The current database, in case this rollback is the wrong move.
+  local safety
+  safety="${dir}/before-rollback-$(date -u '+%Y%m%d-%H%M%S').dump"
+  echo "Saving the current database in ${safety}..."
+  docker exec "$pg" sh -c 'pg_dump -U "$(cat /run/secrets/*_db_user)" -d "$POSTGRES_DB" -Fc' > "$safety"
+  chmod 600 "$safety"
+
+  # 4. The database from the snapshot. Dropping and recreating it, instead of restoring over
+  #    it, also removes what a newer migration created and the snapshot does not know.
+  echo "Restoring the database..."
+  docker exec "$pg" sh -c '
+    set -e
+    user="$(cat /run/secrets/*_db_user)"
+    psql -q -U "$user" -d postgres -v ON_ERROR_STOP=1 -v db="$POSTGRES_DB" <<SQL
+DROP DATABASE IF EXISTS :"db" WITH (FORCE);
+CREATE DATABASE :"db";
+SQL'
+  if ! docker exec -i "$pg" sh -c 'pg_restore -U "$(cat /run/secrets/*_db_user)" -d "$POSTGRES_DB" --no-owner --exit-on-error' < "${dir}/database.dump"; then
+    echo "The restore failed. The database from before this rollback is in ${safety}." >&2
+    echo "$(date '+%Y-%m-%d %H:%M:%S %Z') rollback to ${id} FAILED restoring the database" >> "$log"
+    exit 1
+  fi
+
+  # 5. Files from the snapshot. snapshot.sh and rollback.sh stay as they are: they are the
+  #    newest tools, and this one is running.
+  local caddy_before caddy_after
+  caddy_before="$(cat "${app_dir}/etc/Caddyfile" 2>/dev/null || true)"
+  cp -a "${dir}/docker-compose.prod.yml" "${app_dir}/docker-compose.prod.yml"
+  rm -rf "${app_dir}/etc.rollback"
+  cp -a "${dir}/etc" "${app_dir}/etc.rollback"
+  rm -rf "${app_dir}/etc"
+  mv "${app_dir}/etc.rollback" "${app_dir}/etc"
+  for f in "${dir}/scripts/"*; do
+    case "$(basename "$f")" in
+      snapshot.sh|rollback.sh) ;;
+      *) cp -a "$f" "${app_dir}/scripts/" ;;
+    esac
+  done
+  caddy_after="$(cat "${app_dir}/etc/Caddyfile" 2>/dev/null || true)"
+
+  # 6. Every service on the image it ran at the snapshot, the application back up included.
+  echo "Deploying the images from the snapshot..."
+  docker stack deploy --compose-file "${dir}/stack.pinned.yml" --resolve-image never --prune "$stack"
+  if [[ "$caddy_before" != "$caddy_after" ]] && docker service inspect "${stack}_caddy" > /dev/null 2>&1; then
+    docker service update --force --detach "${stack}_caddy" > /dev/null
+  fi
+
+  echo "Waiting for the services (up to 3 minutes)..."
+  local _ pending=""
+  for _ in $(seq 1 30); do
+    pending="$(docker stack services "$stack" --format '{{.Name}} {{.Replicas}}' \
+      | grep -v "^${stack}_whisper " | grep -v ' 1/1' || true)"
+    [[ -z "$pending" ]] && break
+    sleep 6
+  done
+  docker stack services "$stack"
+
+  echo "$(date '+%Y-%m-%d %H:%M:%S %Z') rollback to ${id} done" >> "$log"
+  echo ""
+  if [[ -n "$pending" ]]; then
+    echo "A service is still not 1/1. See: docker stack ps ${stack} --no-trunc"
+  else
+    echo "Back to snapshot ${id}."
+  fi
+  echo "update.sh installs the latest version again: run it once the problem is fixed upstream."
+}
+
+postgres_container() {
+  docker ps -q -f "name=^${1}_postgres\." | head -1
+}
+
+# Waits up to 2 minutes for the database to accept connections; prints the container id.
+wait_postgres() {
+  local stack="$1" pg _
+  for _ in $(seq 1 40); do
+    pg="$(postgres_container "$stack")"
+    if [[ -n "$pg" ]] && docker exec "$pg" sh -c 'pg_isready -q -U "$(cat /run/secrets/*_db_user)" -d postgres' 2>/dev/null; then
+      echo "$pg"
+      return 0
+    fi
+    sleep 3
+  done
+  return 1
+}
+
+main "$@"; exit $?
+ROLLBACK
+  chmod 755 "${APP_DIR}/scripts/rollback.sh"
+}
+
 if [[ "$UPDATE_MODE" == "y" ]]; then
   echo -e "${BOLD}${CYAN}OpenTube${NC}  ·  update  ·  $(date -u '+%Y-%m-%d %H:%M UTC')"
 else
@@ -1005,6 +1298,16 @@ STACK_NAME="${APP_NAME//-/_}"
 INSTALL_CONF="${APP_DIR}/etc/install.conf"
 if [[ "$UPDATE_MODE" == "y" && ! -f "$INSTALL_CONF" ]]; then
   die "No installation at ${APP_DIR} (${INSTALL_CONF} is missing). Run the installer without --update."
+fi
+
+# Before an update changes anything, a snapshot that rollback.sh can restore. update.sh takes
+# it itself when it already has snapshot.sh; an installation from before this takes the first
+# one here.
+if [[ "$UPDATE_MODE" == "y" ]]; then
+  write_maintenance_scripts
+  if [[ "${OPENTUBE_SNAPSHOT_TAKEN:-}" != "1" && "${OPENTUBE_SKIP_SNAPSHOT:-}" != "1" ]]; then
+    "${APP_DIR}/scripts/snapshot.sh"       || die "The snapshot failed, so nothing was changed. OPENTUBE_SKIP_SNAPSHOT=1 updates without one."
+  fi
 fi
 echo -e "  ${DIM}Directory: ${APP_DIR}  |  Stack: ${STACK_NAME}${NC}"
 echo ""
@@ -1934,6 +2237,8 @@ cat > "${APP_DIR}/scripts/update.sh" <<'UPD'
 # Usage: sudo /opt/<name>/scripts/update.sh
 #        OPENTUBE_INSTALL_URL=<url> to take the installer from somewhere else (a fork, a branch).
 #
+# Before anything else it runs snapshot.sh; if the update goes wrong, rollback.sh restores it.
+#
 # Everything runs inside main(): bash reads the whole function before running it, so the
 # installer can rewrite this file while it is running.
 main() {
@@ -1954,6 +2259,15 @@ main() {
   trap 'rm -f "${OPENTUBE_UPDATE_INSTALLER:-}"' EXIT
   local installer="$OPENTUBE_UPDATE_INSTALLER"
 
+  # A snapshot first, so rollback.sh can undo this update. With no snapshot, no update.
+  if [[ -x "${app_dir}/scripts/snapshot.sh" && "${OPENTUBE_SKIP_SNAPSHOT:-}" != "1" ]]; then
+    if ! "${app_dir}/scripts/snapshot.sh" 2>&1 | tee -a "$log"; then
+      echo "The snapshot failed; nothing changed. OPENTUBE_SKIP_SNAPSHOT=1 updates without one." >&2
+      exit 1
+    fi
+    export OPENTUBE_SNAPSHOT_TAKEN=1
+  fi
+
   echo "Fetching the latest installer from ${url}"
   curl -fsSL --retry 3 "$url" -o "$installer"
 
@@ -1969,7 +2283,8 @@ main() {
 main "$@"; exit $?
 UPD
 chmod 755 "${APP_DIR}/scripts/update.sh"
-ok "Stack, Caddy, and update.sh"
+write_maintenance_scripts
+ok "Stack, Caddy, update.sh, snapshot.sh, and rollback.sh"
 
 # ==============================================================================
 phase "PHASE 9 — Deploy"
@@ -2215,7 +2530,8 @@ fi
 echo -e "  Admin     : ${BOLD}${ADMIN_EMAIL}${NC}"
 echo -e "  ${DIM}There is no administrator password. The code arrives by email (or Mailpit, in dev).${NC}"
 echo -e "  Directory : ${APP_DIR}"
-echo -e "  Update    : ${APP_DIR}/scripts/update.sh"
+echo -e "  Update    : ${APP_DIR}/scripts/update.sh  ${DIM}(takes a snapshot first)${NC}"
+echo -e "  Rollback  : ${APP_DIR}/scripts/rollback.sh  ${DIM}(restores the latest snapshot)${NC}"
 echo -e "  Database  : ${POSTGRES_DB} / ${POSTGRES_USER}"
 if [[ "$WHISPER_ENABLED" == "y" ]]; then
   echo -e "  Captions  : Whisper (${WHISPER_VARIANT^^}). On first start it picks and downloads its model;"

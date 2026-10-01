@@ -15,7 +15,7 @@ domain, with optional expiration and a detailed record of who watched what.
 - [Server requirements](#server-requirements)
 - [Production installation](#production-installation) — [before you start](#before-you-start) ·
   [install](#install) · [access modes](#access-modes) · [what gets set up](#what-the-installer-sets-up) ·
-  [automatic captions](#automatic-captions-in-production) · [operation](#operation) ·
+  [automatic captions](#automatic-captions-in-production) · [operation](#operation) · [rollback](#rolling-back-an-update) ·
   [uninstall](#uninstall)
 - [Development](#development) — [prerequisites](#prerequisites) · [quick start](#quick-start) ·
   [`make watch`](#make-watch--hot-reload) · [`make up`](#make-up--full-stack-in-containers) ·
@@ -190,6 +190,8 @@ internal one, and the per-origin limits would apply to everyone at once.
 | `/opt/<name>/data/` | PostgreSQL, Caddy certificates, and Whisper models |
 | MinIO disk (chosen) | Originals and published videos |
 | `/opt/<name>/scripts/update.sh` | Update everything to the latest version (see [operation](#operation)) |
+| `/opt/<name>/scripts/snapshot.sh`, `rollback.sh` | Snapshot of the installation, taken before every update, and its restore (see [rollback](#rolling-back-an-update)) |
+| `/opt/<name>/snapshots/` | The latest 5 snapshots (mode 700) |
 | `/opt/<name>/logs/` | Logs of the maintenance scripts |
 
 ### Automatic captions in production
@@ -254,6 +256,8 @@ The stack is named after the application (`opentube` by default; dashes become u
 | Task | How |
 | --- | --- |
 | Update to the latest version | `sudo /opt/<name>/scripts/update.sh` |
+| Undo the last update | `sudo /opt/<name>/scripts/rollback.sh` |
+| Take a snapshot now | `sudo /opt/<name>/scripts/snapshot.sh` |
 | See the services | `docker stack services <stack>` |
 | Follow a service's logs | `docker service logs -f <stack>_app` (also `_worker`, `_whisper`, `_caddy`) |
 | Change a setting | Run the installer again |
@@ -267,6 +271,35 @@ Nothing that needs a decision happens on its own: installing the NVIDIA toolkit,
 Docker, or turning on captions for an installation that never had them is left for an interactive
 run. A download that is cut or is not the installer is refused before anything runs, and each
 run is appended to `logs/update.log`.
+
+### Rolling back an update
+
+Before changing anything, every update takes a snapshot of the installation. If the snapshot
+fails, the update does not run (`OPENTUBE_SKIP_SNAPSHOT=1` updates without one). A snapshot holds:
+
+- the image each service is running, pinned by digest — `:latest` moves, the digest does not;
+- the stack file, `etc/` (Caddyfile, `install.conf`, certificate) and `scripts/`;
+- a dump of the database, checked with `pg_restore` before the snapshot counts.
+
+It lives in `/opt/<name>/snapshots/<date>-<time>/`, readable only by root. The latest 5 are kept
+(`OPENTUBE_SNAPSHOT_KEEP=<n>` keeps another number).
+
+If something goes wrong, `rollback.sh` restores the latest snapshot (or the one named, from
+`rollback.sh --list`). It asks for the snapshot id to confirm (`--yes` skips the question), stops
+the application and the worker, saves the current database next to the snapshot
+(`before-rollback-*.dump`), replaces the database with the snapshot's, puts the files back, and
+deploys every service on the image it ran then.
+
+What a rollback does not undo:
+
+- **Data written after the snapshot is lost** — sign-ins, views, comments, grants, captions, video
+  records. The `before-rollback` dump keeps it, if it has to be recovered.
+- **Video files are not in the snapshot.** An update does not touch the MinIO disk, and it is
+  usually much larger than everything else; back it up separately. Files uploaded after the
+  snapshot stay on the disk with no record pointing at them.
+- The firewall rules and the installed packages stay as they are.
+
+After a rollback, `update.sh` installs the latest version again: run it once the problem is fixed.
 
 Installations older than this `update.sh` only pull images; to switch them over once, run:
 
