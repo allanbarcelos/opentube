@@ -48,23 +48,28 @@ public enum VideosDaColecao
     /// <summary>Os vídeos saem da coleção e continuam no acervo.</summary>
     Desvincular,
 
-    /// <summary>Os vídeos são excluídos como qualquer outro vídeo: somem do acervo e o registro fica.</summary>
+    /// <summary>Os vídeos são excluídos de verdade, junto com os arquivos e os acessos.</summary>
     Excluir,
 
     /// <summary>Os vídeos passam para outra coleção.</summary>
     Mover
 }
 
+/// <summary>Vídeo apagado junto com a coleção. O título vai inteiro para a auditoria.</summary>
+/// <param name="Id">Vídeo.</param>
+/// <param name="Title">Título no momento da exclusão.</param>
+public sealed record VideoExcluido(Guid Id, string Title);
+
 /// <summary>Coleção que acabou de ser apagada, para a auditoria e a capa no storage.</summary>
 /// <param name="Name">Nome, no registro do que aconteceu.</param>
 /// <param name="Videos">O que foi feito com os vídeos.</param>
 /// <param name="DestinationName">Coleção que recebeu os vídeos, quando eles foram movidos.</param>
-/// <param name="DeletedVideoIds">Vídeos que entraram na exclusão junto com a coleção.</param>
+/// <param name="DeletedVideos">Vídeos excluídos junto com a coleção, na ordem da playlist.</param>
 public sealed record ExclusaoDeColecao(
     string Name,
     VideosDaColecao Videos,
     string? DestinationName,
-    IReadOnlyList<Guid> DeletedVideoIds);
+    IReadOnlyList<VideoExcluido> DeletedVideos);
 
 /// <summary>
 /// Administração das coleções. Elas existem para que a concessão recaia sobre um conjunto, e
@@ -204,7 +209,7 @@ public class CollectionService(
         var colecao = await CarregarAsync(collectionId, cancellationToken);
         var ids = colecao.Videos.OrderBy(v => v.Position).Select(v => v.VideoId).ToList();
         string? destinoNome = null;
-        var excluidos = new List<Guid>();
+        var excluidos = new List<VideoExcluido>();
 
         Collection? destino = null;
         if (videos == VideosDaColecao.Mover && ids.Count > 0)
@@ -237,9 +242,15 @@ public class CollectionService(
         }
         else if (videos == VideosDaColecao.Excluir && ids.Count > 0)
         {
+            // O título precisa ser lido agora: depois do apagamento a linha do vídeo não existe mais.
+            var titulos = await db.Videos.AsNoTracking()
+                .Where(v => ids.Contains(v.Id))
+                .Select(v => new { v.Id, v.Title })
+                .ToDictionaryAsync(v => v.Id, v => v.Title, cancellationToken);
+
             // Os vínculos estão rastreados. Apagá-los aqui e de novo ao remover a coleção
             // faria o segundo delete esperar uma linha que já não existe.
-            excluidos.AddRange(ids);
+            excluidos.AddRange(ids.Select(id => new VideoExcluido(id, titulos[id])));
         }
 
         await db.AccessGrants
@@ -257,12 +268,12 @@ public class CollectionService(
         await db.SaveChangesAsync(cancellationToken);
 
         if (excluidos.Count > 0)
-            await ExclusaoPermanenteDeVideo.ApagarRegistrosAsync(db, excluidos, cancellationToken);
+            await ExclusaoPermanenteDeVideo.ApagarRegistrosAsync(db, excluidos.Select(v => v.Id).ToArray(), cancellationToken);
 
         await transacao.CommitAsync(cancellationToken);
 
         if (excluidos.Count > 0)
-            await ExclusaoPermanenteDeVideo.ApagarArquivosAsync(storage, excluidos, logger, cancellationToken);
+            await ExclusaoPermanenteDeVideo.ApagarArquivosAsync(storage, excluidos.Select(v => v.Id), logger, cancellationToken);
 
         if (capa is not null)
         {

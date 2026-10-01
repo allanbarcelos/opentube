@@ -213,10 +213,11 @@ public static class CollectionEndpoints
                 await contexto.RegistrarAsync(
                     AuditActions.ColecaoExcluida, AuditEntities.Colecao, collectionId, resumo, cancellationToken);
 
-                foreach (var videoId in exclusao.DeletedVideoIds)
+                foreach (var video in exclusao.DeletedVideos)
                 {
                     await contexto.RegistrarAsync(
-                        AuditActions.VideoExcluido, AuditEntities.Video, videoId, LocalText.Get("Video deleted."), cancellationToken);
+                        AuditActions.VideoExcluido, AuditEntities.Video, video.Id,
+                        LocalText.Format("Video '{0}' deleted.", video.Title), cancellationToken);
                 }
 
                 var aviso = exclusao.Videos switch

@@ -261,10 +261,11 @@ public static class AdminEndpoints
         grupo.MapPost("/delete", async (
             Guid videoId, AdminVideoService admin, HttpContext contexto, CancellationToken cancellationToken) =>
         {
-            await admin.DeleteAsync(videoId, cancellationToken);
+            var titulo = await admin.DeleteAsync(videoId, cancellationToken);
 
             await contexto.RegistrarAsync(
-                AuditActions.VideoExcluido, AuditEntities.Video, videoId, LocalText.Get("Video deleted."), cancellationToken);
+                AuditActions.VideoExcluido, AuditEntities.Video, videoId,
+                LocalText.Format("Video '{0}' deleted.", titulo), cancellationToken);
 
             return Results.Redirect("/admin?excluido=1");
         });

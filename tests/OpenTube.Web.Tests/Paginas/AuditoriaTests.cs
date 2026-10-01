@@ -148,8 +148,8 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
         await FormularioHelpers.EnviarFormularioAsync(
             cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/delete", new Dictionary<string, string>());
 
-        Assert.Contains("Video deleted.", await cliente.GetStringAsync("/admin/audit"));
-        Assert.Contains("Video deleted.", await cliente.GetStringAsync("/admin/audit?type=video"));
+        Assert.Contains("Video 'Plano Confidencial' deleted.", WebUtility.HtmlDecode(await cliente.GetStringAsync("/admin/audit")));
+        Assert.Contains("Video 'Plano Confidencial' deleted.", WebUtility.HtmlDecode(await cliente.GetStringAsync("/admin/audit?type=video")));
         Assert.Contains("No actions recorded", await cliente.GetStringAsync("/admin/audit?type=domain"));
         Assert.Contains("No actions recorded", await cliente.GetStringAsync("/admin/audit?who=outra@pessoa.com"));
     }

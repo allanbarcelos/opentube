@@ -139,7 +139,7 @@ public class AdminVideoServiceTests(PostgresFixture postgres, MinioFixture minio
             EmailAddress.Parse("ana@empresa.com"), GrantTargetType.Video, video.Id, Admin, Agora));
         await db.SaveChangesAsync();
 
-        await servico.DeleteAsync(video.Id);
+        Assert.Equal("Reunião", await servico.DeleteAsync(video.Id));
 
         await using var leitura = postgres.CreateContext();
         Assert.Empty(await leitura.Videos.ToListAsync());

@@ -699,6 +699,10 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
             "Collection deleted and videos deleted.",
             await cliente.GetStringAsync(exclusao.Headers.Location!.ToString()));
 
+        var auditoria = WebUtility.HtmlDecode(await cliente.GetStringAsync("/admin/audit"));
+        Assert.Contains("Collection 'Origem' deleted. Its videos were deleted.", auditoria);
+        Assert.Contains("Video 'Para apagar' deleted.", auditoria);
+
         await using (var meio = postgres.CreateContext())
         {
             Assert.DoesNotContain(await meio.Collections.Select(c => c.Id).ToListAsync(), id => id == origem);
@@ -716,6 +720,9 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         Assert.Contains(
             "Collection deleted and videos moved to 'Outra'.",
             WebUtility.HtmlDecode(await cliente.GetStringAsync(mudanca.Headers.Location!.ToString())));
+
+        var auditoriaDaMudanca = WebUtility.HtmlDecode(await cliente.GetStringAsync("/admin/audit"));
+        Assert.Contains("Collection 'Destino' deleted. Its videos were moved to 'Outra'.", auditoriaDaMudanca);
 
         await using var fim = postgres.CreateContext();
         Assert.Equal(outra, (await fim.CollectionVideos.SingleAsync()).CollectionId);

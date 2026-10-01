@@ -59,10 +59,11 @@ public class AdminVideoService(
         return video;
     }
 
-    /// <summary>Apaga o vídeo, os acessos e os arquivos. Não há o que restaurar.</summary>
-    public async Task DeleteAsync(Guid videoId, CancellationToken cancellationToken = default)
+    /// <summary>Apaga o vídeo, os acessos e os arquivos. Devolve o título para a auditoria.</summary>
+    public async Task<string> DeleteAsync(Guid videoId, CancellationToken cancellationToken = default)
     {
-        _ = await CarregarAsync(videoId, cancellationToken);
+        var video = await CarregarAsync(videoId, cancellationToken);
+        var titulo = video.Title;
 
         await using var transacao = await db.Database.BeginTransactionAsync(cancellationToken);
         await ExclusaoPermanenteDeVideo.ApagarRegistrosAsync(db, [videoId], cancellationToken);
@@ -71,6 +72,8 @@ public class AdminVideoService(
         await ExclusaoPermanenteDeVideo.ApagarArquivosAsync(storage, [videoId], logger, cancellationToken);
 
         logger.LogInformation("Vídeo {VideoId} excluído", videoId);
+
+        return titulo;
     }
 
     /// <summary>

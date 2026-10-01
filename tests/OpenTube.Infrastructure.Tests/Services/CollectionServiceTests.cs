@@ -357,7 +357,7 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var exclusao = await servico.DeleteAsync(colecao.Id, VideosDaColecao.Desvincular, null);
 
         Assert.Equal(VideosDaColecao.Desvincular, exclusao.Videos);
-        Assert.Empty(exclusao.DeletedVideoIds);
+        Assert.Empty(exclusao.DeletedVideos);
         Assert.Empty(await db.Collections.AsNoTracking().ToListAsync());
         Assert.Empty(await db.CollectionVideos.AsNoTracking().ToListAsync());
         Assert.Empty(await db.CollectionFavorites.AsNoTracking().ToListAsync());
@@ -389,8 +389,8 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var exclusao = await servico.DeleteAsync(colecao.Id, VideosDaColecao.Excluir, null);
 
         Assert.Equal(
-            new[] { video.Id, outro.Id }.OrderBy(id => id),
-            exclusao.DeletedVideoIds.OrderBy(id => id));
+            [new VideoExcluido(video.Id, "Primeiro"), new VideoExcluido(outro.Id, "Segundo")],
+            exclusao.DeletedVideos);
         Assert.Empty(await db.Collections.AsNoTracking().ToListAsync());
         Assert.Empty(await db.Videos.AsNoTracking().ToListAsync());
         Assert.Empty(await db.CollectionVideos.AsNoTracking().ToListAsync());
@@ -412,7 +412,7 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var exclusao = await servico.DeleteAsync(origem.Id, VideosDaColecao.Mover, destino.Id);
 
         Assert.Equal("Beta", exclusao.DestinationName);
-        Assert.Empty(exclusao.DeletedVideoIds);
+        Assert.Empty(exclusao.DeletedVideos);
         Assert.Null(await db.Collections.AsNoTracking().SingleOrDefaultAsync(c => c.Id == origem.Id));
 
         var vinculo = await db.CollectionVideos.AsNoTracking().SingleAsync();
