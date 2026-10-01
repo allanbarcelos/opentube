@@ -186,7 +186,7 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
 
         // A versão, a coleta de audiência e a página seguinte fazem parte da mesma reprodução
         // ou de uma nova: só as primeiras podem passar.
-        var versao = Reproducao.VersaoDaPlaylist(await principal.Content.ReadAsStringAsync(), "360p");
+        var versao = Reproducao.PrimeiraVersao(await principal.Content.ReadAsStringAsync());
         Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync(versao)).StatusCode);
 
         var sessao = await cliente.PostAsJsonAsync("/api/playback/start", new { videoId });

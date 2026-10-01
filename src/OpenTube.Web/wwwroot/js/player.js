@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
-// Reprodução HLS. O Safari toca HLS nativamente; os demais navegadores precisam da hls.js,
-// que é servida pelo próprio site para não depender de rede externa.
+// Reprodução HLS pela hls.js, servida pelo próprio site para não depender de rede externa. Ela
+// monta o vídeo na memória (o <video> fica com um src blob:), inclusive no Safari e no iPhone que
+// a suportam; o player nativo fica só para quem não tem como usá-la.
+//
+// A página não traz endereço de vídeo: só o id e um token (data-video, data-reproducao). O
+// player troca o token pelo endereço opaco da reprodução, e daí em diante cada playlist e cada
+// pedaço é pedido por um selo cifrado.
 //
 // O script é carregado uma vez, no layout, e monta sozinho os players da página: a
 // navegação aprimorada do Blazor troca o conteúdo sem executar os <script> da página nova,
@@ -46,7 +51,24 @@ window.openTubePlayer = (function () {
         video.insertAdjacentElement('afterend', aviso);
     }
 
-    function iniciar(elementId, manifestUrl, videoId) {
+    // Troca o token da página pelo endereço da reprodução.
+    function pedirReproducao(video) {
+        return fetch('/api/play', {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ video: video.dataset.video, token: video.dataset.reproducao })
+        }).then(function (resposta) {
+            if (!resposta.ok) {
+                throw new Error('Reprodução recusada: ' + resposta.status);
+            }
+
+            return resposta.json();
+        }).then(function (dados) { return dados.src; });
+    }
+
+    function iniciar(elementId, videoId) {
         const video = document.getElementById(elementId);
         if (!video) {
             return;
@@ -58,18 +80,32 @@ window.openTubePlayer = (function () {
             ? window.openTubeAnalytics.criar(videoId, video)
             : null;
 
-        const instancia = { video: video, manifest: manifestUrl, hls: null, audiencia: audiencia };
+        const instancia = { video: video, reproducao: video.dataset.reproducao, hls: null, audiencia: audiencia };
         instancias.set(elementId, instancia);
 
-        if (video.canPlayType(TIPO_HLS)) {
-            video.src = manifestUrl;
-            return;
-        }
+        pedirReproducao(video).then(function (src) {
+            // A página pode ter trocado de vídeo enquanto o pedido estava no ar.
+            if (instancias.get(elementId) !== instancia) {
+                return;
+            }
 
-        if (!window.Hls || !window.Hls.isSupported()) {
-            avisar(video);
-            return;
-        }
+            if (window.Hls && window.Hls.isSupported()) {
+                tocarComHls(instancia, src);
+            } else if (video.canPlayType(TIPO_HLS)) {
+                video.src = src;
+            } else {
+                avisar(video);
+            }
+        }, function () {
+            if (instancias.get(elementId) === instancia) {
+                avisar(video);
+            }
+        });
+    }
+
+    function tocarComHls(instancia, src) {
+        const video = instancia.video;
+        const audiencia = instancia.audiencia;
 
         // O servidor limita a velocidade com que os pedaços do vídeo saem, para que baixá-lo
         // leve quase tanto quanto assisti-lo. O player fica bem abaixo disso: adianta no máximo
@@ -78,6 +114,10 @@ window.openTubePlayer = (function () {
         const hls = new window.Hls({
             enableWorker: true,
             lowLatencyMode: false,
+            // Com ele, o servidor responde as playlists com um tipo genérico, que não diz o que são.
+            xhrSetup: function (xhr) {
+                xhr.setRequestHeader('X-OpenTube-Player', 'hls');
+            },
             maxBufferLength: 30,
             maxMaxBufferLength: 60,
             fragLoadPolicy: {
@@ -127,7 +167,7 @@ window.openTubePlayer = (function () {
             }
         });
 
-        hls.loadSource(manifestUrl);
+        hls.loadSource(src);
         hls.attachMedia(video);
     }
 
@@ -237,7 +277,7 @@ window.openTubePlayer = (function () {
 
     // O vídeo da página, se houver um montado.
     function videoDaPagina() {
-        return document.querySelector('video[data-manifest][data-montado]');
+        return document.querySelector('video[data-reproducao][data-montado]');
     }
 
     // Leva o player a um instante e toca de lá, com o player à vista. Usado pelos tempos
@@ -368,32 +408,27 @@ window.openTubePlayer = (function () {
     // inicial e a cada navegação aprimorada; montar duas vezes o mesmo vídeo não faz nada.
     function montar() {
         instancias.forEach(function (instancia, elementId) {
-            if (!instancia.video.isConnected || instancia.video.dataset.manifest !== instancia.manifest) {
+            if (!instancia.video.isConnected || instancia.video.dataset.reproducao !== instancia.reproducao) {
                 encerrar(elementId);
             }
         });
 
-        document.querySelectorAll('video[data-manifest]').forEach(function (video) {
+        document.querySelectorAll('video[data-reproducao]').forEach(function (video) {
             reproduzirSePedido(video);
 
-            const manifest = video.dataset.manifest;
+            const reproducao = video.dataset.reproducao;
 
-            if (!video.id || video.dataset.montado === manifest) {
+            if (!video.id || video.dataset.montado === reproducao) {
                 return;
             }
 
-            video.dataset.montado = manifest;
+            video.dataset.montado = reproducao;
             proteger(video);
             aplicarInicioDoEndereco(video);
 
-            if (video.canPlayType(TIPO_HLS)) {
-                iniciar(video.id, manifest, video.dataset.videoId);
-                return;
-            }
-
-            carregarHls().then(
-                function () { iniciar(video.id, manifest, video.dataset.videoId); },
-                function () { avisar(video); });
+            // Sem a hls.js (falha ao carregá-la), ainda resta o player nativo onde houver.
+            const comecar = function () { iniciar(video.id, video.dataset.videoId); };
+            carregarHls().then(comecar, comecar);
         });
 
         if (window.openTubeMarcaDagua) {

@@ -123,7 +123,6 @@ rotas.MapPost("/language", (HttpContext contexto, [FromForm] string? idioma, [Fr
 });
 
 rotas.MapAuthEndpoints();
-rotas.MapPlaybackEndpoints();
 rotas.MapAdminEndpoints();
 rotas.MapShareEndpoints();
 rotas.MapCollectionEndpoints();
@@ -137,6 +136,9 @@ rotas.MapCaptionEndpoints();
 rotas.MapRatingEndpoints();
 rotas.MapWatermarkEndpoints();
 app.MapAnalyticsEndpoints();
+// Fora do grupo: o pedido de reprodução é um POST que o player faz sem token antifalsificação,
+// e não muda nada no servidor.
+app.MapPlaybackEndpoints();
 app.MapSegmentAuthorization();
 app.MapHealthChecks("/health");
 

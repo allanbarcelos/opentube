@@ -27,7 +27,7 @@ public static class SegmentAuthorizationEndpoints
         rotas.MapMethods("/_authz", ["GET", "HEAD"], async (
             IOptions<StorageOptions> options,
             PlaybackService playback,
-            PlaybackTokens tokens,
+            PlaybackSeals selos,
             SegmentRateLimiter limite,
             CollectionThumbnailService miniaturas,
             CurrentViewer espectadores,
@@ -46,6 +46,24 @@ public static class SegmentAuthorizationEndpoints
             var prefixo = options.Value.SegmentPath;
             var espectador = await espectadores.GetAsync(cancellationToken);
 
+            // Os pedaços do vídeo chegam pelo endereço opaco. O selo diz o vídeo e o arquivo; a
+            // resposta diz ao servidor da frente qual chave buscar no storage — ele não tem outra.
+            if (SeloDoSegmento(caminho) is { } selo)
+            {
+                if (selos.Open(selo, PlaybackSealKind.Segment, espectador) is not { } aberto)
+                    return Recusado();
+
+                if (!limite.TryAcquire(PlaybackTokens.ViewerKey(espectador), aberto.VideoId))
+                    return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+
+                // Não conta visualização: o bilhete da playlist principal é que autoriza o resto.
+                if (await playback.AuthorizeSegmentAsync(aberto.VideoId, espectador, aberto.Path, cancellationToken) is not { } chave)
+                    return Recusado();
+
+                contexto.Response.Headers[StorageKeyHeader] = chave;
+                return Results.Ok();
+            }
+
             // A capa não fica numa pasta de vídeo. Sem este ramo o servidor da frente recusa
             // o endereço assinado e a imagem não carrega para quem já pode ver a coleção.
             if (ExtrairMiniaturaDeColecao(caminho, prefixo) is { } capa)
@@ -58,18 +76,11 @@ public static class SegmentAuthorizationEndpoints
             if (ExtrairSegmento(caminho, prefixo) is not { } segmento)
                 return Results.Forbid();
 
-            // Os pedaços do vídeo pedem o token da reprodução e respeitam o limite de velocidade.
-            // Legendas, miniaturas e a folha de prévias, pedidas pela página, não.
+            // Pelo caminho legível saem só legendas, miniaturas e a folha de prévias, pedidas pela
+            // página. Os pedaços do vídeo, ali, têm nome previsível: só pelo endereço opaco.
             if (EhMidia(segmento.Key))
-            {
-                if (!tokens.Validate(TokenDoEndereco(caminho), PlaybackTokenKind.Playback, segmento.VideoId, espectador))
-                    return Recusado();
+                return Recusado();
 
-                if (!limite.TryAcquire(PlaybackTokens.ViewerKey(espectador), segmento.VideoId))
-                    return Results.StatusCode(StatusCodes.Status429TooManyRequests);
-            }
-
-            // Não conta visualização: o bilhete da playlist principal é que autoriza o resto.
             // A chave tem de ser a geração publicada, senão a anterior continua saindo.
             return await playback.CanReceiveMediaAsync(segmento.VideoId, espectador, segmento.Key, cancellationToken)
                 ? Results.Ok()
@@ -91,16 +102,19 @@ public static class SegmentAuthorizationEndpoints
         chave.EndsWith(".m4s", StringComparison.OrdinalIgnoreCase)
         || chave.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Token de reprodução no parâmetro do endereço original.</summary>
-    public static string? TokenDoEndereco(string? caminho)
+    /// <summary>Cabeçalho da resposta com a chave que o servidor da frente busca no storage.</summary>
+    public const string StorageKeyHeader = "X-Storage-Key";
+
+    /// <summary>Selo de um endereço <c>/s/{selo}</c>; nulo para qualquer outro.</summary>
+    public static string? SeloDoSegmento(string? caminho)
     {
-        var inicio = caminho?.IndexOf('?') ?? -1;
-        if (inicio < 0)
+        if (string.IsNullOrWhiteSpace(caminho)
+            || !caminho.StartsWith(PlaybackEndpoints.SegmentRoute, StringComparison.Ordinal))
             return null;
 
-        var parametros = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(caminho![inicio..]);
+        var selo = caminho[PlaybackEndpoints.SegmentRoute.Length..].Split('?')[0];
 
-        return parametros.TryGetValue(PlaybackTokens.QueryName, out var valor) ? valor.ToString() : null;
+        return selo.Length > 0 && selo.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') ? selo : null;
     }
 
     /// <summary>Endereço que o servidor da frente está tentando entregar.</summary>

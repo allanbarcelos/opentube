@@ -150,7 +150,8 @@ public class CatalogoTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         Assert.Contains("Boas-vindas", html);
         Assert.Contains("Apresentação da plataforma", html);
-        Assert.Contains($"/api/videos/{video.Id}/master.m3u8?t=", html);
+        Assert.Contains($"data-video=\"{video.Id}\"", html);
+        Assert.Contains("data-reproducao=", html);
         Assert.Contains("2:05", html);
     }
 

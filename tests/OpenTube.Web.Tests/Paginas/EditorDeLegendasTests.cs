@@ -188,7 +188,8 @@ public class EditorDeLegendasTests(PostgresFixture postgres, MinioFixture minio)
         Assert.Contains("value=\"00:00:06.500\"", html);
         Assert.Contains(">Vamos começar.</textarea>", html);
         Assert.Contains($"data-salvar=\"/admin/videos/{video.Id}/captions/{legenda.Id}/content\"", html);
-        Assert.Contains($"data-manifest=\"/api/videos/{video.Id}/master.m3u8?t=", html);
+        Assert.Contains($"data-video=\"{video.Id}\"", html);
+        Assert.Contains("data-reproducao=", html);
     }
 
     [Fact]

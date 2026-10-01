@@ -99,15 +99,15 @@ public class PlaybackService(
     /// Playlist de uma versão, com segmentos e arquivo de inicialização já assinados. Os
     /// endereços assinados valem por algumas horas: tempo suficiente para assistir, curto o
     /// bastante para que um endereço copiado não circule indefinidamente. Com autorização por
-    /// segmento, <paramref name="segmentToken"/> segue em cada endereço, para a aplicação
-    /// conferi-lo quando o servidor da frente perguntar.
+    /// segmento, <paramref name="segmentUrl"/> dá o endereço de cada arquivo a partir de
+    /// <c>versão/arquivo</c>; a aplicação o confere quando o servidor da frente perguntar.
     /// </summary>
     public async Task<PlaybackResult> GetRenditionAsync(
         Guid videoId,
         string rendition,
         Viewer viewer,
         CancellationToken cancellationToken = default,
-        string? segmentToken = null)
+        Func<string, string>? segmentUrl = null)
     {
         var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
 
@@ -132,13 +132,12 @@ public class PlaybackService(
             // Com autorização por pedido, o segmento sai por um caminho da própria aplicação
             // e a revogação passa a valer no segmento seguinte, em vez de esperar a
             // assinatura vencer.
-            var token = string.IsNullOrEmpty(segmentToken)
-                ? string.Empty
-                : $"?{PlaybackTokens.QueryName}={Uri.EscapeDataString(segmentToken)}";
+            if (!_options.SegmentAuthorization)
+                return storage.SignDownloadUrl(StorageBucket.Vod, prefixo + uri, _options.PlaybackUrlLifetime);
 
-            return _options.SegmentAuthorization
-                ? $"{_options.SegmentPath.TrimEnd('/')}/{prefixo}{uri}{token}"
-                : storage.SignDownloadUrl(StorageBucket.Vod, prefixo + uri, _options.PlaybackUrlLifetime);
+            return segmentUrl is null
+                ? $"{_options.SegmentPath.TrimEnd('/')}/{prefixo}{uri}"
+                : segmentUrl($"{StorageKeys.RenditionName(rendition)}/{uri}");
         });
 
         return PlaybackResult.Allow(resultado.Reason, reescrito);
@@ -183,6 +182,40 @@ public class PlaybackService(
             return false;
 
         return objectKey is null || ChavePublicada(video, objectKey);
+    }
+
+    /// <summary>
+    /// Autoriza um arquivo de uma versão pedido pelo endereço opaco e devolve a chave dele no
+    /// storage, na geração publicada. Nulo quando não há acesso ou o caminho não é o de um
+    /// arquivo de versão: o servidor da frente só busca o que esta chave disser.
+    /// </summary>
+    /// <param name="relativePath"><c>versão/arquivo</c>, como a playlist da versão o selou.</param>
+    public async Task<string?> AuthorizeSegmentAsync(Guid videoId, Viewer viewer, string relativePath, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(viewer);
+
+        if (!CaminhoDeArquivoDeVersao(relativePath))
+            return null;
+
+        var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
+
+        if (video is null || !resultado.Allowed || !ContinuacaoOk(videoId, viewer, resultado))
+            return null;
+
+        return Prefixo(video) + relativePath;
+    }
+
+    /// <summary>Exatamente <c>versão/arquivo</c>, sem nada que mude de pasta.</summary>
+    private static bool CaminhoDeArquivoDeVersao(string? caminho)
+    {
+        if (string.IsNullOrWhiteSpace(caminho) || caminho.Length > 200)
+            return false;
+
+        var partes = caminho.Split('/');
+
+        return partes.Length == 2
+            && partes.All(p => p.Length > 0 && p is not "." and not ".."
+                && p.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.'));
     }
 
     /// <summary>

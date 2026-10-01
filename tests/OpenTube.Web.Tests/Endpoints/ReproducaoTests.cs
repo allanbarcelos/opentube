@@ -56,9 +56,12 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var conteudo = await resposta.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        // Sem o cabeçalho da hls.js é o player nativo do Safari, que precisa do tipo HLS.
         Assert.Equal("application/vnd.apple.mpegurl", resposta.Content.Headers.ContentType!.MediaType);
-        // A versão leva o token da reprodução: sem ele, a playlist dela não sai.
-        Assert.Contains($"/api/videos/{video.Id}/renditions/360p.m3u8?t=", conteudo);
+        // As versões têm endereço opaco: nem nome, nem vídeo, nem extensão.
+        Assert.Contains("/api/p/", conteudo);
+        Assert.DoesNotContain("360p", Reproducao.PrimeiraVersao(conteudo));
+        Assert.DoesNotContain(video.Id.ToString(), conteudo);
         // O endereço interno do storage não pode aparecer na playlist principal.
         Assert.DoesNotContain("X-Amz-Signature", conteudo);
     }
@@ -70,7 +73,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var conteudo = await cliente.GetStringAsync(await Reproducao.VersaoPelaPaginaAsync(cliente, video.Slug, "360p"));
+        var conteudo = await cliente.GetStringAsync(await Reproducao.VersaoPelaPaginaAsync(cliente, video.Slug));
 
         Assert.Contains("X-Amz-Signature", conteudo);
         Assert.Contains("seg-00000.m4s?", conteudo);
@@ -190,17 +193,38 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
     }
 
     [Fact]
-    public async Task Sem_o_token_da_pagina_as_playlists_nao_saem()
+    public async Task A_pagina_nao_traz_endereco_de_video()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        var html = await cliente.GetStringAsync($"/watch/{video.Slug}");
+
+        // Só o id e o token: o endereço da reprodução sai do pedido que o player faz.
+        Assert.Contains("data-reproducao=", html);
+        Assert.DoesNotContain(".m3u8", html);
+        Assert.DoesNotContain("/api/m/", html);
+        Assert.DoesNotContain("data-manifest", html);
+    }
+
+    [Fact]
+    public async Task Sem_o_token_da_pagina_nao_ha_reproducao()
     {
         using var storage = minio.CreateStorage();
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
 
-        // O endereço do vídeo, sozinho, não abre nada — nem num vídeo público.
-        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync($"/api/videos/{video.Id}/renditions/360p.m3u8")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8?t=123.abc")).StatusCode);
+        // Nem num vídeo público: sem passar pela página, não há por onde começar.
+        Assert.Equal(HttpStatusCode.Forbidden, (await Reproducao.PedirAsync(cliente, video.Id, null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Reproducao.PedirAsync(cliente, video.Id, "123.abc")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync("/api/m/qualquercoisa")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync("/api/p/qualquercoisa")).StatusCode);
+
+        // Os endereços legíveis de antes não existem mais.
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/renditions/360p.m3u8")).StatusCode);
     }
 
     [Fact]
@@ -219,17 +243,26 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         navegacao.Headers.Add("Sec-Fetch-Site", "none");
         Assert.Equal(HttpStatusCode.Forbidden, (await cliente.SendAsync(navegacao)).StatusCode);
 
-        // Outro site embutindo o vídeo.
-        using var deFora = new HttpRequestMessage(HttpMethod.Get, manifesto);
-        deFora.Headers.Add("Sec-Fetch-Site", "cross-site");
-        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.SendAsync(deFora)).StatusCode);
+        // Outro site pedindo a reprodução ou embutindo o vídeo.
+        var (id, token) = await Reproducao.TokenDaPaginaAsync(cliente, video.Slug);
+        using var pedidoDeFora = new HttpRequestMessage(HttpMethod.Post, "/api/play")
+        {
+            Content = System.Net.Http.Json.JsonContent.Create(new { video = id, token })
+        };
+        pedidoDeFora.Headers.Add("Sec-Fetch-Site", "cross-site");
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.SendAsync(pedidoDeFora)).StatusCode);
 
         // O player do site: o mesmo endereço, pedido pela página.
         using var player = new HttpRequestMessage(HttpMethod.Get, manifesto);
         player.Headers.Add("Sec-Fetch-Mode", "cors");
         player.Headers.Add("Sec-Fetch-Dest", "empty");
         player.Headers.Add("Sec-Fetch-Site", "same-origin");
-        Assert.Equal(HttpStatusCode.OK, (await cliente.SendAsync(player)).StatusCode);
+        player.Headers.Add("X-OpenTube-Player", "hls");
+        var resposta = await cliente.SendAsync(player);
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        // Para a hls.js, um tipo que não diz o que é.
+        Assert.Equal("application/octet-stream", resposta.Content.Headers.ContentType!.MediaType);
     }
 
     [Fact]
@@ -240,24 +273,22 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var segundo = await AcervoDeTeste.PublicarAsync(postgres, storage, "Segundo", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var manifesto = await Reproducao.ManifestoDaPaginaAsync(cliente, primeiro.Slug);
-        var token = manifesto[(manifesto.IndexOf("?t=", StringComparison.Ordinal) + 3)..];
+        var (_, token) = await Reproducao.TokenDaPaginaAsync(cliente, primeiro.Slug);
 
-        Assert.Equal(HttpStatusCode.Forbidden,
-            (await cliente.GetAsync($"/api/videos/{segundo.Id}/master.m3u8?t={token}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Reproducao.PedirAsync(cliente, segundo.Id, token)).StatusCode);
     }
 
     [Fact]
-    public async Task O_token_da_pagina_nao_serve_de_token_da_reproducao()
+    public async Task Um_selo_nao_serve_no_lugar_de_outro()
     {
         using var storage = minio.CreateStorage();
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
         var manifesto = await Reproducao.ManifestoDaPaginaAsync(cliente, video.Slug);
-        var token = manifesto[(manifesto.IndexOf("?t=", StringComparison.Ordinal) + 3)..];
+        var selo = manifesto["/api/m/".Length..];
 
-        Assert.Equal(HttpStatusCode.Forbidden,
-            (await cliente.GetAsync($"/api/videos/{video.Id}/renditions/360p.m3u8?t={token}")).StatusCode);
+        // O selo da playlist principal não abre uma versão.
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync("/api/p/" + selo)).StatusCode);
     }
 }

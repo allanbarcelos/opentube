@@ -620,7 +620,7 @@ flowchart TB
 
     browser -->|"HTTPS, directly or through Cloudflare"| caddy
     caddy -->|"pages · API · playlists"| web
-    caddy -->|"/vod/* after forward_auth"| minio
+    caddy -->|"/s/* and /vod/* after forward_auth"| minio
     caddy -->|"/originals/* signed upload"| minio
     web --> postgres
     web -->|"signed URLs"| minio
@@ -703,15 +703,18 @@ sequenceDiagram
     participant C as Caddy
     participant W as OpenTube.Web
     participant S as MinIO
-    B->>C: GET master playlist
+    B->>C: POST /api/play (page token)
+    C->>W: Forward
+    W-->>B: Opaque address of the master playlist
+    B->>C: GET /api/m/<seal>
     C->>W: Forward
     W->>W: CanWatch, count the view, issue the playback ticket
-    W-->>B: Playlist
+    W-->>B: Playlist (renditions as /api/p/<seal>, segments as /s/<seal>)
     loop Every 4 s segment
-        B->>C: GET /vod/...
+        B->>C: GET /s/<seal>
         C->>W: forward_auth /_authz
-        W-->>C: 200 or 403
-        C->>S: Fetch the segment (only after 200)
+        W-->>C: 200 + storage key, 403, or 429
+        C->>S: Fetch that key (only after 200)
         S-->>B: Segment
     end
     loop Every 10 s
@@ -726,13 +729,20 @@ later without rewriting anything.
 
 The video only plays in the site's own player:
 
-- The video page gives the player a token for the master playlist, valid for an hour and tied to
-  the video and to whoever is watching. The master playlist hands out a second token, for the
-  renditions and every segment, valid for the playback. Without them nothing plays — not even a
-  public video — and a token from one video or one person does not open another.
-- Opening the address of a playlist or a segment straight in a browser tab, or embedding it from
-  another site, is refused: the browser says so in the `Sec-Fetch-*` headers, which the page
-  cannot change. Safari's native player and the iPhone send no such headers and go by the token.
+- The page carries no video address: only the video id and a token, valid for an hour and tied to
+  the video and to whoever is watching. The player trades the token (`POST /api/play`) for the
+  address of the playback; without it nothing plays — not even a public video — and a token from
+  one video or one person does not open another.
+- Every playlist and every segment is requested by an encrypted seal (`/api/m/…`, `/api/p/…`,
+  `/s/…`), not by a readable path: the browser's developer tools show no video, rendition,
+  segment number, or extension, and changing a number in an address leads nowhere. The responses
+  come as `application/octet-stream`. For a segment, the application opens the seal and tells
+  Caddy, in a response header, the storage key to fetch; Caddy has no other way to reach it.
+- The player is hls.js wherever the browser supports it — Safari and the iPhone (iOS 17.1+)
+  included —, so the `<video>` element holds a `blob:` address. Only browsers without it fall back
+  to the native player.
+- Opening a playlist or a segment straight in a browser tab, or requesting it from another site,
+  is refused: the browser says so in the `Sec-Fetch-*` headers, which the page cannot change.
 - Segments come out at most at about four times the speed of the video, after a three-minute
   head start (`Security:SegmentBurst` and `Security:SegmentsPerSecond`). The player buffers at
   most a minute ahead and never reaches it; downloading takes at least a quarter of the video's

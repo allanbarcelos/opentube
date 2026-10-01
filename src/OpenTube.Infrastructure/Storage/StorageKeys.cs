@@ -45,6 +45,9 @@ public static class StorageKeys
     public static string RenditionPrefixUnder(string prefix, string rendition)
         => $"{prefix}{Sanitize(rendition)}/";
 
+    /// <summary>Nome da versão como ele aparece nas chaves: só letras, dígitos, hífen e sublinhado.</summary>
+    public static string RenditionName(string rendition) => Sanitize(rendition);
+
     public static string Thumbnail(Guid videoId) => ThumbnailUnder(VodPrefix(videoId));
 
     /// <summary>

@@ -1886,14 +1886,38 @@ cat > "${APP_DIR}/etc/Caddyfile" <<EOF
 ${ACME_BLOCK}${SITE_ADDRESS} {${TLS_LINE}
 	encode zstd gzip
 
+	# Video segments arrive at an opaque address (/s/<seal>). The application opens the seal
+	# and answers, in X-Storage-Key, the key of the file; only then does Caddy fetch it. The
+	# route keeps that order. The key comes only from the application: one sent by the
+	# browser is dropped first.
+	handle /s/* {
+		route {
+			request_header -X-Storage-Key
+			forward_auth app:8080 {
+				uri /_authz
+				header_up X-Forwarded-Uri {http.request.orig_uri}${PROXY_HEADERS}
+				copy_headers X-Storage-Key
+			}
+			# No key from the application, nothing goes to the storage.
+			@semchave not header X-Storage-Key *
+			respond @semchave 403
+			rewrite * /vod/{http.request.header.X-Storage-Key}
+			# A generic type: in the browser's developer tools the segment is not a video.
+			reverse_proxy minio:9000 {
+				header_down Content-Type application/octet-stream
+				header_down Cache-Control "private, max-age=3600"
+			}
+		}
+	}
+
+	# Captions, thumbnails, and the preview sprite, requested by the page.
 	handle_path /vod/* {
 		forward_auth app:8080 {
 			uri /_authz
 			copy_headers Cookie
 			header_up X-Forwarded-Uri {http.request.orig_uri}${PROXY_HEADERS}
 		}
-		# The query carries the playback token, for the application; the "?" at
-		# the end drops it, so the storage gets only the path.
+		# The "?" at the end drops any query: the storage gets only the path.
 		rewrite * /vod{path}?
 		reverse_proxy minio:9000 {
 			# Segments are authorized per request: no shared cache (a CDN in

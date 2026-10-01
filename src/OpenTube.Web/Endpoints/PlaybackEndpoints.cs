@@ -10,26 +10,60 @@ using OpenTube.Web.Seguranca;
 
 namespace OpenTube.Web.Endpoints;
 
+/// <summary>Pedido do player para começar uma reprodução.</summary>
+/// <param name="Video">Vídeo da página.</param>
+/// <param name="Token">Token que a página entregou ao player.</param>
+public sealed record PedidoDeReproducao(Guid Video, string? Token);
+
 /// <summary>
 /// Entrega das playlists. Cada pedido passa pela política de acesso; os segmentos em si saem
-/// direto do storage por endereço assinado de vida curta, para que a aplicação decida sem
-/// precisar transportar os bytes.
+/// do storage, autorizados um a um, para que a aplicação decida sem transportar os bytes.
 /// </summary>
 /// <remarks>
-/// As playlists só saem para o player do site: a principal pede o token que a página do vídeo
-/// emitiu, e as versões, o que a principal emitiu. Abrir o endereço direto no navegador é
-/// recusado, e copiá-lo para outro programa exige um token que vence.
+/// Nenhum endereço de vídeo aparece na página nem é legível no DevTools. A página entrega ao
+/// player só um token; com ele, o player pede a reprodução e recebe o endereço opaco da playlist
+/// principal, que aponta para as versões, que apontam para os pedaços — cada um por um selo
+/// cifrado, preso ao vídeo, a quem assiste e a um prazo. Abrir qualquer um deles direto numa aba
+/// é recusado.
 /// </remarks>
 public static class PlaybackEndpoints
 {
+    /// <summary>Cabeçalho que a hls.js manda: a ela basta um tipo genérico na resposta.</summary>
+    public const string PlayerHeader = "X-OpenTube-Player";
+
+    /// <summary>Caminho dos pedaços do vídeo, entregues pelo servidor da frente.</summary>
+    public const string SegmentRoute = "/s/";
+
+    private const string Generico = "application/octet-stream";
+
     public static IEndpointRouteBuilder MapPlaybackEndpoints(this IEndpointRouteBuilder rotas)
     {
-        var grupo = rotas.MapGroup("/api/videos/{videoId:guid}");
-
-        grupo.MapGet("/master.m3u8", async (
-            Guid videoId,
-            PlaybackService playback,
+        // Não muda nada no servidor: só troca o token da página pelo endereço da reprodução.
+        // Fica fora da exigência de token antifalsificação, que o player não tem; quem o protege
+        // é a origem do pedido, que o navegador declara e outro site não consegue imitar.
+        rotas.MapPost("/api/play", async (
+            PedidoDeReproducao pedido,
             PlaybackTokens tokens,
+            PlaybackSeals selos,
+            CurrentViewer espectadores,
+            HttpContext contexto,
+            CancellationToken cancellationToken) =>
+        {
+            var espectador = await espectadores.GetAsync(cancellationToken);
+
+            if (PedidoDoPlayer.EhAberturaDireta(contexto.Request)
+                || !tokens.Validate(pedido.Token, pedido.Video, espectador))
+                return ForaDoPlayer();
+
+            contexto.Response.Headers.CacheControl = "no-store";
+
+            return Results.Json(new { src = "/api/m/" + selos.Seal(PlaybackSealKind.Master, pedido.Video, espectador) });
+        });
+
+        rotas.MapGet("/api/m/{selo}", async (
+            string selo,
+            PlaybackService playback,
+            PlaybackSeals selos,
             CurrentViewer espectadores,
             PrivacyHasher privacidade,
             HttpContext contexto,
@@ -37,15 +71,14 @@ public static class PlaybackEndpoints
         {
             var espectador = await espectadores.GetAsync(cancellationToken);
 
-            if (!DoPlayer(contexto, tokens, PlaybackTokenKind.Page, videoId, espectador))
+            if (PedidoDoPlayer.EhAberturaDireta(contexto.Request)
+                || selos.Open(selo, PlaybackSealKind.Master, espectador) is not { } aberto)
                 return ForaDoPlayer();
 
-            var reproducao = Uri.EscapeDataString(tokens.Issue(PlaybackTokenKind.Playback, videoId, espectador));
-
             var resultado = await playback.GetMasterAsync(
-                videoId,
+                aberto.VideoId,
                 espectador,
-                versao => $"/api/videos/{videoId}/renditions/{versao}.m3u8?{PlaybackTokens.QueryName}={reproducao}",
+                versao => "/api/p/" + selos.Seal(PlaybackSealKind.Rendition, aberto.VideoId, espectador, versao),
                 privacidade.HashIp(contexto.Connection.RemoteIpAddress?.ToString()),
                 cancellationToken);
 
@@ -54,32 +87,31 @@ public static class PlaybackEndpoints
             if (resultado.Ticket is { } bilhete)
                 CurrentViewer.AppendTicket(contexto, bilhete);
 
-            return Responder(resultado, MediaTypes.HlsPlaylist);
+            return Responder(resultado, contexto);
         });
 
-        grupo.MapGet("/renditions/{rendition}.m3u8", async (
-            Guid videoId,
-            string rendition,
+        rotas.MapGet("/api/p/{selo}", async (
+            string selo,
             PlaybackService playback,
-            PlaybackTokens tokens,
+            PlaybackSeals selos,
             CurrentViewer espectadores,
             HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
             var espectador = await espectadores.GetAsync(cancellationToken);
 
-            if (!DoPlayer(contexto, tokens, PlaybackTokenKind.Playback, videoId, espectador))
+            if (PedidoDoPlayer.EhAberturaDireta(contexto.Request)
+                || selos.Open(selo, PlaybackSealKind.Rendition, espectador) is not { } aberto)
                 return ForaDoPlayer();
 
-            // O mesmo token segue nos segmentos: o servidor da frente pergunta por ele a cada um.
             var resultado = await playback.GetRenditionAsync(
-                videoId, rendition, espectador, cancellationToken,
-                segmentToken: contexto.Request.Query[PlaybackTokens.QueryName].ToString());
+                aberto.VideoId, aberto.Path, espectador, cancellationToken,
+                segmentUrl: arquivo => SegmentRoute + selos.Seal(PlaybackSealKind.Segment, aberto.VideoId, espectador, arquivo));
 
-            return Responder(resultado, MediaTypes.HlsPlaylist);
+            return Responder(resultado, contexto);
         });
 
-        grupo.MapGet("/thumbnail", async (
+        rotas.MapGet("/api/videos/{videoId:guid}/thumbnail", async (
             Guid videoId,
             PlaybackService playback,
             CurrentViewer espectadores,
@@ -94,21 +126,21 @@ public static class PlaybackEndpoints
         return rotas;
     }
 
-    /// <summary>
-    /// O pedido veio do player do site: não é uma navegação direta e traz um token válido do
-    /// tipo esperado, emitido para este vídeo e para quem está pedindo.
-    /// </summary>
-    private static bool DoPlayer(HttpContext contexto, PlaybackTokens tokens, PlaybackTokenKind tipo, Guid videoId, Viewer espectador) =>
-        !PedidoDoPlayer.EhAberturaDireta(contexto.Request)
-        && tokens.Validate(contexto.Request.Query[PlaybackTokens.QueryName].ToString(), tipo, videoId, espectador);
-
     private static IResult ForaDoPlayer() =>
         Results.Text("Open the video on its page.", "text/plain", statusCode: StatusCodes.Status403Forbidden);
 
-    private static IResult Responder(PlaybackResult resultado, string tipo)
+    private static IResult Responder(PlaybackResult resultado, HttpContext contexto)
     {
         if (resultado.Allowed)
+        {
+            contexto.Response.Headers.CacheControl = "no-store";
+
+            // O player nativo do Safari precisa do tipo HLS para reconhecer a playlist, já que o
+            // endereço não tem extensão; à hls.js basta o genérico, que não diz o que é.
+            var tipo = contexto.Request.Headers.ContainsKey(PlayerHeader) ? Generico : MediaTypes.HlsPlaylist;
+
             return Results.Text(resultado.Content!, tipo);
+        }
 
         // Vídeo privado e vídeo inexistente respondem igual: a diferença entre "não existe" e
         // "existe mas você não pode ver" já é informação sobre o acervo.

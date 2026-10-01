@@ -48,7 +48,7 @@
                            controlslist="nodownload nofullscreen noremoteplayback"
                            disableremoteplayback x-webkit-airplay="deny"
                            poster="/api/videos/@Video.Id/thumbnail" crossorigin="use-credentials"
-                           data-manifest="@Manifesto" data-video-id="@Video.Id"
+                           data-reproducao="@Reproducao" data-video="@Video.Id" data-video-id="@Video.Id"
                            data-proximo="@Proximo"
                            data-unsupported="@T["This browser cannot play the video."]">
                         @foreach (var legenda in ListaDeLegendas)
@@ -182,8 +182,11 @@
 
     private Viewer Espectador = Viewer.Anonymous;
 
-    /// <summary>Playlist principal com o token desta página: só o player daqui a abre.</summary>
-    private string Manifesto = string.Empty;
+    /// <summary>
+    /// Token que o player troca pelo endereço da reprodução. A página não traz endereço de
+    /// vídeo nenhum.
+    /// </summary>
+    private string Reproducao = string.Empty;
 
     private Video? Video;
 
@@ -298,8 +301,7 @@
             MinhaNota = await Avaliacoes.GetMineAsync(video.Id, Espectador, Http.RequestAborted);
             Logo = await Marcas.GetInfoAsync(Http.RequestAborted);
 
-            Manifesto = $"/api/videos/{video.Id}/master.m3u8?{PlaybackTokens.QueryName}="
-                + Uri.EscapeDataString(Tokens.Issue(PlaybackTokenKind.Page, video.Id, Espectador));
+            Reproducao = Tokens.Issue(video.Id, Espectador);
             Video = video;
             MontarSegmentos();
         }

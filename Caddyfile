@@ -10,6 +10,32 @@
 	# Autorização por segmento: a aplicação decide, o Caddy transporta. Assim a revogação
 	# vale já no segmento seguinte, em vez de esperar uma assinatura vencer, e a aplicação
 	# não gasta banda nem memória com bytes de vídeo.
+	#
+	# Os pedaços do vídeo chegam por um endereço opaco (/s/<selo>). A aplicação abre o selo e
+	# responde, no X-Storage-Key, a chave do arquivo; só então o Caddy o busca. O route mantém
+	# essa ordem, que o Caddy trocaria por conta própria. A chave vem só da aplicação: a que
+	# o navegador mandasse é apagada antes.
+	handle /s/* {
+		route {
+			request_header -X-Storage-Key
+			forward_auth app:8080 {
+				uri /_authz
+				header_up X-Forwarded-Uri {http.request.orig_uri}
+				copy_headers X-Storage-Key
+			}
+			# Sem chave da aplicação, nada vai ao storage.
+			@semchave not header X-Storage-Key *
+			respond @semchave 403
+			rewrite * /vod/{http.request.header.X-Storage-Key}
+			# Tipo genérico: no DevTools, o pedaço não se apresenta como vídeo.
+			reverse_proxy minio:9000 {
+				header_down Content-Type application/octet-stream
+				header_down Cache-Control "private, max-age=3600"
+			}
+		}
+	}
+
+	# Legendas, miniaturas e a folha de prévias, pedidas pela página.
 	handle_path /vod/* {
 		forward_auth app:8080 {
 			uri /_authz
@@ -17,8 +43,7 @@
 			header_up X-Forwarded-Uri {http.request.orig_uri}
 		}
 
-		# O parâmetro do endereço leva o token da reprodução, para a aplicação; o "?"
-		# no fim tira o parâmetro, e o storage recebe só o caminho.
+		# O "?" no fim descarta qualquer parâmetro: o storage recebe só o caminho.
 		rewrite * /vod{path}?
 		# A URL não identifica quem pode ver. Sem isto, um cache compartilhado na frente
 		# guardaria o arquivo de um visitante e o entregaria a outro.
