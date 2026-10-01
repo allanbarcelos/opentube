@@ -638,7 +638,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/delete",
-            new Dictionary<string, string> { ["videos"] = "desvincular" });
+            new Dictionary<string, string> { ["videos"] = "desvincular", ["destino"] = "" });
 
         await using var db = postgres.CreateContext();
         Assert.Empty(await db.Collections.ToListAsync());
@@ -670,7 +670,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         var semDestino = await FormularioHelpers.EnviarFormularioAsync(
             cliente, $"/admin/collections/{origem}", $"/admin/collections/{origem}/delete",
-            new Dictionary<string, string> { ["videos"] = "mover" });
+            new Dictionary<string, string> { ["videos"] = "mover", ["destino"] = "" });
 
         Assert.Contains("Choose another collection.", Uri.UnescapeDataString(semDestino.Headers.Location!.ToString()));
 
@@ -683,7 +683,7 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente, $"/admin/collections/{origem}", $"/admin/collections/{origem}/delete",
-            new Dictionary<string, string> { ["videos"] = "excluir" });
+            new Dictionary<string, string> { ["videos"] = "excluir", ["destino"] = "" });
 
         await using (var meio = postgres.CreateContext())
         {

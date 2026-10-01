@@ -175,7 +175,7 @@ public static class CollectionEndpoints
         grupo.MapPost("/{collectionId:guid}/delete", async (
             Guid collectionId,
             [FromForm] string? videos,
-            [FromForm] Guid? destino,
+            [FromForm] string? destino,
             CollectionService colecoes,
             HttpContext contexto,
             CancellationToken cancellationToken) =>
@@ -190,7 +190,18 @@ public static class CollectionEndpoints
                     _ => throw new InvalidOperationException("Choose what happens to the videos.")
                 };
 
-                var exclusao = await colecoes.DeleteAsync(collectionId, escolha, destino, cancellationToken);
+                // A opção "Escolha uma coleção…" manda destino vazio. Guid? rejeita "" com 400
+                // antes do método rodar, então o campo entra como texto.
+                Guid? destinoId = null;
+                if (!string.IsNullOrWhiteSpace(destino))
+                {
+                    if (!Guid.TryParse(destino, out var id))
+                        throw new InvalidOperationException("Choose another collection.");
+
+                    destinoId = id;
+                }
+
+                var exclusao = await colecoes.DeleteAsync(collectionId, escolha, destinoId, cancellationToken);
 
                 var resumo = exclusao.Videos switch
                 {
