@@ -16,6 +16,7 @@ using OpenTube.Infrastructure.Storage;
 using OpenTube.Web.Auth;
 using OpenTube.Web.Components;
 using OpenTube.Web.Endpoints;
+using OpenTube.Web.Seguranca;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -72,6 +73,7 @@ var app = builder.Build();
 // Primeiro de tudo: o resto do pipeline — limites por origem, cookies seguros, HSTS — precisa
 // enxergar o endereço e o protocolo de quem acessa, e não os do servidor da frente.
 app.UseForwardedHeaders();
+app.UsePoliticaDeConteudo();
 
 if (!app.Environment.IsDevelopment())
 {

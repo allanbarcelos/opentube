@@ -134,7 +134,6 @@
                                         @if (trabalho.CanCancel)
                                         {
                                             <form method="post" action="/admin/queue/@trabalho.Id/cancel" class="d-inline"
-                                                  onsubmit="return confirm(this.dataset.confirmar)"
                                                   data-confirmar="@T["Cancel this job? It will not run."]">
                                                 <AntiforgeryToken />
                                                 <button class="btn btn-sm btn-outline-danger" type="submit">@T["Cancel"]</button>

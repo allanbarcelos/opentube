@@ -4,6 +4,7 @@
 *@
 
 @using System.Globalization
+@using OpenTube.Web.Seguranca
 <!DOCTYPE html>
 <html lang="@CultureInfo.CurrentUICulture.Name">
 
@@ -17,7 +18,7 @@
     <link rel="stylesheet" href="@Assets["lib/bootstrap-icons/font/bootstrap-icons.min.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["OpenTube.Web.styles.css"]" />
-    <ImportMap />
+    <ImportMap nonce="@PoliticaDeConteudo.Nonce(HttpContext)" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <HeadOutlet />
 </head>
@@ -45,6 +46,12 @@
     <script src="@Assets["js/copiar.js"]"></script>
     <script src="@Assets["js/etiquetas.js"]"></script>
     <script src="@Assets["js/confirmacao.js"]"></script>
+    <script src="@Assets["js/formularios.js"]"></script>
 </body>
 
 </html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+}

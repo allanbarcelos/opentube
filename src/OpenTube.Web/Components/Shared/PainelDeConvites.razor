@@ -33,7 +33,7 @@
             <p class="mb-2"><strong>@T["Link created."]</strong> @T["Send it to whoever should watch; it also stays in the list below."]</p>
             <div class="input-group">
                 <input class="form-control font-monospace" id="link-criado" value="@LinkCriado" readonly data-link-criado
-                       onclick="this.select()" aria-label="@T["Share link address"]" />
+                       data-selecionar aria-label="@T["Share link address"]" />
                 <button class="btn btn-outline-secondary" type="button" data-copiar="link-criado"
                         data-copiado="@T["Copied"]">@T["Copy"]</button>
             </div>
@@ -109,7 +109,7 @@
                                         var campo = $"link-{concessao.Id:n}";
                                         <div class="input-group input-group-sm mt-2">
                                             <input class="form-control font-monospace" id="@campo" value="@endereco" readonly
-                                                   onclick="this.select()" aria-label="@T["Share link address"]" data-endereco-link />
+                                                   data-selecionar aria-label="@T["Share link address"]" data-endereco-link />
                                             <button class="btn btn-outline-secondary" type="button" data-copiar="@campo"
                                                     data-copiado="@T["Copied"]">@T["Copy"]</button>
                                         </div>

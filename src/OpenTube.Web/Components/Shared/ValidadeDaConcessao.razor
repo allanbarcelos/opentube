@@ -20,7 +20,7 @@
         <label class="form-check-label" for="validade-dias-@Prefixo">@T["For"]</label>
         <input class="form-control form-control-sm" style="width: 5.5rem" type="number" min="1" max="3650"
                name="dias" id="dias-@Prefixo" placeholder="30" aria-label="@T["Number of days"]"
-               onfocus="document.getElementById('validade-dias-@Prefixo').checked = true" />
+               data-marcar="validade-dias-@Prefixo" />
         <span class="small">@T["days from the first visit"]</span>
     </div>
 
@@ -29,7 +29,7 @@
         <label class="form-check-label" for="validade-ate-@Prefixo">@T["Until"]</label>
         <input class="form-control form-control-sm" style="width: 10rem" type="date"
                name="dataFinal" id="data-@Prefixo" aria-label="@T["End date"]"
-               onfocus="document.getElementById('validade-ate-@Prefixo').checked = true" />
+               data-marcar="validade-ate-@Prefixo" />
         <span class="small text-body-secondary">@T["(the whole day included)"]</span>
     </div>
 </fieldset>
