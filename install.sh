@@ -1882,6 +1882,10 @@ if [[ -n "$SMTP_HOST" ]]; then
   fi
 fi
 
+# Caddy reads the Caddyfile only when it starts. Compared after the deploy, to restart it when
+# an update changed the file.
+CADDYFILE_BEFORE="$(cat "${APP_DIR}/etc/Caddyfile" 2>/dev/null || true)"
+
 cat > "${APP_DIR}/etc/Caddyfile" <<EOF
 ${ACME_BLOCK}${SITE_ADDRESS} {${TLS_LINE}
 	encode zstd gzip
@@ -2318,6 +2322,14 @@ phase "PHASE 9 — Deploy"
 
 docker stack deploy --compose-file "$STACK_FILE" --resolve-image always --prune "$STACK_NAME"
 ok "Stack ${STACK_NAME} published"
+
+# The deploy only restarts a service whose definition changed, and the Caddyfile is a mounted
+# file: a new one would stay unread, and the routes it adds would fall through to the app.
+if [[ -n "$CADDYFILE_BEFORE" && "$(cat "${APP_DIR}/etc/Caddyfile")" != "$CADDYFILE_BEFORE" ]] \
+   && docker service inspect "${STACK_NAME}_caddy" >/dev/null 2>&1; then
+  docker service update --force --detach "${STACK_NAME}_caddy" >/dev/null
+  ok "Caddy restarted with the new Caddyfile"
+fi
 
 # ==============================================================================
 phase "PHASE 10 — Firewall"
