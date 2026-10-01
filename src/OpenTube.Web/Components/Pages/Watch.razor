@@ -46,7 +46,7 @@
                      data-controles data-rotulos="@Rotulos" data-capitulos="@CapitulosDoPlayer">
                     <video id="player-video" controls playsinline preload="metadata"
                            controlslist="nodownload nofullscreen noremoteplayback"
-                           disableremoteplayback x-webkit-airplay="deny"
+                           disableremoteplayback disablepictureinpicture x-webkit-airplay="deny"
                            poster="/api/videos/@Video.Id/thumbnail" crossorigin="use-credentials"
                            data-reproducao="@Reproducao" data-video="@Video.Id" data-video-id="@Video.Id"
                            data-proximo="@Proximo"
@@ -253,6 +253,7 @@
         ["quality"] = T["Quality"],
         ["auto"] = T["Auto"],
         ["pip"] = T["Picture in picture"],
+        ["pipActive"] = T["Playing in a floating window."],
         ["fullscreen"] = T["Full screen"],
         ["exitFullscreen"] = T["Exit full screen"],
     });

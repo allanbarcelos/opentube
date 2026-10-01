@@ -7,7 +7,8 @@
 // capítulos do vídeo, como no YouTube — um pedaço por capítulo, separados por um vão, o
 // pedaço sob o mouse engrossa e a dica mostra o título e o instante. O resto acompanha o que
 // os players costumam ter: tocar e pausar, volume, tempo, legendas, velocidade, qualidade,
-// Picture-in-Picture e tela cheia (do contêiner, para a marca d'água continuar por cima).
+// Picture-in-Picture e tela cheia — as duas com o contêiner inteiro, para a marca d'água
+// continuar por cima.
 //
 // Só vale para o contêiner marcado com data-controles; sem JavaScript o <video> fica com os
 // controles nativos que vêm no HTML. Chamado pelo player.js ao montar cada vídeo.
@@ -30,6 +31,74 @@ window.openTubeControles = (function () {
         legendas: 'badge-cc',
         legendasLigadas: 'badge-cc-fill'
     };
+
+    // Picture-in-Picture com a página, e não só com o vídeo (Document Picture-in-Picture, do
+    // Chrome e do Edge): o contêiner inteiro — vídeo, controles, marca d'água, mosaico e imagem
+    // do acervo — vai para a janela flutuante e volta ao fechá-la. O Picture-in-Picture comum
+    // desenha só o vídeo e fica bloqueado (player.js); onde não há esta API, não há o botão.
+    function pipComPagina() {
+        return 'documentPictureInPicture' in window
+            && typeof window.documentPictureInPicture.requestWindow === 'function';
+    }
+
+    // A janela nasce vazia: leva as folhas de estilo da página. As do próprio site vão por
+    // <link>, para os endereços relativos (como as fontes dos ícones) continuarem valendo.
+    function copiarEstilos(destino) {
+        Array.prototype.forEach.call(document.styleSheets, function (folha) {
+            if (folha.href) {
+                const link = destino.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = folha.href;
+                destino.head.appendChild(link);
+                return;
+            }
+
+            try {
+                const estilo = destino.createElement('style');
+                estilo.textContent = Array.prototype.map.call(folha.cssRules, function (r) { return r.cssText; }).join('\n');
+                destino.head.appendChild(estilo);
+            } catch (_) {
+                // Folha de outra origem sem endereço: não há o que copiar.
+            }
+        });
+    }
+
+    function abrirEmJanela(shell, video, aviso) {
+        const largura = Math.max(320, Math.round(shell.clientWidth / 2));
+
+        return window.documentPictureInPicture.requestWindow({
+            width: largura,
+            height: Math.round(largura * 9 / 16)
+        }).then(function (janela) {
+            copiarEstilos(janela.document);
+            janela.document.documentElement.lang = document.documentElement.lang;
+            const tema = document.documentElement.getAttribute('data-bs-theme');
+            if (tema) {
+                janela.document.documentElement.setAttribute('data-bs-theme', tema);
+            }
+            janela.document.body.classList.add('pip-documento');
+
+            // No lugar do player, na página, um aviso de onde o vídeo está.
+            const lugar = document.createElement('div');
+            lugar.className = 'player-em-janela rounded';
+            lugar.textContent = aviso;
+            shell.parentNode.insertBefore(lugar, shell);
+
+            // Mover o <video> de um documento para outro na mesma tarefa não o pausa.
+            janela.document.body.appendChild(shell);
+
+            janela.addEventListener('pagehide', function () {
+                const tocando = !video.paused;
+                lugar.replaceWith(shell);
+                if (tocando) {
+                    const pedido = video.play();
+                    if (pedido) {
+                        pedido.catch(function () { });
+                    }
+                }
+            });
+        });
+    }
 
     function icone(b, nome) {
         if (b.dataset.icone === nome) {
@@ -146,9 +215,7 @@ window.openTubeControles = (function () {
         const ajustes = botao('ctl-ajustes', rotulo('settings', 'Settings'), direita);
         icone(ajustes, 'ajustes');
 
-        const podePip = document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function'
-            || typeof video.webkitSetPresentationMode === 'function';
-        const pip = podePip ? botao('ctl-pip', rotulo('pip', 'Picture in picture'), direita) : null;
+        const pip = pipComPagina() ? botao('ctl-pip', rotulo('pip', 'Picture in picture'), direita) : null;
         if (pip) {
             icone(pip, 'pip');
         }
@@ -444,13 +511,12 @@ window.openTubeControles = (function () {
         }
         if (pip) {
             pip.addEventListener('click', function () {
-                if (document.pictureInPictureElement === video) {
-                    document.exitPictureInPicture().catch(function () { });
-                } else if (typeof video.requestPictureInPicture === 'function') {
-                    video.requestPictureInPicture().catch(function () { });
+                const aberta = window.documentPictureInPicture.window;
+
+                if (aberta) {
+                    aberta.close();
                 } else {
-                    video.webkitSetPresentationMode(video.webkitPresentationMode === 'picture-in-picture'
-                        ? 'inline' : 'picture-in-picture');
+                    abrirEmJanela(shell, video, rotulo('pipActive', 'Playing in a floating window.')).catch(function () { });
                 }
             });
         }

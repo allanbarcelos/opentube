@@ -256,9 +256,28 @@ window.openTubePlayer = (function () {
             });
         }
 
-        // Tela cheia nativa (controle do Safari e do Firefox, iPhone) e Picture-in-Picture
-        // ficam liberados. Nesses modos o navegador desenha só o vídeo, sem o que está por
-        // cima dele: a marca d'água passa a ir como legenda, que o navegador desenha junto.
+        // O Picture-in-Picture comum desenha só o vídeo, sem nada do que está por cima — a
+        // marca d'água inclusive. Fica bloqueado: o atributo disablepictureinpicture tira a
+        // opção dos navegadores, e se algum entrar mesmo assim, o vídeo sai do modo e pausa.
+        // O PiP que leva a marca junto é o dos controles (controles.js).
+        const recusarPip = function () {
+            video.pause();
+            if (document.pictureInPictureElement === video && document.exitPictureInPicture) {
+                document.exitPictureInPicture().catch(function () { });
+            }
+        };
+        video.disablePictureInPicture = true;
+        video.addEventListener('enterpictureinpicture', recusarPip);
+        video.addEventListener('webkitpresentationmodechanged', function () {
+            if (video.webkitPresentationMode === 'picture-in-picture') {
+                video.pause();
+                video.webkitSetPresentationMode('inline');
+            }
+        });
+
+        // A tela cheia nativa (controle do Safari e do Firefox, iPhone) fica liberada. Nela o
+        // navegador desenha só o vídeo: a marca d'água passa a ir como legenda, que ele
+        // desenha junto.
         if (window.openTubeMarcaDagua) {
             window.openTubeMarcaDagua.acompanharModosNativos(video);
         }

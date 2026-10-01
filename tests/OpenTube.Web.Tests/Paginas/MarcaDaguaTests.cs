@@ -96,7 +96,7 @@ public class MarcaDaguaTests(PostgresFixture postgres, MinioFixture minio) : IAs
     }
 
     [Fact]
-    public async Task O_player_sai_sem_download_e_com_tela_cheia_e_janela_avulsa_liberadas()
+    public async Task O_player_sai_sem_download_e_sem_a_janela_avulsa_que_esconde_a_marca()
     {
         using var storage = minio.CreateStorage();
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
@@ -106,7 +106,9 @@ public class MarcaDaguaTests(PostgresFixture postgres, MinioFixture minio) : IAs
 
         Assert.Contains("controlslist=\"nodownload nofullscreen noremoteplayback\"", html);
         Assert.Contains("disableremoteplayback", html);
-        // Tela cheia e Picture-in-Picture são do usuário; a marca d'água os acompanha.
-        Assert.DoesNotContain("disablepictureinpicture", html);
+        // O Picture-in-Picture do navegador desenha só o vídeo, sem a marca d'água: fica
+        // bloqueado. O dos controles do player leva o contêiner inteiro, marca incluída.
+        Assert.Contains("disablepictureinpicture", html);
+        Assert.Contains("Playing in a floating window.", html);
     }
 }

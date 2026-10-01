@@ -141,6 +141,33 @@
     border-radius: 0 !important;
 }
 
+/* Picture-in-Picture com a página (controles.js): o contêiner ocupa a janela flutuante inteira. */
+.pip-documento {
+    margin: 0;
+    background-color: #000;
+    overflow: hidden;
+}
+
+.pip-documento .player-shell {
+    aspect-ratio: auto;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* O que fica na página enquanto o vídeo está na janela flutuante. */
+.player-em-janela {
+    aspect-ratio: 16 / 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background-color: #000;
+    color: #adb5bd;
+    text-align: center;
+}
+
 .player-shell:fullscreen .marca-dagua {
     font-size: 16px;
 }

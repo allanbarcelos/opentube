@@ -755,15 +755,21 @@ downloading slow and visible.
 What the player does against casual copying:
 
 - No download or casting (AirPlay, Chromecast) in the native controls, and no context menu or
-  dragging over the video. Full screen and Picture-in-Picture stay available.
+  dragging over the video. Full screen stays available, and so does Picture-in-Picture, with the
+  watermark (below).
 - Watermark in two layers: a faint diagonal pattern over the whole frame, so cropping does not
   remove it, and a readable label with the viewer's email, date, and time that moves between
   corners. Visitors who came through a secret link get the start of the grant id instead.
 - The player's full-screen button (and double click) makes the container full screen, with the
   watermark on top. In the video's own full screen (Safari's and Firefox's native control, the
-  iPhone) and in Picture-in-Picture the browser draws only the video, so the watermark goes as a
-  caption, shown only in those modes and turned back on if someone switches it off. Chromium's
-  Picture-in-Picture does not draw captions: there the window has no watermark.
+  iPhone) the browser draws only the video, so the watermark goes as a caption, shown only in that
+  mode and turned back on if someone switches it off.
+- Picture-in-Picture takes the whole container with it: the player's button opens a floating
+  window with the page's own markup (Document Picture-in-Picture, in Chrome and Edge 116+) and
+  moves the video, the controls, the watermark, the pattern, and the library image into it,
+  back when it closes. The browser's own Picture-in-Picture draws only the video, so it is
+  turned off (`disablepictureinpicture`); a browser that enters it anyway sees the video pause
+  and leave it. In browsers without the API there is no Picture-in-Picture.
 - Library watermark: a PNG image (up to 5 MB) set in Administration → Watermark, shown over every
   video in the chosen position (a corner or the center), in the page and in the player's full
   screen. The file is checked as a real PNG by its signature, not by its name. The server brings it
@@ -771,8 +777,8 @@ What the player does against casual copying:
   high-quality downscaling that keeps transparency and edges clean; what is stored and served is
   that version, without the original's metadata. Smaller images are not enlarged, and the longest
   side must have at least 160 pixels. The moving viewer
-  label skips that corner. Native full screen and Picture-in-Picture draw only the video, so the
-  image does not appear there; the viewer's email still does, as a caption.
+  label skips that corner. Native full screen draws only the video, so the image does not appear
+  there; the viewer's email still does, as a caption.
 
 ---
 

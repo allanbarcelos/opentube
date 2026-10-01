@@ -752,15 +752,21 @@ com os cookies e o token certos; fecha o endereço direto e torna o download len
 O que o player faz contra a cópia casual:
 
 - Sem download ou transmissão (AirPlay, Chromecast) nos controles nativos, e sem menu de contexto
-  ou arrasto sobre o vídeo. Tela cheia e Picture-in-Picture continuam disponíveis.
+  ou arrasto sobre o vídeo. A tela cheia continua disponível, e o Picture-in-Picture também, com a
+  marca d'água (abaixo).
 - Marca d'água em duas camadas: um mosaico fraco e inclinado sobre o quadro inteiro, que não sai
   num recorte, e uma etiqueta legível com email, data e hora que muda de canto. Quem entrou por
   link secreto recebe o começo do identificador da concessão.
 - O botão de tela cheia do player (e o duplo clique) coloca o contêiner em tela cheia, com a marca
-  por cima. Na tela cheia do próprio vídeo (controle nativo do Safari e do Firefox, iPhone) e no
-  Picture-in-Picture o navegador desenha só o vídeo, então a marca vai como legenda, exibida só
-  nesses modos e religada se alguém a desligar. O Picture-in-Picture do Chromium não desenha
-  legendas: ali a janela fica sem marca.
+  por cima. Na tela cheia do próprio vídeo (controle nativo do Safari e do Firefox, iPhone) o
+  navegador desenha só o vídeo, então a marca vai como legenda, exibida só nesse modo e religada
+  se alguém a desligar.
+- O Picture-in-Picture leva o contêiner inteiro: o botão do player abre uma janela flutuante com
+  o próprio HTML da página (Document Picture-in-Picture, no Chrome e no Edge 116+) e move para ela
+  o vídeo, os controles, a marca d'água, o mosaico e a imagem do acervo, que voltam ao fechá-la. O
+  Picture-in-Picture do navegador desenha só o vídeo, então fica desligado
+  (`disablepictureinpicture`); um navegador que entre nele mesmo assim vê o vídeo pausar e sair do
+  modo. Nos navegadores sem a API não há Picture-in-Picture.
 - Marca do acervo: uma imagem PNG (até 5 MB) definida em Administração → Marca d'água, exibida
   sobre todos os vídeos na posição escolhida (um canto ou o centro), na página e na tela cheia
   do player. O arquivo é conferido como PNG de verdade pela assinatura, não pelo nome. O servidor
@@ -768,9 +774,8 @@ O que o player faz contra a cópia casual:
   etapas de alta qualidade, que preserva a transparência e as bordas; o que fica guardado e é
   servido é essa versão, sem os metadados do original. Imagens menores não são ampliadas, e o
   lado maior precisa ter pelo menos 160 pixels. A
-  etiqueta de identificação não passa por esse canto. Na tela cheia nativa e no
-  Picture-in-Picture o navegador desenha só o vídeo, então a imagem não aparece ali; o email de
-  quem assiste continua, como legenda.
+  etiqueta de identificação não passa por esse canto. Na tela cheia nativa o navegador desenha só
+  o vídeo, então a imagem não aparece ali; o email de quem assiste continua, como legenda.
 
 ---
 
