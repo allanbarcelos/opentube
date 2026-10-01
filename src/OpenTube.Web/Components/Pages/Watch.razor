@@ -9,6 +9,7 @@
 @using OpenTube.Domain.Media
 @inject VideoCatalog Catalogo
 @inject CurrentViewer Espectadores
+@inject PlaybackTokens Tokens
 @inject OpenTube.Infrastructure.Branding.WatermarkService Marcas
 @inject OpenTube.Infrastructure.Services.CaptionService Legendas
 @inject OpenTube.Infrastructure.Services.VideoChapterService Sumarios
@@ -47,7 +48,7 @@
                            controlslist="nodownload nofullscreen noremoteplayback"
                            disableremoteplayback x-webkit-airplay="deny"
                            poster="/api/videos/@Video.Id/thumbnail" crossorigin="use-credentials"
-                           data-manifest="/api/videos/@Video.Id/master.m3u8" data-video-id="@Video.Id"
+                           data-manifest="@Manifesto" data-video-id="@Video.Id"
                            data-proximo="@Proximo"
                            data-unsupported="@T["This browser cannot play the video."]">
                         @foreach (var legenda in ListaDeLegendas)
@@ -181,6 +182,9 @@
 
     private Viewer Espectador = Viewer.Anonymous;
 
+    /// <summary>Playlist principal com o token desta página: só o player daqui a abre.</summary>
+    private string Manifesto = string.Empty;
+
     private Video? Video;
 
     private PlaylistListing? Playlist;
@@ -294,6 +298,8 @@
             MinhaNota = await Avaliacoes.GetMineAsync(video.Id, Espectador, Http.RequestAborted);
             Logo = await Marcas.GetInfoAsync(Http.RequestAborted);
 
+            Manifesto = $"/api/videos/{video.Id}/master.m3u8?{PlaybackTokens.QueryName}="
+                + Uri.EscapeDataString(Tokens.Issue(PlaybackTokenKind.Page, video.Id, Espectador));
             Video = video;
             MontarSegmentos();
         }

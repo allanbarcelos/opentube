@@ -57,6 +57,20 @@ public class SecurityOptions
     public int MaxConcurrentPlaybacks { get; set; } = 3;
 
     /// <summary>
+    /// Quantos segmentos a mesma pessoa pode buscar de uma vez num vídeo antes de o limite de
+    /// velocidade valer: o carregamento inicial e os saltos para outro ponto. Com segmentos de
+    /// 4 s, 45 dão três minutos. Zero desliga o limite.
+    /// </summary>
+    public int SegmentBurst { get; set; } = 45;
+
+    /// <summary>
+    /// Segmentos por segundo repostos depois da folga inicial. Com segmentos de 4 s, 1 por
+    /// segundo é quatro vezes a velocidade do vídeo: o player nunca chega nele, e baixar o
+    /// vídeo leva pelo menos um quarto da duração. Zero desliga o limite.
+    /// </summary>
+    public double SegmentsPerSecond { get; set; } = 1;
+
+    /// <summary>
     /// Exibe o endereço de quem assiste sobre o vídeo. Não impede a gravação de tela, mas
     /// identifica a origem de um vazamento e inibe o repasse casual.
     /// </summary>

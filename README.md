@@ -724,6 +724,24 @@ in practice is short-lived tokens, a limit on simultaneous sessions per user, a 
 with the viewer's email, and a complete access log. CMAF packaging keeps the door open to add DRM
 later without rewriting anything.
 
+The video only plays in the site's own player:
+
+- The video page gives the player a token for the master playlist, valid for an hour and tied to
+  the video and to whoever is watching. The master playlist hands out a second token, for the
+  renditions and every segment, valid for the playback. Without them nothing plays — not even a
+  public video — and a token from one video or one person does not open another.
+- Opening the address of a playlist or a segment straight in a browser tab, or embedding it from
+  another site, is refused: the browser says so in the `Sec-Fetch-*` headers, which the page
+  cannot change. Safari's native player and the iPhone send no such headers and go by the token.
+- Segments come out at most at about four times the speed of the video, after a three-minute
+  head start (`Security:SegmentBurst` and `Security:SegmentsPerSecond`). The player buffers at
+  most a minute ahead and never reaches it; downloading takes at least a quarter of the video's
+  length, and each attempt is logged.
+
+None of this stops someone with access from recording the screen, or a determined user from
+replaying the requests with the right cookies and token; it closes the direct address and makes
+downloading slow and visible.
+
 What the player does against casual copying:
 
 - No download or casting (AirPlay, Chromecast) in the native controls, and no context menu or

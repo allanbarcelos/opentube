@@ -98,13 +98,16 @@ public class PlaybackService(
     /// <summary>
     /// Playlist de uma versão, com segmentos e arquivo de inicialização já assinados. Os
     /// endereços assinados valem por algumas horas: tempo suficiente para assistir, curto o
-    /// bastante para que um endereço copiado não circule indefinidamente.
+    /// bastante para que um endereço copiado não circule indefinidamente. Com autorização por
+    /// segmento, <paramref name="segmentToken"/> segue em cada endereço, para a aplicação
+    /// conferi-lo quando o servidor da frente perguntar.
     /// </summary>
     public async Task<PlaybackResult> GetRenditionAsync(
         Guid videoId,
         string rendition,
         Viewer viewer,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? segmentToken = null)
     {
         var (video, resultado) = await AutorizarAsync(videoId, viewer, cancellationToken);
 
@@ -129,8 +132,12 @@ public class PlaybackService(
             // Com autorização por pedido, o segmento sai por um caminho da própria aplicação
             // e a revogação passa a valer no segmento seguinte, em vez de esperar a
             // assinatura vencer.
+            var token = string.IsNullOrEmpty(segmentToken)
+                ? string.Empty
+                : $"?{PlaybackTokens.QueryName}={Uri.EscapeDataString(segmentToken)}";
+
             return _options.SegmentAuthorization
-                ? $"{_options.SegmentPath.TrimEnd('/')}/{prefixo}{uri}"
+                ? $"{_options.SegmentPath.TrimEnd('/')}/{prefixo}{uri}{token}"
                 : storage.SignDownloadUrl(StorageBucket.Vod, prefixo + uri, _options.PlaybackUrlLifetime);
         });
 

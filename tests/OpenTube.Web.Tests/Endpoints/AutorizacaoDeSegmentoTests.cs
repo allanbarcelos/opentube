@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
+using OpenTube.Domain.Access;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Storage;
@@ -113,12 +115,25 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
             new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
     }
 
-    private static async Task<HttpResponseMessage> PerguntarAsync(HttpClient cliente, string caminho)
+    private static async Task<HttpResponseMessage> PerguntarAsync(
+        HttpClient cliente, string caminho, IDictionary<string, string>? cabecalhos = null)
     {
         using var pedido = new HttpRequestMessage(HttpMethod.Get, "/_authz");
         pedido.Headers.Add("X-Forwarded-Uri", caminho);
 
+        foreach (var (nome, valor) in cabecalhos ?? new Dictionary<string, string>())
+            pedido.Headers.Add(nome, valor);
+
         return await cliente.SendAsync(pedido);
+    }
+
+    /// <summary>Token da reprodução que a playlist da versão pôs nos segmentos, para quem a pediu.</summary>
+    private static async Task<string> TokenDaReproducaoAsync(HttpClient cliente, string slug)
+    {
+        var versao = await cliente.GetStringAsync(await Reproducao.VersaoPelaPaginaAsync(cliente, slug, "360p"));
+        var segmento = Reproducao.PrimeiroSegmento(versao);
+
+        return segmento[(segmento.IndexOf("?t=", StringComparison.Ordinal) + 3)..];
     }
 
     [Fact]
@@ -128,9 +143,10 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var playlist = await cliente.GetStringAsync($"/api/videos/{video.Id}/renditions/360p.m3u8");
+        var playlist = await cliente.GetStringAsync(await Reproducao.VersaoPelaPaginaAsync(cliente, video.Slug, "360p"));
 
-        Assert.Contains($"/vod/{video.Id}/360p/seg-00000.m4s", playlist);
+        // O segmento leva o token da reprodução, que o servidor da frente repassa à aplicação.
+        Assert.Contains($"/vod/{video.Id}/360p/seg-00000.m4s?t=", playlist);
         // Sem assinatura: quem autoriza agora é a própria aplicação, a cada pedido.
         Assert.DoesNotContain("X-Amz-Signature", playlist);
     }
@@ -142,7 +158,8 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var resposta = await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-00000.m4s");
+        var token = await TokenDaReproducaoAsync(cliente, video.Slug);
+        var resposta = await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-00000.m4s?t={token}");
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
     }
@@ -154,7 +171,10 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Plano Confidencial", VideoVisibility.Private);
 
         using var cliente = _app.CreateBrowser();
-        var resposta = await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-00000.m4s");
+        // Um token legítimo não basta: o acesso continua sendo conferido.
+        var token = Uri.EscapeDataString(_app.Services.GetRequiredService<OpenTube.Infrastructure.Playback.PlaybackTokens>()
+            .Issue(OpenTube.Infrastructure.Playback.PlaybackTokenKind.Playback, video.Id, Viewer.Anonymous));
+        var resposta = await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-00000.m4s?t={token}");
 
         Assert.NotEqual(HttpStatusCode.OK, resposta.StatusCode);
     }
@@ -167,9 +187,10 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
 
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
+        var token = await TokenDaReproducaoAsync(cliente, video.Slug);
 
         Assert.Equal(HttpStatusCode.OK,
-            (await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-00000.m4s")).StatusCode);
+            (await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-00000.m4s?t={token}")).StatusCode);
     }
 
     [Fact]
@@ -179,7 +200,8 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Plano Confidencial", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        Assert.Equal(HttpStatusCode.OK, (await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-1.m4s")).StatusCode);
+        var token = await TokenDaReproducaoAsync(cliente, video.Slug);
+        Assert.Equal(HttpStatusCode.OK, (await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-1.m4s?t={token}")).StatusCode);
 
         await using (var db = postgres.CreateContext())
         {
@@ -190,7 +212,65 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
         }
 
         // É a diferença em relação ao endereço assinado: o corte vale no segmento seguinte.
-        Assert.NotEqual(HttpStatusCode.OK, (await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-2.m4s")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.OK, (await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-2.m4s?t={token}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task O_segmento_sem_o_token_da_reproducao_e_recusado()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        var token = await TokenDaReproducaoAsync(cliente, video.Slug);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-00000.m4s")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/init-360p.mp4?t=1.x")).StatusCode);
+
+        // Legendas e miniaturas são pedidas pela própria página, sem token.
+        Assert.Equal(HttpStatusCode.OK, (await PerguntarAsync(cliente, $"/vod/{video.Id}/thumbnail.jpg")).StatusCode);
+
+        // O mesmo token, num arquivo de outro vídeo, não vale.
+        var outro = await AcervoDeTeste.PublicarAsync(postgres, storage, "Outro", VideoVisibility.Public);
+        Assert.Equal(HttpStatusCode.Forbidden, (await PerguntarAsync(cliente, $"/vod/{outro.Id}/360p/seg-00000.m4s?t={token}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Abrir_o_segmento_direto_numa_aba_e_recusado()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        var token = await TokenDaReproducaoAsync(cliente, video.Slug);
+        var caminho = $"/vod/{video.Id}/360p/seg-00000.m4s?t={token}";
+
+        var navegacao = new Dictionary<string, string> { ["Sec-Fetch-Mode"] = "navigate", ["Sec-Fetch-Dest"] = "document" };
+        Assert.Equal(HttpStatusCode.Forbidden, (await PerguntarAsync(cliente, caminho, navegacao)).StatusCode);
+
+        var player = new Dictionary<string, string>
+        {
+            ["Sec-Fetch-Mode"] = "cors", ["Sec-Fetch-Dest"] = "empty", ["Sec-Fetch-Site"] = "same-origin"
+        };
+        Assert.Equal(HttpStatusCode.OK, (await PerguntarAsync(cliente, caminho, player)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Segmentos_pedidos_rapido_demais_sao_barrados()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        var token = await TokenDaReproducaoAsync(cliente, video.Slug);
+
+        // A folga inicial (45 segmentos, três minutos de vídeo) passa de uma vez; o que vem
+        // depois, pedido no mesmo instante, é o padrão de quem baixa o vídeo.
+        for (var i = 0; i < 45; i++)
+            Assert.Equal(HttpStatusCode.OK, (await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-{i:00000}.m4s?t={token}")).StatusCode);
+
+        var excesso = await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-00045.m4s?t={token}");
+        Assert.Equal(HttpStatusCode.TooManyRequests, excesso.StatusCode);
     }
 
     [Fact]

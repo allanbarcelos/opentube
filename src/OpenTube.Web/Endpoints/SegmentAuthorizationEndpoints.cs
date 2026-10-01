@@ -7,6 +7,7 @@ using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Playback;
 using OpenTube.Infrastructure.Services;
 using OpenTube.Web.Auth;
+using OpenTube.Web.Seguranca;
 
 namespace OpenTube.Web.Endpoints;
 
@@ -26,6 +27,8 @@ public static class SegmentAuthorizationEndpoints
         rotas.MapMethods("/_authz", ["GET", "HEAD"], async (
             IOptions<StorageOptions> options,
             PlaybackService playback,
+            PlaybackTokens tokens,
+            SegmentRateLimiter limite,
             CollectionThumbnailService miniaturas,
             CurrentViewer espectadores,
             HttpContext contexto,
@@ -33,6 +36,11 @@ public static class SegmentAuthorizationEndpoints
         {
             if (!options.Value.SegmentAuthorization)
                 return Results.StatusCode(StatusCodes.Status404NotFound);
+
+            // O servidor da frente repassa os cabeçalhos do pedido original: abrir um arquivo de
+            // vídeo direto numa aba é recusado aqui, antes de qualquer outra conferência.
+            if (PedidoDoPlayer.EhAberturaDireta(contexto.Request))
+                return Recusado();
 
             var caminho = EnderecoOriginal(contexto);
             var prefixo = options.Value.SegmentPath;
@@ -50,6 +58,17 @@ public static class SegmentAuthorizationEndpoints
             if (ExtrairSegmento(caminho, prefixo) is not { } segmento)
                 return Results.Forbid();
 
+            // Os pedaços do vídeo pedem o token da reprodução e respeitam o limite de velocidade.
+            // Legendas, miniaturas e a folha de prévias, pedidas pela página, não.
+            if (EhMidia(segmento.Key))
+            {
+                if (!tokens.Validate(TokenDoEndereco(caminho), PlaybackTokenKind.Playback, segmento.VideoId, espectador))
+                    return Recusado();
+
+                if (!limite.TryAcquire(PlaybackTokens.ViewerKey(espectador), segmento.VideoId))
+                    return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            }
+
             // Não conta visualização: o bilhete da playlist principal é que autoriza o resto.
             // A chave tem de ser a geração publicada, senão a anterior continua saindo.
             return await playback.CanReceiveMediaAsync(segmento.VideoId, espectador, segmento.Key, cancellationToken)
@@ -58,6 +77,30 @@ public static class SegmentAuthorizationEndpoints
         });
 
         return rotas;
+    }
+
+    /// <summary>
+    /// Recusa sem passar pela autenticação: para quem não entrou, <c>Forbid</c> vira um
+    /// redirecionamento para a tela de entrada, e o servidor da frente o devolveria no lugar
+    /// do arquivo.
+    /// </summary>
+    private static IResult Recusado() => Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    /// <summary>Segmento de vídeo ou arquivo de inicialização de uma versão.</summary>
+    public static bool EhMidia(string chave) =>
+        chave.EndsWith(".m4s", StringComparison.OrdinalIgnoreCase)
+        || chave.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Token de reprodução no parâmetro do endereço original.</summary>
+    public static string? TokenDoEndereco(string? caminho)
+    {
+        var inicio = caminho?.IndexOf('?') ?? -1;
+        if (inicio < 0)
+            return null;
+
+        var parametros = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(caminho![inicio..]);
+
+        return parametros.TryGetValue(PlaybackTokens.QueryName, out var valor) ? valor.ToString() : null;
     }
 
     /// <summary>Endereço que o servidor da frente está tentando entregar.</summary>

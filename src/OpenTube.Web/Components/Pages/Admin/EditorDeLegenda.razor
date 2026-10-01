@@ -11,6 +11,8 @@
 @inject AdminVideoService Admin
 @inject CaptionService Legendas
 @inject NavigationManager Navegacao
+@inject CurrentViewer Espectadores
+@inject OpenTube.Infrastructure.Playback.PlaybackTokens Tokens
 
 <PageTitle>@T.Format("Caption editor — {0}", Legenda?.Label ?? "")</PageTitle>
 
@@ -107,7 +109,7 @@
                         <div class="player-shell rounded overflow-hidden shadow-sm position-relative">
                             @* Sem data-video-id: a prévia do editor não conta como audiência. *@
                             <video id="editor-video" controls playsinline preload="metadata"
-                                   data-manifest="/api/videos/@Video.Id/master.m3u8"
+                                   data-manifest="@Manifesto"
                                    data-unsupported="@T["This browser cannot play the video."]"></video>
                             <div class="editor-legenda-atual" aria-live="off"></div>
                         </div>
@@ -170,6 +172,9 @@
 
     private string? ErroDeLeitura;
 
+    /// <summary>Playlist principal com o token desta página: só o player daqui a abre.</summary>
+    private string Manifesto = string.Empty;
+
     protected override async Task OnInitializedAsync()
     {
         Video = await Admin.FindAsync(VideoId, Http.RequestAborted);
@@ -180,6 +185,10 @@
             Navegacao.NotFound();
             return;
         }
+
+        var espectador = await Espectadores.GetAsync(Http.RequestAborted);
+        Manifesto = $"/api/videos/{VideoId}/master.m3u8?{OpenTube.Infrastructure.Playback.PlaybackTokens.QueryName}="
+            + Uri.EscapeDataString(Tokens.Issue(OpenTube.Infrastructure.Playback.PlaybackTokenKind.Page, VideoId, espectador));
 
         if (Legenda.IsProcessing)
             return;

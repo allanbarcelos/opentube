@@ -1892,7 +1892,9 @@ ${ACME_BLOCK}${SITE_ADDRESS} {${TLS_LINE}
 			copy_headers Cookie
 			header_up X-Forwarded-Uri {http.request.orig_uri}${PROXY_HEADERS}
 		}
-		rewrite * /vod{uri}
+		# The query carries the playback token, for the application; the "?" at
+		# the end drops it, so the storage gets only the path.
+		rewrite * /vod{path}?
 		reverse_proxy minio:9000 {
 			# Segments are authorized per request: no shared cache (a CDN in
 			# front, for instance) may keep a copy and serve it to someone else.

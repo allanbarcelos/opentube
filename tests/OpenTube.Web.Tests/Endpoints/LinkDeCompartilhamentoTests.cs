@@ -97,10 +97,9 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         using var cliente = _app.CreateBrowser();
         await cliente.GetAsync(Caminho(url));
 
-        var html = await cliente.GetStringAsync($"/watch/{slug}");
-        var videoId = html.Split("/api/videos/")[1].Split('/')[0];
+        var manifesto = await Reproducao.ManifestoDaPaginaAsync(cliente, slug);
 
-        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/master.m3u8")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync(manifesto)).StatusCode);
     }
 
     [Fact]
@@ -163,12 +162,11 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         using var cliente = _app.CreateBrowser();
         await cliente.GetAsync(Caminho(url));
 
-        var html = await cliente.GetStringAsync($"/watch/{slug}");
-        var videoId = html.Split("/api/videos/")[1].Split('/')[0];
+        var manifesto = await Reproducao.ManifestoDaPaginaAsync(cliente, slug);
 
         // A primeira playlist principal conta como uma visualização.
-        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/master.m3u8")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{videoId}/master.m3u8")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync(manifesto)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync(manifesto)).StatusCode);
     }
 
     [Fact]
@@ -181,12 +179,15 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
 
         var html = await cliente.GetStringAsync($"/watch/{slug}");
         var videoId = html.Split("/api/videos/")[1].Split('/')[0];
+        var manifesto = await Reproducao.ManifestoDaPaginaAsync(cliente, slug);
 
-        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/master.m3u8")).StatusCode);
+        var principal = await cliente.GetAsync(manifesto);
+        Assert.Equal(HttpStatusCode.OK, principal.StatusCode);
 
         // A versão, a coleta de audiência e a página seguinte fazem parte da mesma reprodução
         // ou de uma nova: só as primeiras podem passar.
-        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{videoId}/renditions/360p.m3u8")).StatusCode);
+        var versao = Reproducao.VersaoDaPlaylist(await principal.Content.ReadAsStringAsync(), "360p");
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync(versao)).StatusCode);
 
         var sessao = await cliente.PostAsJsonAsync("/api/playback/start", new { videoId });
         Assert.Equal(HttpStatusCode.OK, sessao.StatusCode);

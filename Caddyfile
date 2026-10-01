@@ -17,7 +17,9 @@
 			header_up X-Forwarded-Uri {http.request.orig_uri}
 		}
 
-		rewrite * /vod{uri}
+		# O parâmetro do endereço leva o token da reprodução, para a aplicação; o "?"
+		# no fim tira o parâmetro, e o storage recebe só o caminho.
+		rewrite * /vod{path}?
 		# A URL não identifica quem pode ver. Sem isto, um cache compartilhado na frente
 		# guardaria o arquivo de um visitante e o entregaria a outro.
 		reverse_proxy minio:9000 {

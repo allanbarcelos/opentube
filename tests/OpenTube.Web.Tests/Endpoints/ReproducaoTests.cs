@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
 using System.Net;
+using OpenTube.Domain.Access;
 using OpenTube.Domain.Enums;
 using OpenTube.TestSupport;
 using OpenTube.Web.Tests.Support;
@@ -51,12 +52,13 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8");
+        var resposta = await cliente.GetAsync(await Reproducao.ManifestoDaPaginaAsync(cliente, video.Slug));
         var conteudo = await resposta.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
         Assert.Equal("application/vnd.apple.mpegurl", resposta.Content.Headers.ContentType!.MediaType);
-        Assert.Contains($"/api/videos/{video.Id}/renditions/360p.m3u8", conteudo);
+        // A versão leva o token da reprodução: sem ele, a playlist dela não sai.
+        Assert.Contains($"/api/videos/{video.Id}/renditions/360p.m3u8?t=", conteudo);
         // O endereço interno do storage não pode aparecer na playlist principal.
         Assert.DoesNotContain("X-Amz-Signature", conteudo);
     }
@@ -68,7 +70,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var conteudo = await cliente.GetStringAsync($"/api/videos/{video.Id}/renditions/360p.m3u8");
+        var conteudo = await cliente.GetStringAsync(await Reproducao.VersaoPelaPaginaAsync(cliente, video.Slug, "360p"));
 
         Assert.Contains("X-Amz-Signature", conteudo);
         Assert.Contains("seg-00000.m4s?", conteudo);
@@ -87,7 +89,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         // nunca um erro do servidor que vaza stack e enche o log.
         foreach (var nome in new[] { "720p", "999p", "qualquercoisa" })
         {
-            var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/renditions/{nome}.m3u8");
+            var resposta = await cliente.GetAsync(Reproducao.VersaoCom(_app, video.Id, nome, Viewer.Anonymous));
             Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
         }
     }
@@ -100,8 +102,9 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
 
         using var cliente = _app.CreateBrowser();
 
-        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/renditions/360p.m3u8")).StatusCode);
+        // Mesmo com um token legítimo, o acesso continua sendo conferido.
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync(Reproducao.ManifestoCom(_app, video.Id, Viewer.Anonymous))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync(Reproducao.VersaoCom(_app, video.Id, "360p", Viewer.Anonymous))).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/thumbnail")).StatusCode);
     }
 
@@ -114,7 +117,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         using var cliente = _app.CreateBrowser();
 
         // Copiar o endereço da versão é o atalho mais óbvio; ele precisa ser barrado igual.
-        var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/renditions/360p.m3u8");
+        var resposta = await cliente.GetAsync(Reproducao.VersaoCom(_app, video.Id, "360p", Viewer.Anonymous));
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
     }
@@ -128,7 +131,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
 
-        var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8");
+        var resposta = await cliente.GetAsync(await Reproducao.ManifestoDaPaginaAsync(cliente, video.Slug));
 
         Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
     }
@@ -141,11 +144,14 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
 
         using var cliente = _app.CreateBrowser();
         await EntrarComoAdminAsync(cliente);
-        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8")).StatusCode);
+        var manifesto = await Reproducao.ManifestoDaPaginaAsync(cliente, video.Slug);
+        Assert.Equal(HttpStatusCode.OK, (await cliente.GetAsync(manifesto)).StatusCode);
 
         await FormularioHelpers.EnviarFormularioAsync(cliente, "/", "/sign-out", new Dictionary<string, string>());
 
-        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8")).StatusCode);
+        // O token era de quem entrou; sem a sessão, nem ele nem um novo abrem o vídeo.
+        Assert.False((await cliente.GetAsync(manifesto)).IsSuccessStatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync(Reproducao.ManifestoCom(_app, video.Id, Viewer.Anonymous))).StatusCode);
     }
 
     [Fact]
@@ -166,7 +172,7 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
     {
         using var cliente = _app.CreateBrowser();
 
-        var resposta = await cliente.GetAsync($"/api/videos/{Guid.CreateVersion7()}/master.m3u8");
+        var resposta = await cliente.GetAsync(Reproducao.ManifestoCom(_app, Guid.CreateVersion7(), Viewer.Anonymous));
 
         Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
     }
@@ -178,8 +184,80 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
 
         using var cliente = _app.CreateBrowser();
-        var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/renditions/4320p.m3u8");
+        var resposta = await cliente.GetAsync(Reproducao.VersaoCom(_app, video.Id, "4320p", Viewer.Anonymous));
 
         Assert.False(resposta.IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task Sem_o_token_da_pagina_as_playlists_nao_saem()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+
+        // O endereço do vídeo, sozinho, não abre nada — nem num vídeo público.
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync($"/api/videos/{video.Id}/renditions/360p.m3u8")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync($"/api/videos/{video.Id}/master.m3u8?t=123.abc")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Abrir_o_endereco_do_video_direto_no_navegador_e_recusado()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        var manifesto = await Reproducao.ManifestoDaPaginaAsync(cliente, video.Slug);
+
+        // O que o navegador manda quando o endereço é colado na barra ou aberto numa aba.
+        using var navegacao = new HttpRequestMessage(HttpMethod.Get, manifesto);
+        navegacao.Headers.Add("Sec-Fetch-Mode", "navigate");
+        navegacao.Headers.Add("Sec-Fetch-Dest", "document");
+        navegacao.Headers.Add("Sec-Fetch-Site", "none");
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.SendAsync(navegacao)).StatusCode);
+
+        // Outro site embutindo o vídeo.
+        using var deFora = new HttpRequestMessage(HttpMethod.Get, manifesto);
+        deFora.Headers.Add("Sec-Fetch-Site", "cross-site");
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.SendAsync(deFora)).StatusCode);
+
+        // O player do site: o mesmo endereço, pedido pela página.
+        using var player = new HttpRequestMessage(HttpMethod.Get, manifesto);
+        player.Headers.Add("Sec-Fetch-Mode", "cors");
+        player.Headers.Add("Sec-Fetch-Dest", "empty");
+        player.Headers.Add("Sec-Fetch-Site", "same-origin");
+        Assert.Equal(HttpStatusCode.OK, (await cliente.SendAsync(player)).StatusCode);
+    }
+
+    [Fact]
+    public async Task O_token_de_um_video_nao_abre_outro()
+    {
+        using var storage = minio.CreateStorage();
+        var primeiro = await AcervoDeTeste.PublicarAsync(postgres, storage, "Primeiro", VideoVisibility.Public);
+        var segundo = await AcervoDeTeste.PublicarAsync(postgres, storage, "Segundo", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        var manifesto = await Reproducao.ManifestoDaPaginaAsync(cliente, primeiro.Slug);
+        var token = manifesto[(manifesto.IndexOf("?t=", StringComparison.Ordinal) + 3)..];
+
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await cliente.GetAsync($"/api/videos/{segundo.Id}/master.m3u8?t={token}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task O_token_da_pagina_nao_serve_de_token_da_reproducao()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        var manifesto = await Reproducao.ManifestoDaPaginaAsync(cliente, video.Slug);
+        var token = manifesto[(manifesto.IndexOf("?t=", StringComparison.Ordinal) + 3)..];
+
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await cliente.GetAsync($"/api/videos/{video.Id}/renditions/360p.m3u8?t={token}")).StatusCode);
     }
 }

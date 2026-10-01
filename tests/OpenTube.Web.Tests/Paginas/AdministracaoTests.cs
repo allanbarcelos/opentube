@@ -248,7 +248,8 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         using var visitante = _app.CreateBrowser();
 
         Assert.DoesNotContain("Boas-vindas", await visitante.GetStringAsync("/"));
-        Assert.Equal(HttpStatusCode.NotFound, (await visitante.GetAsync($"/api/videos/{video.Id}/master.m3u8")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await visitante.GetAsync(Reproducao.ManifestoCom(_app, video.Id, OpenTube.Domain.Access.Viewer.Anonymous))).StatusCode);
     }
 
     [Fact]

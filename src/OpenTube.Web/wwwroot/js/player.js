@@ -71,7 +71,31 @@ window.openTubePlayer = (function () {
             return;
         }
 
-        const hls = new window.Hls({ enableWorker: true, lowLatencyMode: false });
+        // O servidor limita a velocidade com que os pedaços do vídeo saem, para que baixá-lo
+        // leve quase tanto quanto assisti-lo. O player fica bem abaixo disso: adianta no máximo
+        // um minuto, e quando o servidor pede calma (429) espera e tenta de novo, em vez de
+        // tratar o pedido como erro de vez.
+        const hls = new window.Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
+            maxBufferLength: 30,
+            maxMaxBufferLength: 60,
+            fragLoadPolicy: {
+                default: {
+                    maxTimeToFirstByteMs: 10000,
+                    maxLoadTimeMs: 120000,
+                    timeoutRetry: { maxNumRetry: 4, retryDelayMs: 0, maxRetryDelayMs: 0 },
+                    errorRetry: {
+                        maxNumRetry: 8,
+                        retryDelayMs: 1000,
+                        maxRetryDelayMs: 8000,
+                        shouldRetry: function (politica, tentativa, _expirou, resposta, padrao) {
+                            return padrao || (!!resposta && resposta.code === 429 && tentativa < politica.maxNumRetry);
+                        }
+                    }
+                }
+            }
+        });
         instancia.hls = hls;
 
         hls.on(window.Hls.Events.LEVEL_SWITCHED, function (_evento, dados) {
