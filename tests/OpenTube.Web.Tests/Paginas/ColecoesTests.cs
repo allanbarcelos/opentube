@@ -633,7 +633,8 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         var pagina = await cliente.GetStringAsync($"/admin/collections/{colecao}");
         Assert.Contains("This collection will be permanently deleted, along with every access grant on it. It cannot be restored.", pagina);
         Assert.Contains("Unlink them. They stay in the library.", pagina);
-        Assert.Contains("Delete them too. They leave the library, the same way as deleting a video.", pagina);
+        Assert.Contains("Delete them too. They are permanently deleted, the same way as deleting a video.", pagina);
+        Assert.Contains("The collection will be permanently deleted and its videos will be unlinked. It cannot be restored.", pagina);
         Assert.Contains("type=\"button\" class=\"btn btn-outline-danger w-100\" data-bs-toggle=\"modal\" data-bs-target=\"#confirmar-exclusao-colecao\"", pagina);
         Assert.Contains("data-confirmacao=\"desvincular\"", pagina);
         Assert.Contains("data-confirmacao=\"excluir\"", pagina);
@@ -701,12 +702,11 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         await using (var meio = postgres.CreateContext())
         {
             Assert.DoesNotContain(await meio.Collections.Select(c => c.Id).ToListAsync(), id => id == origem);
-            Assert.NotNull((await meio.Videos.SingleAsync(v => v.Id == apagado.Id)).DeletedAt);
+            Assert.DoesNotContain(await meio.Videos.Select(v => v.Id).ToListAsync(), id => id == apagado.Id);
             Assert.Equal(destino, (await meio.CollectionVideos.SingleAsync()).CollectionId);
         }
 
-        var aviso = await cliente.GetStringAsync($"/admin/videos/{apagado.Id}");
-        Assert.Contains("This video is deleted and is hidden from everyone.", aviso);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/admin/videos/{apagado.Id}")).StatusCode);
 
         var outra = await CriarColecaoAsync(cliente, "Outra");
         var mudanca = await FormularioHelpers.EnviarFormularioAsync(

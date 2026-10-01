@@ -237,17 +237,9 @@ public class CollectionService(
         }
         else if (videos == VideosDaColecao.Excluir && ids.Count > 0)
         {
-            var agora = clock.GetUtcNow();
-            var alvos = await db.Videos.Where(v => ids.Contains(v.Id)).ToListAsync(cancellationToken);
-
-            foreach (var video in alvos)
-            {
-                if (video.DeletedAt is not null)
-                    continue;
-
-                video.SoftDelete(agora);
-                excluidos.Add(video.Id);
-            }
+            // Os vínculos estão rastreados. Apagá-los aqui e de novo ao remover a coleção
+            // faria o segundo delete esperar uma linha que já não existe.
+            excluidos.AddRange(ids);
         }
 
         await db.AccessGrants
@@ -263,7 +255,14 @@ public class CollectionService(
 
         db.Collections.Remove(colecao);
         await db.SaveChangesAsync(cancellationToken);
+
+        if (excluidos.Count > 0)
+            await ExclusaoPermanenteDeVideo.ApagarRegistrosAsync(db, excluidos, cancellationToken);
+
         await transacao.CommitAsync(cancellationToken);
+
+        if (excluidos.Count > 0)
+            await ExclusaoPermanenteDeVideo.ApagarArquivosAsync(storage, excluidos, logger, cancellationToken);
 
         if (capa is not null)
         {

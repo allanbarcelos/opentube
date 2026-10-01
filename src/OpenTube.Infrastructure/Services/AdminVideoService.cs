@@ -17,7 +17,6 @@ public class AdminVideoService(
     OpenTubeDbContext db,
     IJobQueue queue,
     IVideoStorage storage,
-    TimeProvider clock,
     ILogger<AdminVideoService> logger)
 {
     public Task<Video?> FindAsync(Guid videoId, CancellationToken cancellationToken = default) =>
@@ -60,26 +59,18 @@ public class AdminVideoService(
         return video;
     }
 
-    /// <summary>
-    /// Exclusão lógica: o vídeo some do acervo e do acesso na hora, mas o registro fica para
-    /// que o histórico de quem assistiu continue fazendo sentido.
-    /// </summary>
+    /// <summary>Apaga o vídeo, os acessos e os arquivos. Não há o que restaurar.</summary>
     public async Task DeleteAsync(Guid videoId, CancellationToken cancellationToken = default)
     {
-        var video = await CarregarAsync(videoId, cancellationToken);
+        _ = await CarregarAsync(videoId, cancellationToken);
 
-        video.SoftDelete(clock.GetUtcNow());
-        await db.SaveChangesAsync(cancellationToken);
+        await using var transacao = await db.Database.BeginTransactionAsync(cancellationToken);
+        await ExclusaoPermanenteDeVideo.ApagarRegistrosAsync(db, [videoId], cancellationToken);
+        await transacao.CommitAsync(cancellationToken);
+
+        await ExclusaoPermanenteDeVideo.ApagarArquivosAsync(storage, [videoId], logger, cancellationToken);
 
         logger.LogInformation("Vídeo {VideoId} excluído", videoId);
-    }
-
-    public async Task RestoreAsync(Guid videoId, CancellationToken cancellationToken = default)
-    {
-        var video = await CarregarAsync(videoId, cancellationToken);
-
-        video.Restore();
-        await db.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

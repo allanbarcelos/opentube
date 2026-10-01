@@ -37,10 +37,6 @@
         {
             <div class="alert alert-success" role="status">@T["The video is back in the processing queue."]</div>
         }
-        @if (Restaurado)
-        {
-            <div class="alert alert-success" role="status">@T["Video restored. It is still private."]</div>
-        }
         @if (Legenda == "enviada")
         {
             <div class="alert alert-success" role="status">@T["Caption uploaded."]</div>
@@ -61,12 +57,8 @@
         }
         @if (Video.IsDeleted)
         {
-            <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <span>@T["This video is deleted and is hidden from everyone."]</span>
-                <form method="post" action="/admin/videos/@Video.Id/restore">
-                    <AntiforgeryToken />
-                    <button class="btn btn-sm btn-outline-dark" type="submit">@T["Restore"]</button>
-                </form>
+            <div class="alert alert-warning">
+                @T["This video is deleted and is hidden from everyone."]
             </div>
         }
 
@@ -319,12 +311,12 @@
                         <div class="card-header text-danger">@T["Delete"]</div>
                         <div class="card-body">
                             <p class="small text-body-secondary">
-                                @T["The video leaves the library and access immediately. The record stays so the viewing history still makes sense."]
+                                @T["This video will be permanently deleted, along with its files and access. It cannot be restored."]
                             </p>
                             <form method="post" action="/admin/videos/@Video.Id/delete">
                                 <AntiforgeryToken />
                                 <ConfirmacaoDeExclusao Id="confirmar-exclusao-video" Rotulo="@T["Delete video"]">
-                                    <p class="mb-0">@T["Delete this video? It leaves the library and access immediately. You can restore it later from this page."]</p>
+                                    <p class="mb-0">@T["This video will be permanently deleted, along with its files and access. It cannot be restored."]</p>
                                 </ConfirmacaoDeExclusao>
                             </form>
                         </div>
@@ -356,9 +348,6 @@
     [SupplyParameterFromQuery(Name = "enfileirado")]
     private string? EnfileiradoBruto { get; set; }
 
-    [SupplyParameterFromQuery(Name = "restaurado")]
-    private string? RestauradoBruto { get; set; }
-
     [SupplyParameterFromQuery(Name = "erro")]
     private string? Erro { get; set; }
 
@@ -389,7 +378,6 @@
 
     private bool Salvo => SalvoBruto == "1";
     private bool Enfileirado => EnfileiradoBruto == "1";
-    private bool Restaurado => RestauradoBruto == "1";
 
     private Video? Video;
 

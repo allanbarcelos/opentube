@@ -375,7 +375,7 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Excluir_os_videos_junto_marca_cada_um_como_excluido()
+    public async Task Excluir_os_videos_junto_apaga_cada_um_de_vez()
     {
         var video = await CriarVideoAsync("Primeiro");
         var outro = await CriarVideoAsync("Segundo");
@@ -384,18 +384,18 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var colecao = await servico.CreateAsync("Alfa", null, Admin);
         await servico.AddVideoAsync(colecao.Id, video.Id);
         await servico.AddVideoAsync(colecao.Id, outro.Id);
+        _storage.ClearReceivedCalls();
 
-        _relogio.Advance(TimeSpan.FromHours(1));
         var exclusao = await servico.DeleteAsync(colecao.Id, VideosDaColecao.Excluir, null);
 
         Assert.Equal(
             new[] { video.Id, outro.Id }.OrderBy(id => id),
             exclusao.DeletedVideoIds.OrderBy(id => id));
         Assert.Empty(await db.Collections.AsNoTracking().ToListAsync());
-
-        var videos = await db.Videos.AsNoTracking().OrderBy(v => v.Title).ToListAsync();
-        Assert.All(videos, v => Assert.Equal(Agora.AddHours(1), v.DeletedAt));
-        Assert.All(videos, v => Assert.Equal(VideoVisibility.Private, v.Visibility));
+        Assert.Empty(await db.Videos.AsNoTracking().ToListAsync());
+        Assert.Empty(await db.CollectionVideos.AsNoTracking().ToListAsync());
+        await _storage.Received(1).DeletePrefixAsync(StorageBucket.Vod, StorageKeys.VodPrefix(video.Id), Arg.Any<CancellationToken>());
+        await _storage.Received(1).DeletePrefixAsync(StorageBucket.Originals, StorageKeys.VodPrefix(outro.Id), Arg.Any<CancellationToken>());
     }
 
     [Fact]

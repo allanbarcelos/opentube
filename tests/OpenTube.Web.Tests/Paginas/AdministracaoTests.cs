@@ -252,7 +252,7 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
     }
 
     [Fact]
-    public async Task Restaurar_devolve_o_video_ainda_privado()
+    public async Task Excluir_o_video_remove_o_registro()
     {
         using var storage = minio.CreateStorage();
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
@@ -263,14 +263,9 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         await FormularioHelpers.EnviarFormularioAsync(
             cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/delete", new Dictionary<string, string>());
 
-        await FormularioHelpers.EnviarFormularioAsync(
-            cliente, $"/admin/videos/{video.Id}", $"/admin/videos/{video.Id}/restore", new Dictionary<string, string>());
-
         await using var db = postgres.CreateContext();
-        var restaurado = await db.Videos.SingleAsync(v => v.Id == video.Id);
-
-        Assert.False(restaurado.IsDeleted);
-        Assert.Equal(VideoVisibility.Private, restaurado.Visibility);
+        Assert.DoesNotContain(await db.Videos.Select(v => v.Id).ToListAsync(), id => id == video.Id);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/admin/videos/{video.Id}")).StatusCode);
     }
 
     [Fact]
@@ -304,7 +299,8 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         Assert.Contains("Restricted", html);
         Assert.Contains("Reprocess from the original", html);
         Assert.Contains("type=\"button\" class=\"btn btn-outline-danger w-100\" data-bs-toggle=\"modal\" data-bs-target=\"#confirmar-exclusao-video\"", html);
-        Assert.Contains("Delete this video? It leaves the library and access immediately. You can restore it later from this page.", html);
+        Assert.Contains("This video will be permanently deleted, along with its files and access. It cannot be restored.", html);
+        Assert.DoesNotContain("/restore", html);
         Assert.Contains("id=\"confirmar-exclusao-video\"", html);
     }
 

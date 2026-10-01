@@ -32,10 +32,16 @@
             return;
         }
 
+        // O texto fica num elemento comum. <template> não expõe textContent e apagava o modal.
+        const conteudo = modelo.textContent.trim();
+        if (!conteudo) {
+            return;
+        }
+
         const nome = select && select.selectedOptions.length > 0
             ? select.selectedOptions[0].textContent.trim()
             : '';
 
-        texto.textContent = modelo.textContent.trim().replaceAll('{0}', nome);
+        texto.textContent = conteudo.replaceAll('{0}', nome);
     });
 }());

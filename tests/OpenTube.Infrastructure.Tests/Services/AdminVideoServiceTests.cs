@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
+using OpenTube.Domain.ValueObjects;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Queue;
 using OpenTube.Infrastructure.Services;
@@ -33,7 +34,7 @@ public class AdminVideoServiceTests(PostgresFixture postgres, MinioFixture minio
         var storage = minio.CreateStorage();
         var fila = new PostgresJobQueue(db, _relogio);
 
-        return (new AdminVideoService(db, fila, storage, _relogio, NullLogger<AdminVideoService>.Instance), db, fila, storage);
+        return (new AdminVideoService(db, fila, storage, NullLogger<AdminVideoService>.Instance), db, fila, storage);
     }
 
     private async Task<Video> CriarVideoAsync(bool pronto = true, IVideoStorage? storage = null)
@@ -125,55 +126,26 @@ public class AdminVideoServiceTests(PostgresFixture postgres, MinioFixture minio
     }
 
     [Fact]
-    public async Task Excluir_tira_do_ar_e_volta_o_video_para_privado()
+    public async Task Excluir_apaga_o_video_os_acessos_e_os_arquivos()
     {
-        var video = await CriarVideoAsync();
         var (servico, db, _, storage) = Criar();
         using var _1 = (IDisposable)storage;
         await using var _2 = db;
+        var video = await CriarVideoAsync(storage: storage);
+        await storage.PutTextAsync(StorageBucket.Vod, $"{StorageKeys.VodPrefix(video.Id)}master.m3u8", "#EXTM3U", MediaTypes.HlsPlaylist);
         await servico.ChangeVisibilityAsync(video.Id, VideoVisibility.Public);
 
-        await servico.DeleteAsync(video.Id);
-
-        await using var leitura = postgres.CreateContext();
-        var excluido = await leitura.Videos.SingleAsync(v => v.Id == video.Id);
-
-        Assert.True(excluido.IsDeleted);
-        Assert.Equal(VideoVisibility.Private, excluido.Visibility);
-        Assert.Equal(Agora, excluido.DeletedAt);
-    }
-
-    [Fact]
-    public async Task O_registro_sobrevive_a_exclusao()
-    {
-        var video = await CriarVideoAsync();
-        var (servico, db, _, storage) = Criar();
-        using var _1 = (IDisposable)storage;
-        await using var _2 = db;
+        db.AccessGrants.Add(AccessGrant.ForUser(
+            EmailAddress.Parse("ana@empresa.com"), GrantTargetType.Video, video.Id, Admin, Agora));
+        await db.SaveChangesAsync();
 
         await servico.DeleteAsync(video.Id);
 
         await using var leitura = postgres.CreateContext();
-        // Apagar a linha destruiria o histórico de quem assistiu antes da exclusão.
-        Assert.Equal(1, await leitura.Videos.CountAsync());
-    }
-
-    [Fact]
-    public async Task Restaurar_devolve_o_video_ainda_privado()
-    {
-        var video = await CriarVideoAsync();
-        var (servico, db, _, storage) = Criar();
-        using var _1 = (IDisposable)storage;
-        await using var _2 = db;
-        await servico.DeleteAsync(video.Id);
-
-        await servico.RestoreAsync(video.Id);
-
-        await using var leitura = postgres.CreateContext();
-        var restaurado = await leitura.Videos.SingleAsync(v => v.Id == video.Id);
-
-        Assert.False(restaurado.IsDeleted);
-        Assert.Equal(VideoVisibility.Private, restaurado.Visibility);
+        Assert.Empty(await leitura.Videos.ToListAsync());
+        Assert.Empty(await leitura.AccessGrants.ToListAsync());
+        Assert.Empty(await storage.ListAsync(StorageBucket.Originals, StorageKeys.VodPrefix(video.Id)));
+        Assert.Empty(await storage.ListAsync(StorageBucket.Vod, StorageKeys.VodPrefix(video.Id)));
     }
 
     [Fact]

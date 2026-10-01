@@ -252,7 +252,7 @@
                                         <input class="form-check-input" type="radio" name="videos" id="videos-excluir"
                                                value="excluir" required />
                                         <label class="form-check-label" for="videos-excluir">
-                                            @T["Delete them too. They leave the library, the same way as deleting a video."]
+                                            @T["Delete them too. They are permanently deleted, the same way as deleting a video."]
                                         </label>
                                     </div>
                                 </fieldset>
@@ -270,10 +270,10 @@
                                     <p class="mb-0" data-confirmacao-texto>
                                         @T["The collection will be permanently deleted and its videos will be unlinked. It cannot be restored."]
                                     </p>
-                                    <template data-confirmacao="desvincular">@T["The collection will be permanently deleted and its videos will be unlinked. It cannot be restored."]</template>
-                                    <template data-confirmacao="excluir">@T["The collection will be permanently deleted and its videos will be deleted. It cannot be restored."]</template>
-                                    <template data-confirmacao="mover">@T["The collection will be permanently deleted and its videos will be moved to '{0}'. It cannot be restored."]</template>
-                                    <template data-confirmacao="mover-vazio">@T["Choose another collection."]</template>
+                                    <p hidden data-confirmacao="desvincular">@T["The collection will be permanently deleted and its videos will be unlinked. It cannot be restored."]</p>
+                                    <p hidden data-confirmacao="excluir">@T["The collection will be permanently deleted and its videos will be deleted. It cannot be restored."]</p>
+                                    <p hidden data-confirmacao="mover">@T["The collection will be permanently deleted and its videos will be moved to '{0}'. It cannot be restored."]</p>
+                                    <p hidden data-confirmacao="mover-vazio">@T["Choose another collection."]</p>
                                 }
                             </ConfirmacaoDeExclusao>
                         </form>

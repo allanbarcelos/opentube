@@ -269,17 +269,6 @@ public static class AdminEndpoints
             return Results.Redirect("/admin?excluido=1");
         });
 
-        grupo.MapPost("/restore", async (
-            Guid videoId, AdminVideoService admin, HttpContext contexto, CancellationToken cancellationToken) =>
-        {
-            await admin.RestoreAsync(videoId, cancellationToken);
-
-            await contexto.RegistrarAsync(
-                AuditActions.VideoRestaurado, AuditEntities.Video, videoId, LocalText.Get("Video restored"), cancellationToken);
-
-            return Results.Redirect($"/admin/videos/{videoId}?restaurado=1");
-        });
-
         // Sumário: o editor manda as linhas como listas paralelas, na ordem da tela; a ordem que
         // vale é a do tempo, acertada ao salvar.
         grupo.MapPost("/chapters", async (
