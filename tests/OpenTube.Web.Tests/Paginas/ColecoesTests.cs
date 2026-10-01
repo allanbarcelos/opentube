@@ -659,4 +659,59 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
     }
+
+    [Fact]
+    public async Task Video_que_ja_esta_numa_colecao_so_muda_depois_da_confirmacao()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Segurança da Informação", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Admin);
+        var alfa = await CriarColecaoAsync(cliente, "Alfa");
+        var beta = await CriarColecaoAsync(cliente, "Beta");
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{alfa}", $"/admin/collections/{alfa}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = video.Id.ToString() });
+
+        var tentativa = await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{beta}", $"/admin/collections/{beta}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = video.Id.ToString() });
+
+        Assert.Equal($"/admin/collections/{beta}?mover={video.Id}", tentativa.Headers.Location!.ToString());
+
+        var aviso = await cliente.GetStringAsync(tentativa.Headers.Location.ToString());
+
+        Assert.Contains(
+            "Segurança da Informação belongs to Alfa. If you continue, it will be moved to this collection.",
+            aviso);
+        Assert.Contains(">Move<", aviso);
+        Assert.DoesNotContain("Video added to the collection.", aviso);
+
+        await using (var antes = postgres.CreateContext())
+        {
+            var vinculo = await antes.CollectionVideos.SingleAsync();
+            Assert.Equal(alfa, vinculo.CollectionId);
+        }
+
+        var mudanca = await FormularioHelpers.EnviarFormularioAsync(
+            cliente,
+            $"/admin/collections/{beta}?mover={video.Id}",
+            $"/admin/collections/{beta}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = video.Id.ToString(), ["confirmar"] = "true" });
+
+        Assert.Equal($"/admin/collections/{beta}?movido=1", mudanca.Headers.Location!.ToString());
+
+        var destino = await cliente.GetStringAsync(mudanca.Headers.Location.ToString());
+        var origem = await cliente.GetStringAsync($"/admin/collections/{alfa}");
+
+        Assert.Contains("Video moved to this collection.", destino);
+        Assert.Contains("Segurança da Informação", destino);
+        Assert.Contains("No videos in this collection yet.", origem);
+
+        await using var depois = postgres.CreateContext();
+        var movido = await depois.CollectionVideos.SingleAsync();
+        Assert.Equal(beta, movido.CollectionId);
+    }
 }

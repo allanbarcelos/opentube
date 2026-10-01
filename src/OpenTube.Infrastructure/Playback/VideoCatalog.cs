@@ -399,8 +399,9 @@ public class VideoCatalog(OpenTubeDbContext db, AccessService acesso, TimeProvid
         linha.Tags ?? [], linha.Favorite, linha.ThumbnailVersion, linha.CollectionSlug, linha.HasNew);
 
     /// <summary>
-    /// Coleção não excluída em que o vídeo está. Se houver mais de uma, vale a primeira pelo
-    /// mesmo critério de nome da home. O clique abre essa coleção já neste vídeo.
+    /// Coleção não excluída em que o vídeo está. Cada vídeo fica em no máximo uma;
+    /// o limite só desempata um vínculo antigo que a migração ainda não removeu.
+    /// O clique abre essa coleção já neste vídeo.
     /// </summary>
     private const string ColecaoDoVideo = """
         (

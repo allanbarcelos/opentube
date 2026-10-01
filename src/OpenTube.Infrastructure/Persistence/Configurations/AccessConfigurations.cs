@@ -77,7 +77,8 @@ public class CollectionVideoConfiguration : IEntityTypeConfiguration<CollectionV
         builder.ToTable("collection_videos");
         builder.HasKey(v => new { v.CollectionId, v.VideoId });
 
-        // Consulta feita a cada avaliação de acesso: a quais coleções este vídeo pertence.
-        builder.HasIndex(v => v.VideoId);
+        // A avaliação de acesso pergunta em qual coleção o vídeo está. O índice é único
+        // porque um vídeo não pode ficar em mais de uma.
+        builder.HasIndex(v => v.VideoId).IsUnique();
     }
 }

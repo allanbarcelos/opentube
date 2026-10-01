@@ -84,12 +84,19 @@ public static class CollectionEndpoints
         grupo.MapPost("/{collectionId:guid}/videos/add", async (
             Guid collectionId,
             [FromForm] Guid videoId,
+            [FromForm] bool? confirmar,
             CollectionService colecoes,
             CancellationToken cancellationToken) =>
         {
             try
             {
-                await colecoes.AddVideoAsync(collectionId, videoId, cancellationToken);
+                var resultado = await colecoes.AddVideoAsync(collectionId, videoId, confirmar == true, cancellationToken);
+
+                if (resultado.NeedsConfirmation)
+                    return Results.Redirect($"/admin/collections/{collectionId}?mover={videoId}");
+
+                if (resultado.Moved)
+                    return Results.Redirect($"/admin/collections/{collectionId}?movido=1");
 
                 return Results.Redirect($"/admin/collections/{collectionId}?adicionado=1");
             }

@@ -21,6 +21,25 @@ namespace OpenTube.Infrastructure.Services;
 public sealed record CollectionSummary(
     Guid Id, string Name, string Slug, string? Description, int VideoCount, int GrantCount, bool IsDeleted);
 
+/// <summary>O que aconteceu ao pedir para colocar um vídeo na coleção.</summary>
+/// <param name="NeedsConfirmation">Ele já está em outra coleção e nada foi alterado.</param>
+/// <param name="Moved">Ele saiu da coleção anterior e entrou nesta.</param>
+/// <param name="OtherCollections">Nomes das coleções de onde ele veio, ou de onde viria.</param>
+public sealed record AddVideoResult(bool NeedsConfirmation, bool Moved, IReadOnlyList<string> OtherCollections)
+{
+    public static AddVideoResult Added { get; } = new(false, false, []);
+
+    public static AddVideoResult Pending(IReadOnlyList<string> names) => new(true, false, names);
+
+    public static AddVideoResult Relocated(IReadOnlyList<string> names) => new(false, true, names);
+}
+
+/// <summary>Vídeo que já pertence a outra coleção. A administração precisa confirmar a mudança.</summary>
+/// <param name="VideoId">Vídeo.</param>
+/// <param name="Title">Título, para o aviso dizer de qual vídeo se trata.</param>
+/// <param name="CollectionNames">Nomes das outras coleções, na ordem em que o aviso os mostra.</param>
+public sealed record ConflitoDeVideo(Guid VideoId, string Title, string CollectionNames);
+
 /// <summary>
 /// Administração das coleções. Elas existem para que a concessão recaia sobre um conjunto, e
 /// por isso remover um vídeo daqui muda quem consegue assisti-lo.
@@ -55,7 +74,10 @@ public class CollectionService(OpenTubeDbContext db, TimeProvider clock, ILogger
         return colecao;
     }
 
-    /// <summary>Redefine o conteúdo da coleção na ordem informada.</summary>
+    /// <summary>
+    /// Redefine o conteúdo da coleção na ordem informada. Um vídeo que esteja em outra coleção
+    /// sai de lá: cada vídeo fica em uma coleção só.
+    /// </summary>
     public async Task<Collection> SetVideosAsync(Guid collectionId, IEnumerable<Guid> videoIds, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(videoIds);
@@ -63,23 +85,75 @@ public class CollectionService(OpenTubeDbContext db, TimeProvider clock, ILogger
         var colecao = await CarregarAsync(collectionId, cancellationToken);
         var existentes = await FiltrarExistentesAsync(videoIds, cancellationToken);
 
+        await using var transacao = await db.Database.BeginTransactionAsync(cancellationToken);
+        await SoltarDeOutrasAsync(collectionId, existentes, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+
         colecao.Replace(existentes, clock.GetUtcNow());
         await db.SaveChangesAsync(cancellationToken);
+        await transacao.CommitAsync(cancellationToken);
 
         logger.LogInformation("Coleção {ColecaoId} agora tem {Quantidade} vídeos", collectionId, existentes.Count);
 
         return colecao;
     }
 
-    public async Task AddVideoAsync(Guid collectionId, Guid videoId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Coloca o vídeo nesta coleção. Se ele já está em outra, não mexe em nada até
+    /// <paramref name="confirmMove"/>: aí ele sai da anterior e passa a ser chegada nova aqui.
+    /// </summary>
+    public async Task<AddVideoResult> AddVideoAsync(
+        Guid collectionId, Guid videoId, bool confirmMove = false, CancellationToken cancellationToken = default)
     {
         var colecao = await CarregarAsync(collectionId, cancellationToken);
 
         if (!await db.Videos.AnyAsync(v => v.Id == videoId && v.DeletedAt == null, cancellationToken))
             throw new InvalidOperationException("Video not found");
 
+        if (colecao.Videos.Any(v => v.VideoId == videoId))
+            return AddVideoResult.Added;
+
+        var outras = await NomesDasOutrasAsync(collectionId, videoId, cancellationToken);
+
+        if (outras.Count > 0 && !confirmMove)
+            return AddVideoResult.Pending(outras);
+
+        if (outras.Count > 0)
+        {
+            await using var transacao = await db.Database.BeginTransactionAsync(cancellationToken);
+            await SoltarDeOutrasAsync(collectionId, [videoId], cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+
+            colecao.Add(videoId, clock.GetUtcNow());
+            await db.SaveChangesAsync(cancellationToken);
+            await transacao.CommitAsync(cancellationToken);
+
+            return AddVideoResult.Relocated(outras);
+        }
+
         colecao.Add(videoId, clock.GetUtcNow());
         await db.SaveChangesAsync(cancellationToken);
+
+        return AddVideoResult.Added;
+    }
+
+    /// <summary>
+    /// Outra coleção que ainda tem este vídeo. Nulo quando ele está livre ou já está nesta.
+    /// </summary>
+    public async Task<ConflitoDeVideo?> FindPlacementConflictAsync(
+        Guid collectionId, Guid videoId, CancellationToken cancellationToken = default)
+    {
+        var titulo = await db.Videos
+            .Where(v => v.Id == videoId && v.DeletedAt == null)
+            .Select(v => v.Title)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (titulo is null)
+            return null;
+
+        var nomes = await NomesDasOutrasAsync(collectionId, videoId, cancellationToken);
+
+        return nomes.Count == 0 ? null : new ConflitoDeVideo(videoId, titulo, string.Join(", ", nomes));
     }
 
     public async Task RemoveVideoAsync(Guid collectionId, Guid videoId, CancellationToken cancellationToken = default)
@@ -159,6 +233,43 @@ public class CollectionService(OpenTubeDbContext db, TimeProvider clock, ILogger
                 (int)x.Visibility, (int)x.Status, x.PublishedAt, x.CreatedAt, []))
             .ToList();
     }
+
+    private async Task SoltarDeOutrasAsync(
+        Guid collectionId, List<Guid> videoIds, CancellationToken cancellationToken)
+    {
+        if (videoIds.Count == 0)
+            return;
+
+        var outrasIds = await db.CollectionVideos
+            .Where(cv => cv.CollectionId != collectionId && videoIds.Contains(cv.VideoId))
+            .Select(cv => cv.CollectionId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        if (outrasIds.Count == 0)
+            return;
+
+        var outras = await db.Collections
+            .Include(c => c.Videos)
+            .Where(c => outrasIds.Contains(c.Id))
+            .ToListAsync(cancellationToken);
+
+        foreach (var outra in outras)
+        {
+            foreach (var videoId in videoIds)
+                outra.Remove(videoId);
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> NomesDasOutrasAsync(
+        Guid collectionId, Guid videoId, CancellationToken cancellationToken) =>
+        await db.CollectionVideos
+            .Where(cv => cv.VideoId == videoId && cv.CollectionId != collectionId)
+            .Join(db.Collections, cv => cv.CollectionId, c => c.Id, (cv, c) => c)
+            .OrderBy(c => c.Name)
+            .ThenBy(c => c.Id)
+            .Select(c => c.Name)
+            .ToListAsync(cancellationToken);
 
     private async Task<List<Guid>> FiltrarExistentesAsync(IEnumerable<Guid> videoIds, CancellationToken cancellationToken)
     {

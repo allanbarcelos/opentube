@@ -282,4 +282,108 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Single(encontrada.Videos);
         Assert.Null(await servicoDeLeitura.FindAsync(Guid.CreateVersion7()));
     }
+
+    [Fact]
+    public async Task Video_em_outra_colecao_nao_muda_sem_confirmacao()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var origem = await servico.CreateAsync("Alfa", null, Admin);
+        var destino = await servico.CreateAsync("Beta", null, Admin);
+        await servico.AddVideoAsync(origem.Id, video.Id);
+
+        var resultado = await servico.AddVideoAsync(destino.Id, video.Id);
+
+        Assert.True(resultado.NeedsConfirmation);
+        Assert.False(resultado.Moved);
+        Assert.Equal(["Alfa"], resultado.OtherCollections);
+
+        var vinculo = await db.CollectionVideos.AsNoTracking().SingleAsync();
+        Assert.Equal(origem.Id, vinculo.CollectionId);
+        Assert.Null(await servico.FindPlacementConflictAsync(origem.Id, video.Id));
+
+        var conflito = await servico.FindPlacementConflictAsync(destino.Id, video.Id);
+        Assert.NotNull(conflito);
+        Assert.Equal("Primeiro", conflito.Title);
+        Assert.Equal("Alfa", conflito.CollectionNames);
+    }
+
+    [Fact]
+    public async Task Confirmacao_move_o_video_e_marca_a_chegada()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var origem = await servico.CreateAsync("Alfa", null, Admin);
+        var destino = await servico.CreateAsync("Beta", null, Admin);
+        await servico.AddVideoAsync(origem.Id, video.Id);
+        _relogio.Advance(TimeSpan.FromHours(2));
+
+        var resultado = await servico.AddVideoAsync(destino.Id, video.Id, confirmMove: true);
+
+        Assert.True(resultado.Moved);
+        Assert.Equal(["Alfa"], resultado.OtherCollections);
+
+        var vinculo = await db.CollectionVideos.AsNoTracking().SingleAsync();
+        Assert.Equal(destino.Id, vinculo.CollectionId);
+        Assert.Equal(Agora.AddHours(2), vinculo.AddedAt);
+        Assert.Equal(["Primeiro"], (await servico.VideosOfAsync(destino.Id)).Select(v => v.Title));
+        Assert.Empty(await servico.VideosOfAsync(origem.Id));
+    }
+
+    [Fact]
+    public async Task Colecao_excluida_tambem_segura_o_video_ate_a_confirmacao()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var origem = await servico.CreateAsync("Alfa", null, Admin);
+        var destino = await servico.CreateAsync("Beta", null, Admin);
+        await servico.AddVideoAsync(origem.Id, video.Id);
+        await servico.DeleteAsync(origem.Id);
+
+        var pendente = await servico.AddVideoAsync(destino.Id, video.Id);
+
+        Assert.True(pendente.NeedsConfirmation);
+        Assert.Equal(origem.Id, (await db.CollectionVideos.AsNoTracking().SingleAsync()).CollectionId);
+
+        await servico.AddVideoAsync(destino.Id, video.Id, confirmMove: true);
+
+        Assert.Equal(destino.Id, (await db.CollectionVideos.AsNoTracking().SingleAsync()).CollectionId);
+    }
+
+    [Fact]
+    public async Task Redefinir_tira_o_video_da_colecao_anterior()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var origem = await servico.CreateAsync("Alfa", null, Admin);
+        var destino = await servico.CreateAsync("Beta", null, Admin);
+        await servico.AddVideoAsync(origem.Id, video.Id);
+
+        await servico.SetVideosAsync(destino.Id, [video.Id]);
+
+        var vinculo = await db.CollectionVideos.AsNoTracking().SingleAsync();
+        Assert.Equal(destino.Id, vinculo.CollectionId);
+        Assert.Empty(await servico.VideosOfAsync(origem.Id));
+    }
+
+    [Fact]
+    public async Task O_banco_recusa_o_mesmo_video_em_duas_colecoes()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var origem = await servico.CreateAsync("Alfa", null, Admin);
+        var destino = await servico.CreateAsync("Beta", null, Admin);
+        await servico.AddVideoAsync(origem.Id, video.Id);
+
+        await using var outro = postgres.CreateContext();
+        var beta = await outro.Collections.Include(c => c.Videos).SingleAsync(c => c.Id == destino.Id);
+        beta.Add(video.Id, Agora);
+
+        await Assert.ThrowsAnyAsync<DbUpdateException>(() => outro.SaveChangesAsync());
+    }
 }

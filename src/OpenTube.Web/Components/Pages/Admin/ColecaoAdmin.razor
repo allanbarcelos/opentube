@@ -96,6 +96,25 @@
                     }
 
                     <div class="card-body border-top">
+                        @if (Conflito is not null)
+                        {
+                            <div class="alert alert-warning" role="alert">
+                                <p class="mb-2">
+                                    @T.Format(
+                                        "{0} belongs to {1}. If you continue, it will be moved to this collection.",
+                                        Conflito.Title,
+                                        Conflito.CollectionNames)
+                                </p>
+                                <form method="post" action="/admin/collections/@Colecao.Id/videos/add" class="d-flex flex-wrap gap-2">
+                                    <AntiforgeryToken />
+                                    <input type="hidden" name="videoId" value="@Conflito.VideoId" />
+                                    <input type="hidden" name="confirmar" value="true" />
+                                    <button class="btn btn-warning" type="submit">@T["Move"]</button>
+                                    <a class="btn btn-outline-secondary" href="/admin/collections/@Colecao.Id">@T["Cancel"]</a>
+                                </form>
+                            </div>
+                        }
+
                         <form method="post" action="/admin/collections/@Colecao.Id/videos/add" class="row g-2">
                             <AntiforgeryToken />
 
@@ -224,6 +243,12 @@
     [SupplyParameterFromQuery(Name = "adicionado")]
     private string? Adicionado { get; set; }
 
+    [SupplyParameterFromQuery(Name = "movido")]
+    private string? Movido { get; set; }
+
+    [SupplyParameterFromQuery(Name = "mover")]
+    private string? Mover { get; set; }
+
     [SupplyParameterFromQuery(Name = "removido")]
     private string? Removido { get; set; }
 
@@ -245,6 +270,8 @@
 
     private IReadOnlyList<VideoSummary> Disponiveis = [];
 
+    private ConflitoDeVideo? Conflito;
+
     private int VideosPrivados => Videos.Count(v => v.Visibility == (int)VideoVisibility.Private);
 
     private IEnumerable<string> Avisos
@@ -254,6 +281,7 @@
             if (Criada == "1") yield return T["Collection created."];
             if (Salva == "1") yield return T["Changes saved."];
             if (Adicionado == "1") yield return T["Video added to the collection."];
+            if (Movido == "1") yield return T["Video moved to this collection."];
             if (Removido == "1") yield return T["Video removed from the collection."];
             if (Restaurada == "1") yield return T["Collection restored."];
             if (Capa == "1") yield return T["Thumbnail saved."];
@@ -279,5 +307,8 @@
         var acervo = await Catalogo.BrowseAsync(espectador, page: 1, pageSize: 100, cancellationToken: Http.RequestAborted);
 
         Disponiveis = acervo.Items.Where(v => !jaNaColecao.Contains(v.Id)).ToList();
+
+        if (Guid.TryParse(Mover, out var videoEmOutra))
+            Conflito = await Colecoes.FindPlacementConflictAsync(CollectionId, videoEmOutra, Http.RequestAborted);
     }
 }
