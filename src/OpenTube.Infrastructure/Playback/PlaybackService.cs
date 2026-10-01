@@ -65,8 +65,13 @@ public class PlaybackService(
         if (!await limite.AllowsAnotherAsync(viewer.UserId, ipHash, cancellationToken))
             return PlaybackResult.Deny(AccessReason.TooManyStreams);
 
-        // Lê antes de contar. Se o storage falhar, a visualização não é consumida.
-        var master = await storage.GetTextAsync(StorageBucket.Vod, StorageKeys.MasterUnder(Prefixo(video)), cancellationToken);
+        // Lê antes de contar. Se o storage falhar, a visualização não é consumida. Uma chave
+        // ausente vira "não encontrado", nunca um erro: o vídeo está liberado, mas o arquivo
+        // não está lá (uma geração trocada, um arquivo que sumiu).
+        var master = await storage.TryGetTextAsync(StorageBucket.Vod, StorageKeys.MasterUnder(Prefixo(video)), cancellationToken);
+
+        if (master is null)
+            return PlaybackResult.Deny(AccessReason.MediaMissing);
 
         var reescrito = HlsManifestRewriter.Rewrite(master, uri =>
         {
@@ -109,7 +114,12 @@ public class PlaybackService(
         var chave = StorageKeys.RenditionPlaylistUnder(Prefixo(video), rendition);
         var prefixo = StorageKeys.RenditionPrefixUnder(Prefixo(video), rendition);
 
-        var playlist = await storage.GetTextAsync(StorageBucket.Vod, chave, cancellationToken);
+        // Uma versão que não existe (um nome qualquer na URL) não é erro do servidor: o arquivo
+        // simplesmente não está no storage, e a resposta é "não encontrado".
+        var playlist = await storage.TryGetTextAsync(StorageBucket.Vod, chave, cancellationToken);
+
+        if (playlist is null)
+            return PlaybackResult.Deny(AccessReason.MediaMissing);
 
         var reescrito = HlsManifestRewriter.Rewrite(playlist, uri =>
         {

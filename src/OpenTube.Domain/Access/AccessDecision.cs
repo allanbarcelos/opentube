@@ -49,7 +49,13 @@ public enum AccessReason
     ViewerDisabled = 22,
 
     /// <summary>Reproduções simultâneas demais com a mesma conta.</summary>
-    TooManyStreams = 23
+    TooManyStreams = 23,
+
+    /// <summary>
+    /// O vídeo está liberado, mas o arquivo pedido não está no storage — uma versão que não
+    /// existe, ou um arquivo que sumiu. Responde como "não encontrado", nunca como erro.
+    /// </summary>
+    MediaMissing = 24
 }
 
 /// <summary>Resultado da avaliação de acesso, com o motivo preservado para auditoria.</summary>

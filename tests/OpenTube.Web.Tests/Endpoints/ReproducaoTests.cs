@@ -76,6 +76,23 @@ public class ReproducaoTests(PostgresFixture postgres, MinioFixture minio) : IAs
     }
 
     [Fact]
+    public async Task Versao_inexistente_em_video_publico_responde_404_e_nao_500()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+
+        // Qualquer anônimo pode chutar nomes de versão; um que não existe é "não encontrado",
+        // nunca um erro do servidor que vaza stack e enche o log.
+        foreach (var nome in new[] { "720p", "999p", "qualquercoisa" })
+        {
+            var resposta = await cliente.GetAsync($"/api/videos/{video.Id}/renditions/{nome}.m3u8");
+            Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task Video_privado_responde_como_inexistente_a_quem_nao_tem_acesso()
     {
         using var storage = minio.CreateStorage();

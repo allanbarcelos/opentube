@@ -278,6 +278,18 @@ public class S3VideoStorage : IVideoStorage, IDisposable
         return await reader.ReadToEndAsync(cancellationToken);
     }
 
+    public async Task<string?> TryGetTextAsync(StorageBucket bucket, string key, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await GetTextAsync(bucket, key, cancellationToken);
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
     public async Task<bool> ExistsAsync(StorageBucket bucket, string key, CancellationToken cancellationToken = default) =>
         await GetSizeAsync(bucket, key, cancellationToken) is not null;
 

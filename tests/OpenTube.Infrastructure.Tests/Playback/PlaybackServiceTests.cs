@@ -107,6 +107,34 @@ public class PlaybackServiceTests(PostgresFixture postgres, MinioFixture minio) 
     }
 
     [Fact]
+    public async Task Versao_inexistente_e_media_ausente_nao_erro()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PublicarAsync(storage, VideoVisibility.Public);
+        await using var db = postgres.CreateContext();
+
+        var resultado = await Criar(db, storage).GetRenditionAsync(video.Id, "720p", Viewer.Anonymous);
+
+        Assert.False(resultado.Allowed);
+        Assert.Equal(AccessReason.MediaMissing, resultado.Reason);
+    }
+
+    [Fact]
+    public async Task Playlist_principal_ausente_nao_erro_e_nao_conta_visualizacao()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await PublicarAsync(storage, VideoVisibility.Public);
+        // O vídeo está liberado, mas o arquivo da playlist principal sumiu do storage.
+        await storage.DeleteKeysAsync(StorageBucket.Vod, [StorageKeys.Master(video.Id)]);
+        await using var db = postgres.CreateContext();
+
+        var resultado = await Criar(db, storage).GetMasterAsync(video.Id, Viewer.Anonymous, v => $"/r/{v}.m3u8");
+
+        Assert.False(resultado.Allowed);
+        Assert.Equal(AccessReason.MediaMissing, resultado.Reason);
+    }
+
+    [Fact]
     public async Task A_playlist_da_versao_vem_com_segmentos_assinados()
     {
         using var storage = minio.CreateStorage();

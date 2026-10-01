@@ -62,8 +62,11 @@ public interface IVideoStorage
     /// <summary>Baixa um objeto para um arquivo local.</summary>
     Task GetFileAsync(StorageBucket bucket, string key, string destinationPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Lê um objeto de texto.</summary>
+    /// <summary>Lê um objeto de texto. Lança se a chave não existir.</summary>
     Task<string> GetTextAsync(StorageBucket bucket, string key, CancellationToken cancellationToken = default);
+
+    /// <summary>Lê um objeto de texto, ou <c>null</c> se a chave não existir.</summary>
+    Task<string?> TryGetTextAsync(StorageBucket bucket, string key, CancellationToken cancellationToken = default);
 
     Task<bool> ExistsAsync(StorageBucket bucket, string key, CancellationToken cancellationToken = default);
 
