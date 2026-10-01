@@ -192,6 +192,35 @@ public class VideoUploadServiceTests(PostgresFixture postgres, MinioFixture mini
     }
 
     [Fact]
+    public async Task Falha_ao_enfileirar_desfaz_a_marca_de_enviado()
+    {
+        var colecao = await ColecaoAsync();
+        var db = postgres.CreateContext();
+        using var storage = minio.CreateStorage();
+        await using var _ = db;
+
+        // A fila falha no EnqueueAsync, simulando uma queda entre marcar o vídeo e agendar o
+        // processamento. Como as duas escritas estão na mesma transação, nada pode ter sido gravado.
+        var servico = new VideoUploadService(
+            db, storage, new FilaQueFalha(), Microsoft.Extensions.Options.Options.Create(minio.Options),
+            _relogio, NullLogger<VideoUploadService>.Instance);
+
+        var dados = new byte[256];
+        var bilhete = await servico.StartAsync(null, null, "reuniao.mp4", "video/mp4", dados.Length, Admin, colecao.Id);
+        var enviado = await EnviarPedacoAsync(bilhete.Parts[0], dados);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servico.CompleteAsync(bilhete.VideoId, bilhete.UploadId, [enviado], colecao.Id));
+
+        await using var leitura = postgres.CreateContext();
+        var video = await leitura.Videos.SingleAsync(v => v.Id == bilhete.VideoId);
+
+        // O vídeo continua como rascunho e fora da coleção: a transação foi desfeita inteira.
+        Assert.Equal(VideoStatus.Draft, video.Status);
+        Assert.Empty(await leitura.Collections.Where(c => c.Id == colecao.Id).SelectMany(c => c.Videos).ToListAsync());
+    }
+
+    [Fact]
     public async Task Nao_permite_concluir_duas_vezes()
     {
         var (servico, db, storage, _) = Criar();
@@ -333,4 +362,23 @@ public class VideoUploadServiceTests(PostgresFixture postgres, MinioFixture mini
 
         Assert.Empty(await db.Videos.ToListAsync());
     }
+}
+
+/// <summary>Fila que recusa enfileirar, para exercitar o rollback da conclusão do envio.</summary>
+file sealed class FilaQueFalha : IJobQueue
+{
+    public Task<Guid> EnqueueAsync(JobKind kind, Guid? targetId = null, object? payload = null, TimeSpan? delay = null, CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("fila indisponível");
+
+    public Task<QueuedJob?> DequeueAsync(string workerId, IReadOnlyCollection<JobKind> kinds, TimeSpan lease, CancellationToken cancellationToken = default) =>
+        Task.FromResult<QueuedJob?>(null);
+
+    public Task<bool> RenewAsync(Guid jobId, string workerId, TimeSpan lease, CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+    public Task CompleteAsync(Guid jobId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task FailAsync(Guid jobId, string error, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task<IReadOnlyDictionary<JobStatus, int>> CountByStatusAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyDictionary<JobStatus, int>>(new Dictionary<JobStatus, int>());
 }

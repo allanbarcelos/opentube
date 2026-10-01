@@ -156,6 +156,13 @@ public class VideoUploadService(
 
         var tamanho = await storage.CompleteUploadAsync(video.OriginalKey, uploadId, parts, cancellationToken);
 
+        // Marcar o vídeo como enviado e agendar o processamento vão juntos: sem a transação,
+        // uma queda entre os dois deixaria o vídeo "enviado" sem nenhum trabalho na fila, preso
+        // até alguém reprocessar à mão. É o mesmo cuidado de RequestTranscriptionAsync.
+        await using var transacao = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
         video.MarkUploaded(tamanho);
         colecao?.Add(video.Id, clock.GetUtcNow());
         await db.SaveChangesAsync(cancellationToken);
@@ -165,6 +172,9 @@ public class VideoUploadService(
             video.Id,
             new TranscodePayload(video.Id, video.OriginalKey),
             cancellationToken: cancellationToken);
+
+        if (transacao is not null)
+            await transacao.CommitAsync(cancellationToken);
 
         logger.LogInformation("Envio concluído para o vídeo {VideoId} ({Bytes} bytes)", videoId, tamanho);
 
