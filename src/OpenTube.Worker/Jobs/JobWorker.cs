@@ -104,18 +104,25 @@ public class JobWorker(
 
         logger.LogInformation("Executando {Tipo} para {Alvo} (tentativa {Tentativa})", job.Kind, job.TargetId, job.Attempts);
 
+        // A perda da reserva tem token próprio, separado do desligamento: se os dois coincidirem,
+        // ainda é preciso saber que o trabalho já é de outro worker e não pode ser marcado aqui.
         using var renovacao = new CancellationTokenSource();
-        using var reservaPerdida = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        using var reservaPerdida = new CancellationTokenSource();
+        using var cancelamento = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, reservaPerdida.Token);
         var renovando = RenovarReservaAsync(job.Id, reservaPerdida, renovacao.Token);
 
         try
         {
-            await executores[job.Kind].HandleAsync(job, reservaPerdida.Token);
+            await executores[job.Kind].HandleAsync(job, cancelamento.Token);
+
+            if (reservaPerdida.IsCancellationRequested)
+                throw new OperationCanceledException(reservaPerdida.Token);
+
             await fila.CompleteAsync(job.Id, CancellationToken.None);
 
             logger.LogInformation("Trabalho {JobId} concluído", job.Id);
         }
-        catch (OperationCanceledException) when (reservaPerdida.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
+        catch (Exception) when (reservaPerdida.IsCancellationRequested)
         {
             // A reserva passou para outro worker: marcar falha ou conclusão agora mexeria no
             // trabalho que ele está executando.
