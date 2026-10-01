@@ -174,26 +174,46 @@ public static class CollectionEndpoints
 
         grupo.MapPost("/{collectionId:guid}/delete", async (
             Guid collectionId,
+            [FromForm] string? videos,
+            [FromForm] Guid? destino,
             CollectionService colecoes,
             HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
-            await colecoes.DeleteAsync(collectionId, cancellationToken);
+            try
+            {
+                var escolha = videos switch
+                {
+                    "desvincular" => VideosDaColecao.Desvincular,
+                    "excluir" => VideosDaColecao.Excluir,
+                    "mover" => VideosDaColecao.Mover,
+                    _ => throw new InvalidOperationException("Choose what happens to the videos.")
+                };
 
-            await contexto.RegistrarAsync(
-                AuditActions.ColecaoExcluida, AuditEntities.Colecao, collectionId, LocalText.Get("Collection deleted."), cancellationToken);
+                var exclusao = await colecoes.DeleteAsync(collectionId, escolha, destino, cancellationToken);
 
-            return Results.Redirect("/admin/collections?excluida=1");
-        });
+                var resumo = exclusao.Videos switch
+                {
+                    VideosDaColecao.Excluir => LocalText.Format("Collection '{0}' deleted. Its videos were deleted.", exclusao.Name),
+                    VideosDaColecao.Mover => LocalText.Format("Collection '{0}' deleted. Its videos were moved to '{1}'.", exclusao.Name, exclusao.DestinationName),
+                    _ => LocalText.Format("Collection '{0}' deleted. Its videos stayed in the library.", exclusao.Name)
+                };
 
-        grupo.MapPost("/{collectionId:guid}/restore", async (
-            Guid collectionId,
-            CollectionService colecoes,
-            CancellationToken cancellationToken) =>
-        {
-            await colecoes.RestoreAsync(collectionId, cancellationToken);
+                await contexto.RegistrarAsync(
+                    AuditActions.ColecaoExcluida, AuditEntities.Colecao, collectionId, resumo, cancellationToken);
 
-            return Results.Redirect($"/admin/collections/{collectionId}?restaurada=1");
+                foreach (var videoId in exclusao.DeletedVideoIds)
+                {
+                    await contexto.RegistrarAsync(
+                        AuditActions.VideoExcluido, AuditEntities.Video, videoId, LocalText.Get("Video deleted."), cancellationToken);
+                }
+
+                return Results.Redirect("/admin/collections?excluida=1");
+            }
+            catch (InvalidOperationException e)
+            {
+                return Results.Redirect($"/admin/collections/{collectionId}?erro={Uri.EscapeDataString(LocalText.Get(e.Message))}");
+            }
         });
 
         return rotas;

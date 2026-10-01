@@ -4,8 +4,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using OpenTube.Domain.Entities;
+using OpenTube.Domain.Enums;
 using OpenTube.Domain.ValueObjects;
 using OpenTube.Infrastructure.Persistence;
+using OpenTube.Infrastructure.Storage;
 using OpenTube.Shared.Catalog;
 
 namespace OpenTube.Infrastructure.Services;
@@ -40,11 +42,36 @@ public sealed record AddVideoResult(bool NeedsConfirmation, bool Moved, IReadOnl
 /// <param name="CollectionNames">Nomes das outras coleções, na ordem em que o aviso os mostra.</param>
 public sealed record ConflitoDeVideo(Guid VideoId, string Title, string CollectionNames);
 
+/// <summary>O que fazer com os vídeos ao excluir a coleção de verdade.</summary>
+public enum VideosDaColecao
+{
+    /// <summary>Os vídeos saem da coleção e continuam no acervo.</summary>
+    Desvincular,
+
+    /// <summary>Os vídeos são excluídos como qualquer outro vídeo: somem do acervo e o registro fica.</summary>
+    Excluir,
+
+    /// <summary>Os vídeos passam para outra coleção.</summary>
+    Mover
+}
+
+/// <summary>Coleção que acabou de ser apagada, para a auditoria e a capa no storage.</summary>
+/// <param name="Name">Nome, no registro do que aconteceu.</param>
+/// <param name="Videos">O que foi feito com os vídeos.</param>
+/// <param name="DestinationName">Coleção que recebeu os vídeos, quando eles foram movidos.</param>
+/// <param name="DeletedVideoIds">Vídeos que entraram na exclusão junto com a coleção.</param>
+public sealed record ExclusaoDeColecao(
+    string Name,
+    VideosDaColecao Videos,
+    string? DestinationName,
+    IReadOnlyList<Guid> DeletedVideoIds);
+
 /// <summary>
 /// Administração das coleções. Elas existem para que a concessão recaia sobre um conjunto, e
 /// por isso remover um vídeo daqui muda quem consegue assisti-lo.
 /// </summary>
-public class CollectionService(OpenTubeDbContext db, TimeProvider clock, ILogger<CollectionService> logger)
+public class CollectionService(
+    OpenTubeDbContext db, TimeProvider clock, IVideoStorage storage, ILogger<CollectionService> logger)
 {
     public async Task<Collection> CreateAsync(string name, string? description, Guid adminId, CancellationToken cancellationToken = default)
     {
@@ -164,20 +191,95 @@ public class CollectionService(OpenTubeDbContext db, TimeProvider clock, ILogger
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteAsync(Guid collectionId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Apaga a coleção de verdade: a linha, a capa, os favoritos, os acessos e os convites
+    /// sobre ela. Não há o que restaurar. Os vídeos seguem <paramref name="videos"/>.
+    /// </summary>
+    public async Task<ExclusaoDeColecao> DeleteAsync(
+        Guid collectionId,
+        VideosDaColecao videos,
+        Guid? destinoId,
+        CancellationToken cancellationToken = default)
     {
         var colecao = await CarregarAsync(collectionId, cancellationToken);
+        var ids = colecao.Videos.OrderBy(v => v.Position).Select(v => v.VideoId).ToList();
+        string? destinoNome = null;
+        var excluidos = new List<Guid>();
 
-        colecao.SoftDelete(clock.GetUtcNow());
+        Collection? destino = null;
+        if (videos == VideosDaColecao.Mover && ids.Count > 0)
+        {
+            if (destinoId is null || destinoId == collectionId)
+                throw new InvalidOperationException("Choose another collection.");
+
+            destino = await db.Collections
+                .Include(c => c.Videos)
+                .FirstOrDefaultAsync(c => c.Id == destinoId && c.DeletedAt == null, cancellationToken)
+                ?? throw new InvalidOperationException("Choose another collection.");
+
+            destinoNome = destino.Name;
+        }
+
+        await using var transacao = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        if (destino is not null)
+        {
+            foreach (var videoId in ids)
+                colecao.Remove(videoId);
+
+            await db.SaveChangesAsync(cancellationToken);
+
+            var agora = clock.GetUtcNow();
+            foreach (var videoId in ids)
+                destino.Add(videoId, agora);
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        else if (videos == VideosDaColecao.Excluir && ids.Count > 0)
+        {
+            var agora = clock.GetUtcNow();
+            var alvos = await db.Videos.Where(v => ids.Contains(v.Id)).ToListAsync(cancellationToken);
+
+            foreach (var video in alvos)
+            {
+                if (video.DeletedAt is not null)
+                    continue;
+
+                video.SoftDelete(agora);
+                excluidos.Add(video.Id);
+            }
+        }
+
+        await db.AccessGrants
+            .Where(g => g.TargetType == GrantTargetType.Collection && g.TargetId == collectionId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await db.Invitations
+            .Where(i => i.TargetType == GrantTargetType.Collection && i.TargetId == collectionId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        var capa = colecao.ThumbnailKey;
+        var nome = colecao.Name;
+
+        db.Collections.Remove(colecao);
         await db.SaveChangesAsync(cancellationToken);
-    }
+        await transacao.CommitAsync(cancellationToken);
 
-    public async Task RestoreAsync(Guid collectionId, CancellationToken cancellationToken = default)
-    {
-        var colecao = await CarregarAsync(collectionId, cancellationToken);
+        if (capa is not null)
+        {
+            try
+            {
+                await storage.DeleteKeysAsync(StorageBucket.Vod, [capa], cancellationToken);
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning(e, "Não foi possível apagar a miniatura {Chave} da coleção excluída", capa);
+            }
+        }
 
-        colecao.Restore();
-        await db.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Coleção {ColecaoId} excluída ({Videos})", collectionId, videos);
+
+        return new ExclusaoDeColecao(nome, videos, destinoNome, excluidos);
     }
 
     /// <summary>Coleções com as contagens usadas na listagem administrativa.</summary>

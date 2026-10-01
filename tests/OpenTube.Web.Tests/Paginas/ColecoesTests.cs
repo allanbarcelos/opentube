@@ -626,14 +626,84 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
                 [Convidado], GrantTargetType.Collection, colecao, GrantValidity.Forever, Guid.CreateVersion7());
         }
 
+        using var convidado = _app.CreateBrowser();
+        await EntrarAsync(convidado, Convidado);
+        Assert.Equal(HttpStatusCode.OK, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
+
+        var pagina = await cliente.GetStringAsync($"/admin/collections/{colecao}");
+        Assert.Contains("This collection will be permanently deleted, along with every access grant on it. It cannot be restored.", pagina);
+        Assert.Contains("Unlink them. They stay in the library.", pagina);
+        Assert.Contains("Delete them too. They leave the library, the same way as deleting a video.", pagina);
+        Assert.DoesNotContain("/restore", pagina);
+
         await FormularioHelpers.EnviarFormularioAsync(
             cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/delete",
-            new Dictionary<string, string>());
+            new Dictionary<string, string> { ["videos"] = "desvincular" });
 
-        // A coleção excluída não deixa de existir no banco, mas o vínculo com os vídeos some
-        // do ponto de vista do acesso.
         await using var db = postgres.CreateContext();
-        Assert.True((await db.Collections.SingleAsync()).IsDeleted);
+        Assert.Empty(await db.Collections.ToListAsync());
+        Assert.Empty(await db.AccessGrants.ToListAsync());
+        Assert.Empty(await db.CollectionVideos.ToListAsync());
+        Assert.Null((await db.Videos.SingleAsync()).DeletedAt);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/admin/collections/{colecao}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await convidado.GetAsync($"/watch/{video.Slug}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Excluir_a_colecao_pode_excluir_os_videos_ou_move_los()
+    {
+        using var storage = minio.CreateStorage();
+        var apagado = await AcervoDeTeste.PublicarAsync(postgres, storage, "Para apagar", VideoVisibility.Public);
+        var movido = await AcervoDeTeste.PublicarAsync(postgres, storage, "Para mover", VideoVisibility.Public);
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarAsync(cliente, Admin);
+        var origem = await CriarColecaoAsync(cliente, "Origem");
+        var destino = await CriarColecaoAsync(cliente, "Destino");
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{origem}", $"/admin/collections/{origem}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = apagado.Id.ToString() });
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{origem}", $"/admin/collections/{origem}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = movido.Id.ToString() });
+
+        var semDestino = await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{origem}", $"/admin/collections/{origem}/delete",
+            new Dictionary<string, string> { ["videos"] = "mover" });
+
+        Assert.Contains("Choose another collection.", Uri.UnescapeDataString(semDestino.Headers.Location!.ToString()));
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{origem}", $"/admin/collections/{origem}/videos/remove",
+            new Dictionary<string, string> { ["videoId"] = movido.Id.ToString() });
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{destino}", $"/admin/collections/{destino}/videos/add",
+            new Dictionary<string, string> { ["videoId"] = movido.Id.ToString() });
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{origem}", $"/admin/collections/{origem}/delete",
+            new Dictionary<string, string> { ["videos"] = "excluir" });
+
+        await using (var meio = postgres.CreateContext())
+        {
+            Assert.DoesNotContain(await meio.Collections.Select(c => c.Id).ToListAsync(), id => id == origem);
+            Assert.NotNull((await meio.Videos.SingleAsync(v => v.Id == apagado.Id)).DeletedAt);
+            Assert.Equal(destino, (await meio.CollectionVideos.SingleAsync()).CollectionId);
+        }
+
+        var aviso = await cliente.GetStringAsync($"/admin/videos/{apagado.Id}");
+        Assert.Contains("This video is deleted and is hidden from everyone.", aviso);
+
+        var outra = await CriarColecaoAsync(cliente, "Outra");
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/collections/{destino}", $"/admin/collections/{destino}/delete",
+            new Dictionary<string, string> { ["videos"] = "mover", ["destino"] = outra.ToString() });
+
+        await using var fim = postgres.CreateContext();
+        Assert.Equal(outra, (await fim.CollectionVideos.SingleAsync()).CollectionId);
+        Assert.Null((await fim.Videos.SingleAsync(v => v.Id == movido.Id)).DeletedAt);
+        Assert.Equal(HttpStatusCode.NotFound, (await cliente.GetAsync($"/admin/collections/{destino}")).StatusCode);
     }
 
     [Fact]

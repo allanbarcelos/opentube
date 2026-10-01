@@ -4,8 +4,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
+using OpenTube.Domain.ValueObjects;
 using OpenTube.Infrastructure.Persistence;
 using OpenTube.Infrastructure.Services;
 using OpenTube.Infrastructure.Storage;
@@ -21,6 +23,7 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
     private static readonly Guid Admin = Guid.CreateVersion7();
 
     private readonly FakeTimeProvider _relogio = new(Agora);
+    private readonly IVideoStorage _storage = Substitute.For<IVideoStorage>();
 
     public Task InitializeAsync() => postgres.ResetAsync();
 
@@ -30,7 +33,7 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
     {
         var db = postgres.CreateContext();
 
-        return (new CollectionService(db, _relogio, NullLogger<CollectionService>.Instance), db);
+        return (new CollectionService(db, _relogio, _storage, NullLogger<CollectionService>.Instance), db);
     }
 
     private async Task<Video> CriarVideoAsync(string titulo)
@@ -237,19 +240,17 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Excluir_tira_a_colecao_da_listagem_padrao()
+    public async Task Excluir_apaga_a_colecao_de_vez()
     {
         var (servico, db) = Criar();
         await using var _ = db;
         var colecao = await servico.CreateAsync("Treinamentos", null, Admin);
 
-        await servico.DeleteAsync(colecao.Id);
+        await servico.DeleteAsync(colecao.Id, VideosDaColecao.Desvincular, null);
 
         Assert.Empty(await servico.ListAsync());
-        Assert.Single(await servico.ListAsync(includeDeleted: true));
-
-        await servico.RestoreAsync(colecao.Id);
-        Assert.Single(await servico.ListAsync());
+        Assert.Empty(await servico.ListAsync(includeDeleted: true));
+        Assert.Null(await servico.FindAsync(colecao.Id));
     }
 
     [Fact]
@@ -260,7 +261,8 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var inexistente = Guid.CreateVersion7();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => servico.RenameAsync(inexistente, "x", null));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => servico.DeleteAsync(inexistente));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servico.DeleteAsync(inexistente, VideosDaColecao.Desvincular, null));
         await Assert.ThrowsAsync<InvalidOperationException>(() => servico.SetVideosAsync(inexistente, []));
     }
 
@@ -274,7 +276,7 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
         await servico.AddVideoAsync(colecao.Id, video.Id);
 
         await using var leitura = postgres.CreateContext();
-        var servicoDeLeitura = new CollectionService(leitura, _relogio, NullLogger<CollectionService>.Instance);
+        var servicoDeLeitura = new CollectionService(leitura, _relogio, _storage, NullLogger<CollectionService>.Instance);
 
         var encontrada = await servicoDeLeitura.FindAsync(colecao.Id);
 
@@ -333,7 +335,71 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Colecao_excluida_tambem_segura_o_video_ate_a_confirmacao()
+    public async Task Excluir_desvincula_os_videos_e_apaga_os_acessos_da_colecao()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Alfa", null, Admin);
+        await servico.AddVideoAsync(colecao.Id, video.Id);
+
+        var usuario = User.Create(EmailAddress.Parse("ana@empresa.com"), Agora);
+        db.Users.Add(usuario);
+        db.CollectionFavorites.Add(CollectionFavorite.Mark(colecao.Id, usuario.Id, Agora));
+        db.AccessGrants.Add(AccessGrant.ForUser(
+            EmailAddress.Parse("allan@barcelos.dev"), GrantTargetType.Collection, colecao.Id, Admin, Agora));
+        db.AccessGrants.Add(AccessGrant.ForUser(
+            EmailAddress.Parse("allan@barcelos.dev"), GrantTargetType.Video, video.Id, Admin, Agora));
+        db.Invitations.Add(Invitation.Create(InvitationKind.People, GrantTargetType.Collection, colecao.Id, Admin, Agora));
+        db.Invitations.Add(Invitation.Create(InvitationKind.People, GrantTargetType.Video, video.Id, Admin, Agora));
+        await db.SaveChangesAsync();
+
+        var exclusao = await servico.DeleteAsync(colecao.Id, VideosDaColecao.Desvincular, null);
+
+        Assert.Equal(VideosDaColecao.Desvincular, exclusao.Videos);
+        Assert.Empty(exclusao.DeletedVideoIds);
+        Assert.Empty(await db.Collections.AsNoTracking().ToListAsync());
+        Assert.Empty(await db.CollectionVideos.AsNoTracking().ToListAsync());
+        Assert.Empty(await db.CollectionFavorites.AsNoTracking().ToListAsync());
+        Assert.Empty(await db.Invitations.AsNoTracking().Where(i => i.TargetType == GrantTargetType.Collection).ToListAsync());
+
+        var concessao = await db.AccessGrants.AsNoTracking().SingleAsync();
+        Assert.Equal(GrantTargetType.Video, concessao.TargetType);
+        Assert.Equal(video.Id, concessao.TargetId);
+
+        var convite = await db.Invitations.AsNoTracking().SingleAsync();
+        Assert.Equal(video.Id, convite.TargetId);
+
+        var restante = await db.Videos.AsNoTracking().SingleAsync();
+        Assert.Null(restante.DeletedAt);
+    }
+
+    [Fact]
+    public async Task Excluir_os_videos_junto_marca_cada_um_como_excluido()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var outro = await CriarVideoAsync("Segundo");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Alfa", null, Admin);
+        await servico.AddVideoAsync(colecao.Id, video.Id);
+        await servico.AddVideoAsync(colecao.Id, outro.Id);
+
+        _relogio.Advance(TimeSpan.FromHours(1));
+        var exclusao = await servico.DeleteAsync(colecao.Id, VideosDaColecao.Excluir, null);
+
+        Assert.Equal(
+            new[] { video.Id, outro.Id }.OrderBy(id => id),
+            exclusao.DeletedVideoIds.OrderBy(id => id));
+        Assert.Empty(await db.Collections.AsNoTracking().ToListAsync());
+
+        var videos = await db.Videos.AsNoTracking().OrderBy(v => v.Title).ToListAsync();
+        Assert.All(videos, v => Assert.Equal(Agora.AddHours(1), v.DeletedAt));
+        Assert.All(videos, v => Assert.Equal(VideoVisibility.Private, v.Visibility));
+    }
+
+    [Fact]
+    public async Task Excluir_movendo_os_videos_para_outra_colecao()
     {
         var video = await CriarVideoAsync("Primeiro");
         var (servico, db) = Criar();
@@ -341,16 +407,52 @@ public class CollectionServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var origem = await servico.CreateAsync("Alfa", null, Admin);
         var destino = await servico.CreateAsync("Beta", null, Admin);
         await servico.AddVideoAsync(origem.Id, video.Id);
-        await servico.DeleteAsync(origem.Id);
+        _relogio.Advance(TimeSpan.FromHours(3));
 
-        var pendente = await servico.AddVideoAsync(destino.Id, video.Id);
+        var exclusao = await servico.DeleteAsync(origem.Id, VideosDaColecao.Mover, destino.Id);
 
-        Assert.True(pendente.NeedsConfirmation);
+        Assert.Equal("Beta", exclusao.DestinationName);
+        Assert.Empty(exclusao.DeletedVideoIds);
+        Assert.Null(await db.Collections.AsNoTracking().SingleOrDefaultAsync(c => c.Id == origem.Id));
+
+        var vinculo = await db.CollectionVideos.AsNoTracking().SingleAsync();
+        Assert.Equal(destino.Id, vinculo.CollectionId);
+        Assert.Equal(Agora.AddHours(3), vinculo.AddedAt);
+    }
+
+    [Fact]
+    public async Task Mover_sem_outra_colecao_nao_apaga_nada()
+    {
+        var video = await CriarVideoAsync("Primeiro");
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var origem = await servico.CreateAsync("Alfa", null, Admin);
+        await servico.AddVideoAsync(origem.Id, video.Id);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servico.DeleteAsync(origem.Id, VideosDaColecao.Mover, null));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servico.DeleteAsync(origem.Id, VideosDaColecao.Mover, origem.Id));
+
         Assert.Equal(origem.Id, (await db.CollectionVideos.AsNoTracking().SingleAsync()).CollectionId);
+        Assert.NotNull(await servico.FindAsync(origem.Id));
+    }
 
-        await servico.AddVideoAsync(destino.Id, video.Id, confirmMove: true);
+    [Fact]
+    public async Task Excluir_apaga_a_capa_no_storage()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+        var colecao = await servico.CreateAsync("Alfa", null, Admin);
+        colecao.SetThumbnail("collections/alfa/thumb-1.jpg", 1);
+        await db.SaveChangesAsync();
 
-        Assert.Equal(destino.Id, (await db.CollectionVideos.AsNoTracking().SingleAsync()).CollectionId);
+        await servico.DeleteAsync(colecao.Id, VideosDaColecao.Desvincular, null);
+
+        await _storage.Received(1).DeleteKeysAsync(
+            StorageBucket.Vod,
+            Arg.Is<IEnumerable<string>>(chaves => chaves.Single() == "collections/alfa/thumb-1.jpg"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
