@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
+using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Infrastructure.Access;
 using OpenTube.Infrastructure.Localization;
@@ -147,10 +148,13 @@ public static class AccessEndpoints
             Guid grantId, [FromForm] int alvoTipo, [FromForm] Guid? alvoId,
             GrantService concessoes, HttpContext contexto, CancellationToken cancellationToken) =>
         {
-            await concessoes.RevokeAsync(grantId, cancellationToken);
+            var concessao = await concessoes.RevokeAsync(grantId, cancellationToken);
+            var alvo = await concessoes.TargetNameAsync(concessao.TargetType, concessao.TargetId, cancellationToken);
 
             await contexto.RegistrarAsync(
-                AuditActions.AcessoRevogado, AuditEntities.Concessao, grantId, LocalText.Get("Access revoked."), cancellationToken);
+                AuditActions.AcessoRevogado, AuditEntities.Concessao, grantId,
+                LocalText.Format("Access revoked for {0}: {1}", Sujeito(concessao), Alvo(concessao.TargetType, alvo)),
+                cancellationToken);
 
             return Results.Redirect(Retorno.Para(Destino((GrantTargetType)alvoTipo, alvoId), "acesso-revogado=1"));
         });
@@ -159,10 +163,13 @@ public static class AccessEndpoints
             Guid grantId, [FromForm] int alvoTipo, [FromForm] Guid? alvoId,
             GrantService concessoes, HttpContext contexto, CancellationToken cancellationToken) =>
         {
-            await concessoes.RestoreAsync(grantId, cancellationToken);
+            var concessao = await concessoes.RestoreAsync(grantId, cancellationToken);
+            var alvo = await concessoes.TargetNameAsync(concessao.TargetType, concessao.TargetId, cancellationToken);
 
             await contexto.RegistrarAsync(
-                AuditActions.AcessoRestaurado, AuditEntities.Concessao, grantId, LocalText.Get("Access restored"), cancellationToken);
+                AuditActions.AcessoRestaurado, AuditEntities.Concessao, grantId,
+                LocalText.Format("Access restored for {0}: {1}", Sujeito(concessao), Alvo(concessao.TargetType, alvo)),
+                cancellationToken);
 
             return Results.Redirect(Retorno.Para(Destino((GrantTargetType)alvoTipo, alvoId), "acesso-restaurado=1"));
         });
@@ -172,6 +179,22 @@ public static class AccessEndpoints
 
     private static IResult Erro(GrantTargetType tipo, Guid? alvoId, Exception e) =>
         Results.Redirect(Retorno.Para(Destino(tipo, alvoId), "erro-acesso=" + Uri.EscapeDataString(LocalText.Get(e.Message))));
+
+    /// <summary>De quem é a concessão, para o registro: o endereço, o domínio, o link ou todos.</summary>
+    private static string Sujeito(AccessGrant concessao) => concessao.SubjectType switch
+    {
+        GrantSubjectType.Link => LocalText.Get("secret link"),
+        GrantSubjectType.Public => LocalText.Get("everyone"),
+        _ => concessao.SubjectValue
+    };
+
+    /// <summary>Sobre o que recai a concessão: o vídeo, a coleção (pelo nome) ou o acervo inteiro.</summary>
+    private static string Alvo(GrantTargetType tipo, string? nome) => tipo switch
+    {
+        GrantTargetType.Video => nome is null ? LocalText.Get("a removed video") : LocalText.Format("video “{0}”", nome),
+        GrantTargetType.Collection => nome is null ? LocalText.Get("a removed collection") : LocalText.Format("collection “{0}”", nome),
+        _ => LocalText.Get("the whole library")
+    };
 
     /// <summary>Tipo de entidade da auditoria, conforme o alvo da concessão.</summary>
     private static string TipoDeEntidade(GrantTargetType tipo) => tipo switch

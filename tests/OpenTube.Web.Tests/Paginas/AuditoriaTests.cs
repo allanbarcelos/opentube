@@ -133,7 +133,15 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
             });
 
         await using var leitura = postgres.CreateContext();
-        Assert.True(await leitura.AuditEntries.AnyAsync(e => e.Action == AuditActions.AcessoRevogado));
+        var registro = await leitura.AuditEntries.SingleAsync(e => e.Action == AuditActions.AcessoRevogado);
+
+        // O registro diz de quem era o acesso e sobre qual vídeo, não só "revogado".
+        Assert.Contains("convidado@empresa.com", registro.Summary);
+        Assert.Contains("Plano Confidencial", registro.Summary);
+
+        // E a página não mostra mais o código cru da ação.
+        var html = await cliente.GetStringAsync("/admin/audit");
+        Assert.DoesNotContain(AuditActions.AcessoRevogado, html);
     }
 
     [Fact]

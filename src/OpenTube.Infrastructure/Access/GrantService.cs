@@ -251,7 +251,8 @@ public class GrantService(
     private string EnderecoDoLink(string token) => $"{_options.PublicUrl.TrimEnd('/')}/link/{token}";
 
     /// <summary>Revoga uma concessão. O acesso cai na avaliação seguinte.</summary>
-    public async Task RevokeAsync(Guid grantId, CancellationToken cancellationToken = default)
+    /// <summary>Revoga a concessão e a devolve, para o registro dizer de quem e sobre o quê.</summary>
+    public async Task<AccessGrant> RevokeAsync(Guid grantId, CancellationToken cancellationToken = default)
     {
         var concessao = await db.AccessGrants.FirstOrDefaultAsync(g => g.Id == grantId, cancellationToken)
             ?? throw new InvalidOperationException("Grant not found.");
@@ -260,15 +261,36 @@ public class GrantService(
         await db.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Concessão {GrantId} revogada", grantId);
+
+        return concessao;
     }
 
-    public async Task RestoreAsync(Guid grantId, CancellationToken cancellationToken = default)
+    public async Task<AccessGrant> RestoreAsync(Guid grantId, CancellationToken cancellationToken = default)
     {
         var concessao = await db.AccessGrants.FirstOrDefaultAsync(g => g.Id == grantId, cancellationToken)
             ?? throw new InvalidOperationException("Grant not found.");
 
         concessao.Restore();
         await db.SaveChangesAsync(cancellationToken);
+
+        return concessao;
+    }
+
+    /// <summary>
+    /// Nome do alvo de uma concessão — o título do vídeo ou o nome da coleção — para a
+    /// auditoria. Nulo para o acervo inteiro ou um alvo que não existe mais.
+    /// </summary>
+    public async Task<string?> TargetNameAsync(GrantTargetType targetType, Guid? targetId, CancellationToken cancellationToken = default)
+    {
+        if (targetId is not { } id)
+            return null;
+
+        return targetType switch
+        {
+            GrantTargetType.Video => await db.Videos.Where(v => v.Id == id).Select(v => v.Title).FirstOrDefaultAsync(cancellationToken),
+            GrantTargetType.Collection => await db.Collections.Where(c => c.Id == id).Select(c => c.Name).FirstOrDefaultAsync(cancellationToken),
+            _ => null
+        };
     }
 
     /// <summary>
