@@ -1,0 +1,40 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@page "/sign-in/{Token}"
+
+@* Abrir o link do email só mostra este botão; quem entra é o POST. Filtros de segurança de email
+   (SafeLinks e afins) abrem todo link que chega para conferir o destino: se o GET entrasse, o
+   filtro queimaria o link antes da pessoa, e ainda ficaria com a sessão dela. *@
+
+<PageTitle>@T["Sign in — OpenTube"]</PageTitle>
+
+<HeadContent>
+    <meta name="referrer" content="no-referrer" />
+</HeadContent>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h1 class="h4 mb-1">@T["Sign in"]</h1>
+                    <p class="text-body-secondary small">@T["Confirm to sign in on this device with the link from your email."]</p>
+
+                    <form method="post" action="/sign-in/link">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="token" value="@Token" />
+                        <button class="btn btn-primary w-100" type="submit" autofocus>@T["Sign in"]</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string Token { get; set; } = string.Empty;
+}

@@ -124,17 +124,41 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
         Assert.DoesNotContain("Administration", await cliente.GetStringAsync("/"));
     }
 
+    /// <summary>Abre o link do email e confirma, como a pessoa faz no navegador.</summary>
+    private static Task<HttpResponseMessage> UsarLinkAsync(HttpClient cliente, string token) =>
+        FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/sign-in/{token}", "/sign-in/link", new Dictionary<string, string> { ["token"] = token });
+
     [Fact]
     public async Task O_link_do_email_entra_sem_digitar_o_codigo()
     {
         using var cliente = _app.CreateBrowser();
         await PedirCodigoAsync(cliente, Admin);
 
-        var resposta = await cliente.GetAsync($"/sign-in/{_app.Emails.LastToken()}");
+        var resposta = await UsarLinkAsync(cliente, _app.Emails.LastToken());
 
         Assert.Equal(HttpStatusCode.Found, resposta.StatusCode);
         Assert.Equal("/admin", resposta.Headers.Location!.ToString());
         Assert.Contains("Administration", await cliente.GetStringAsync("/"));
+    }
+
+    [Fact]
+    public async Task Abrir_o_link_sem_confirmar_nao_entra_nem_gasta_o_link()
+    {
+        using var filtroDeEmail = _app.CreateBrowser();
+        await PedirCodigoAsync(filtroDeEmail, Admin);
+        var token = _app.Emails.LastToken();
+
+        // O que um filtro de segurança de email faz: abre o link e segue em frente.
+        var aberto = await filtroDeEmail.GetAsync($"/sign-in/{token}");
+
+        Assert.Equal(HttpStatusCode.OK, aberto.StatusCode);
+        Assert.DoesNotContain("Administration", await filtroDeEmail.GetStringAsync("/"));
+
+        using var pessoa = _app.CreateBrowser();
+        var resposta = await UsarLinkAsync(pessoa, token);
+
+        Assert.Equal("/admin", resposta.Headers.Location!.ToString());
     }
 
     [Fact]
@@ -144,10 +168,10 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
         await PedirCodigoAsync(cliente, Admin);
         var token = _app.Emails.LastToken();
 
-        await cliente.GetAsync($"/sign-in/{token}");
+        await UsarLinkAsync(cliente, token);
 
         using var outro = _app.CreateBrowser();
-        var resposta = await outro.GetAsync($"/sign-in/{token}");
+        var resposta = await UsarLinkAsync(outro, token);
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
     }

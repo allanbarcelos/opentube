@@ -66,8 +66,10 @@ public static class AuthEndpoints
             return Results.Redirect(Retorno.EhLocal(voltar) ? voltar! : resultado.User!.IsAdmin ? "/admin" : "/");
         });
 
-        rotas.MapGet("/sign-in/{token}", async (
-            string token,
+        // O GET do link mostra só a confirmação (EntrarPeloLink.razor): filtros de email abrem
+        // todo link recebido, e um GET que entrasse queimaria o link e abriria sessão para o filtro.
+        rotas.MapPost("/sign-in/link", async (
+            [FromForm] string token,
             PasswordlessAuthService auth,
             HttpContext contexto,
             CancellationToken cancellationToken) =>
