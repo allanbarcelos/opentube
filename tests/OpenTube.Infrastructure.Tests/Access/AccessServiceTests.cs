@@ -259,6 +259,28 @@ public class AccessServiceTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Concessao_sem_teto_prevalece_sobre_a_com_teto()
+    {
+        var video = await VideoRestritoAsync();
+
+        // A com teto é gravada primeiro, para vir antes na leitura do banco.
+        await GravarAsync(AccessGrant.ForLink(
+            TokenHasher.Hash("token", Segredo), GrantTargetType.Video, video.Id, Admin, Agora, maxViews: 1));
+        var livre = await GravarAsync(AccessGrant.ForUser(Allan, GrantTargetType.Video, video.Id, Admin, Agora));
+
+        await using var db = postgres.CreateContext();
+        var servico = Criar(db);
+        var espectador = await servico.ResolveLinkAsync(Convidado, "token");
+
+        var resultado = await servico.EvaluateAsync(espectador, video);
+
+        Assert.True(resultado.Allowed);
+        Assert.Equal(livre.Id, resultado.GrantId);
+        Assert.Equal(AccessReason.GrantedToUser, resultado.Reason);
+        Assert.False(resultado.CountsViews);
+    }
+
+    [Fact]
     public async Task Revogar_corta_o_acesso_na_proxima_avaliacao()
     {
         var video = await VideoRestritoAsync();

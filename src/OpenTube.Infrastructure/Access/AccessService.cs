@@ -70,8 +70,16 @@ public class AccessService(OpenTubeDbContext db, IOptions<SecurityOptions> optio
             return new AccessOutcome(decisao, null);
 
         // Descobre qual concessão sustentou a liberação, para poder registrar o uso e
-        // contar visualizações no limite configurado.
-        var usada = concessoes.FirstOrDefault(g => AccessPolicy.CanWatch(viewer, video, [g], colecoes, agora));
+        // contar visualizações no limite configurado. Entre as que valem, a sem teto vem antes:
+        // apoiar-se numa com teto gastaria à toa uma visualização que a pessoa não precisava.
+        var usada = concessoes
+            .Where(g => AccessPolicy.CanWatch(viewer, video, [g], colecoes, agora))
+            .OrderBy(g => g.MaxViews is null ? 0 : 1)
+            .FirstOrDefault();
+
+        // O motivo acompanha a concessão escolhida, e não a primeira que o banco devolveu.
+        if (usada is not null)
+            decisao = AccessPolicy.Evaluate(viewer, video, [usada], colecoes, agora);
 
         return new AccessOutcome(decisao, usada?.Id, usada?.MaxViews is not null);
     }
