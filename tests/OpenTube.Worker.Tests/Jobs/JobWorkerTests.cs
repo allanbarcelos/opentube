@@ -66,14 +66,14 @@ public class JobWorkerTests(PostgresFixture postgres) : IAsyncLifetime
         return (servicos.BuildServiceProvider(), executor);
     }
 
-    private JobWorker Criar(IServiceProvider provider) =>
+    private JobWorker Criar(IServiceProvider provider, TimeSpan? renovacao = null) =>
         new(provider.GetRequiredService<IServiceScopeFactory>(),
             Microsoft.Extensions.Options.Options.Create(new WorkerOptions
             {
                 WorkerId = "worker-de-teste",
                 IdleDelay = TimeSpan.FromMilliseconds(50),
                 Lease = TimeSpan.FromMinutes(5),
-                RenewInterval = TimeSpan.FromMinutes(2)
+                RenewInterval = renovacao ?? TimeSpan.FromMinutes(2)
             }),
             NullLogger<JobWorker>.Instance);
 
@@ -150,12 +150,23 @@ public class JobWorkerTests(PostgresFixture postgres) : IAsyncLifetime
 
         public TaskCompletionSource Liberar { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public TaskCompletionSource Cancelada { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public JobKind Kind => JobKind.Transcript;
 
         public async Task HandleAsync(QueuedJob job, CancellationToken cancellationToken = default)
         {
             Comecou.TrySetResult();
-            await Liberar.Task.WaitAsync(cancellationToken);
+
+            try
+            {
+                await Liberar.Task.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                Cancelada.TrySetResult();
+                throw;
+            }
         }
     }
 
@@ -196,5 +207,114 @@ public class JobWorkerTests(PostgresFixture postgres) : IAsyncLifetime
         await worker.StopAsync(CancellationToken.None);
 
         Assert.Equal(1, executor.Chamadas);
+    }
+
+    /// <summary>Executor que usa o contexto do banco do escopo durante todo o trabalho.</summary>
+    private sealed class ExecutorQueUsaOBanco(OpenTubeDbContext db) : IJobHandler
+    {
+        public static Exception? Erro;
+
+        public JobKind Kind => JobKind.Transcode;
+
+        public async Task HandleAsync(QueuedJob job, CancellationToken cancellationToken = default)
+        {
+            var fim = DateTime.UtcNow.AddSeconds(1);
+
+            try
+            {
+                while (DateTime.UtcNow < fim)
+                    await db.ProcessingJobs.AsNoTracking().CountAsync(cancellationToken);
+            }
+            catch (Exception e)
+            {
+                Erro = e;
+                throw;
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Renovar_a_reserva_nao_disputa_o_banco_com_o_trabalho()
+    {
+        ExecutorQueUsaOBanco.Erro = null;
+        var servicos = new ServiceCollection();
+
+        servicos.AddDbContext<OpenTubeDbContext>(o => o
+            .UseNpgsql(postgres.ConnectionString)
+            .UseSnakeCaseNamingConvention());
+        servicos.AddSingleton<TimeProvider>(_relogio);
+        servicos.AddScoped<IJobQueue, PostgresJobQueue>();
+        servicos.AddScoped<IJobHandler, ExecutorQueUsaOBanco>();
+
+        await using var provider = servicos.BuildServiceProvider();
+        var jobId = await EnfileirarAsync(provider);
+
+        // Renovação a cada poucos milissegundos, enquanto o executor consulta o banco sem parar:
+        // no mesmo contexto, as duas operações colidiriam.
+        var worker = Criar(provider, TimeSpan.FromMilliseconds(5));
+        await worker.StartAsync(CancellationToken.None);
+
+        await using var db = postgres.CreateContext();
+        var limite = DateTime.UtcNow.AddSeconds(10);
+        OpenTube.Domain.Entities.ProcessingJob job;
+
+        do
+        {
+            await Task.Delay(100);
+            job = await db.ProcessingJobs.AsNoTracking().SingleAsync(j => j.Id == jobId);
+        }
+        while (job.Status is JobStatus.Running or JobStatus.Pending && job.LastError is null && DateTime.UtcNow < limite);
+
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.Null(ExecutorQueUsaOBanco.Erro);
+        Assert.Equal(JobStatus.Succeeded, job.Status);
+    }
+
+    [Fact]
+    public async Task Reserva_tomada_por_outro_worker_cancela_o_trabalho_sem_marcar_falha()
+    {
+        var transcricao = new TranscricaoPresa();
+        var servicos = new ServiceCollection();
+
+        servicos.AddDbContext<OpenTubeDbContext>(o => o
+            .UseNpgsql(postgres.ConnectionString)
+            .UseSnakeCaseNamingConvention());
+        servicos.AddSingleton<TimeProvider>(_relogio);
+        servicos.AddScoped<IJobQueue, PostgresJobQueue>();
+        servicos.AddSingleton<IJobHandler>(transcricao);
+
+        await using var provider = servicos.BuildServiceProvider();
+
+        Guid jobId;
+        using (var escopo = provider.CreateScope())
+        {
+            var fila = escopo.ServiceProvider.GetRequiredService<IJobQueue>();
+            jobId = await fila.EnqueueAsync(JobKind.Transcript, Guid.CreateVersion7(), new { idioma = "auto" });
+        }
+
+        var worker = Criar(provider, TimeSpan.FromMilliseconds(50));
+        using var parada = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await worker.StartAsync(parada.Token);
+        await transcricao.Comecou.Task.WaitAsync(parada.Token);
+
+        // Outro worker assumiu o trabalho depois que a reserva venceu.
+        await using (var db = postgres.CreateContext())
+        {
+            await db.ProcessingJobs
+                .Where(j => j.Id == jobId)
+                .ExecuteUpdateAsync(s => s.SetProperty(j => j.LockedBy, "outro-worker"));
+        }
+
+        await transcricao.Cancelada.Task.WaitAsync(parada.Token);
+        await worker.StopAsync(CancellationToken.None);
+
+        await using var leitura = postgres.CreateContext();
+        var job = await leitura.ProcessingJobs.AsNoTracking().SingleAsync(j => j.Id == jobId);
+
+        Assert.Equal(JobStatus.Running, job.Status);
+        Assert.Equal("outro-worker", job.LockedBy);
+        Assert.Null(job.LastError);
     }
 }
