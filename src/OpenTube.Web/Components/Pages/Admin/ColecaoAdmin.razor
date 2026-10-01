@@ -346,9 +346,13 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Colecao = await Colecoes.FindAsync(CollectionId, Http.RequestAborted);
+        // Colecao só é preenchido no fim. O Blazor desenha a página na primeira espera que não termina
+        // na hora; se Colecao já estivesse preenchido, os painéis filhos começariam a consultar o banco
+        // pelo mesmo contexto enquanto esta página ainda consulta, e o EF recusa duas operações
+        // simultâneas (erro 500 intermitente).
+        var colecao = await Colecoes.FindAsync(CollectionId, Http.RequestAborted);
 
-        if (Colecao is null)
+        if (colecao is null)
         {
             Navegacao.NotFound();
             return;
@@ -368,5 +372,7 @@
 
         if (Guid.TryParse(Mover, out var videoEmOutra))
             Conflito = await Colecoes.FindPlacementConflictAsync(CollectionId, videoEmOutra, Http.RequestAborted);
+
+        Colecao = colecao;
     }
 }

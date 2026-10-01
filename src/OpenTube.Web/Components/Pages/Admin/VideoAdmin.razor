@@ -438,9 +438,13 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Video = await Admin.FindAsync(VideoId, Http.RequestAborted);
+        // Video só é preenchido no fim. O Blazor desenha a página na primeira espera que não termina
+        // na hora; se Video já estivesse preenchido, os painéis filhos começariam a consultar o banco
+        // pelo mesmo contexto enquanto esta página ainda consulta, e o EF recusa duas operações
+        // simultâneas (erro 500 intermitente).
+        var video = await Admin.FindAsync(VideoId, Http.RequestAborted);
 
-        if (Video is null)
+        if (video is null)
         {
             Navegacao.NotFound();
             return;
@@ -454,5 +458,7 @@
         LinhasDoSumario = capitulos.Count > 0
             ? [.. capitulos.Select(c => (OpenTube.Domain.Media.VideoTimestamps.Format(TimeSpan.FromSeconds(c.StartSeconds)), c.Title))]
             : [("0:00", string.Empty)];
+
+        Video = video;
     }
 }

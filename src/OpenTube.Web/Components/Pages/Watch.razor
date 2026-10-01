@@ -270,26 +270,32 @@
 
         // Abrir a página é pedir uma reprodução nova: o bilhete de uma reprodução anterior não
         // pode mostrar o player a quem já esgotou as visualizações.
-        Video = await Catalogo.FindBySlugAsync(Espectador.StartingNewView(), Slug, Http.RequestAborted);
+        // Video só é preenchido no fim. O Blazor desenha a página na primeira espera que não termina
+        // na hora; se Video já estivesse preenchido, os painéis filhos começariam a consultar o banco
+        // pelo mesmo contexto enquanto esta página ainda consulta, e o EF recusa duas operações
+        // simultâneas (erro 500 intermitente).
+        var video = await Catalogo.FindBySlugAsync(Espectador.StartingNewView(), Slug, Http.RequestAborted);
 
-        if (Video is not null)
+        if (video is not null)
         {
             // Abrir o vídeo é o clique que apaga o distintivo. A playlist já sai sem ele.
             if (Espectador.UserId is Guid usuario)
             {
-                await Avisos.MarkSeenAsync(usuario, Video.Id, Http.RequestAborted);
-                VideoFavorito = await Favoritos.IsFavoriteAsync(usuario, Video.Id, Http.RequestAborted);
+                await Avisos.MarkSeenAsync(usuario, video.Id, Http.RequestAborted);
+                VideoFavorito = await Favoritos.IsFavoriteAsync(usuario, video.Id, Http.RequestAborted);
             }
 
             var playlist = await Catalogo.PlaylistAsync(Espectador, ColecaoSlug, Http.RequestAborted);
-            if (playlist is not null && playlist.Contains(Video.Id))
+            if (playlist is not null && playlist.Contains(video.Id))
                 Playlist = playlist;
 
-            ListaDeLegendas = await Legendas.ListPlayableAsync(Video.Id, Http.RequestAborted);
-            Capitulos = await Sumarios.ListAsync(Video.Id, Http.RequestAborted);
-            MinhaNota = await Avaliacoes.GetMineAsync(Video.Id, Espectador, Http.RequestAborted);
-            MontarSegmentos();
+            ListaDeLegendas = await Legendas.ListPlayableAsync(video.Id, Http.RequestAborted);
+            Capitulos = await Sumarios.ListAsync(video.Id, Http.RequestAborted);
+            MinhaNota = await Avaliacoes.GetMineAsync(video.Id, Espectador, Http.RequestAborted);
             Logo = await Marcas.GetInfoAsync(Http.RequestAborted);
+
+            Video = video;
+            MontarSegmentos();
         }
 
         // Quem entrou pelo link secreto não tem email: a marca leva o começo do identificador
