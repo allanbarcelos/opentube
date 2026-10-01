@@ -57,7 +57,7 @@ public sealed record SignInOutcome(bool Succeeded, AuthFailure Failure, AuthSess
 /// </summary>
 public class PasswordlessAuthService(
     OpenTubeDbContext db,
-    IEmailSender email,
+    IEmailOutbox email,
     IAuthRateLimiter rateLimiter,
     PrivacyHasher privacy,
     IOptions<SecurityOptions> options,
@@ -128,8 +128,10 @@ public class PasswordlessAuthService(
 
         await db.SaveChangesAsync(cancellationToken);
 
+        // O envio vai para a fila em vez de esperar o SMTP: só quem tem convite chega até aqui,
+        // e uma resposta mais lenta nesse caso revelaria quem está na lista.
         var link = $"{_options.PublicUrl.TrimEnd('/')}/sign-in/{token}";
-        await email.SendAsync(EmailTemplates.AccessCode(endereco.Value, codigo, link, purpose, validade), cancellationToken);
+        await email.EnqueueAsync(EmailTemplates.AccessCode(endereco.Value, codigo, link, purpose, validade), cancellationToken);
 
         return CodeRequestResult.Ok();
     }

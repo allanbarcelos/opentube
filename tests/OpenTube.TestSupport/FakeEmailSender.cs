@@ -5,8 +5,11 @@ using OpenTube.Infrastructure.Email;
 
 namespace OpenTube.TestSupport;
 
-/// <summary>Guarda as mensagens em memória para que os testes possam inspecioná-las.</summary>
-public class FakeEmailSender : IEmailSender
+/// <summary>
+/// Guarda as mensagens em memória para que os testes possam inspecioná-las. Também faz o papel
+/// da fila de envio, entregando na hora: o teste lê o código logo depois do pedido.
+/// </summary>
+public class FakeEmailSender : IEmailSender, IEmailOutbox
 {
     private readonly List<EmailMessage> _enviados = [];
 
@@ -18,6 +21,12 @@ public class FakeEmailSender : IEmailSender
     {
         _enviados.Add(message);
         return Task.CompletedTask;
+    }
+
+    public ValueTask EnqueueAsync(EmailMessage message, CancellationToken cancellationToken = default)
+    {
+        _enviados.Add(message);
+        return ValueTask.CompletedTask;
     }
 
     /// <summary>Extrai o código de seis dígitos da última mensagem.</summary>

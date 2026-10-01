@@ -47,6 +47,8 @@ public class OpenTubeWebFactory(PostgresFixture postgres, MinioFixture minio, pa
         {
             servicos.RemoveAll<IEmailSender>();
             servicos.AddSingleton<IEmailSender>(Emails);
+            servicos.RemoveAll<IEmailOutbox>();
+            servicos.AddSingleton<IEmailOutbox>(Emails);
         });
     }
 

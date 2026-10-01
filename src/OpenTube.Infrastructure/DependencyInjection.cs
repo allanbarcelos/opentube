@@ -66,6 +66,9 @@ public static class DependencyInjection
         services.AddScoped<CollectionThumbnailService>();
         services.AddScoped<CaptionService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
+        services.AddSingleton<EmailOutbox>();
+        services.AddSingleton<IEmailOutbox>(sp => sp.GetRequiredService<EmailOutbox>());
+        services.AddHostedService<EmailOutboxDispatcher>();
         services.AddScoped<IAuthRateLimiter, AuthRateLimiter>();
         services.AddScoped<PasswordlessAuthService>();
         services.AddSingleton<PrivacyHasher>();
