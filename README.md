@@ -311,8 +311,8 @@ cd opentube
 make watch
 ```
 
-Open http://localhost:5080 and sign in with the administrator email from
-`src/OpenTube.Web/appsettings.Development.json`; the code arrives in Mailpit, at
+Open http://localhost:5080 and sign in with the administrator email,
+`OPENTUBE_ADMIN_EMAIL` in `.env`; the code arrives in Mailpit, at
 http://localhost:8025.
 
 | Command | What starts | Environment | Code |
@@ -358,8 +358,8 @@ the last one is private. Running it again replaces only rows whose slug starts w
 `make` itself rejects `--videos` (it reads that as its own option), so the counts go on the
 right-hand side of `=`.
 
-Browse at http://localhost:5080 with `make watch` already running. The administrator is the email
-in `src/OpenTube.Web/appsettings.Development.json`. The sign-in code for the guest shows up in
+Browse at http://localhost:5080 with `make watch` already running. The administrator is
+`OPENTUBE_ADMIN_EMAIL` from `.env`. The sign-in code for the guest shows up in
 Mailpit.
 
 ### `make up` — full stack in containers

@@ -133,7 +133,7 @@ internal sealed class Gerador(
         if (email is null)
         {
             throw new InvalidOperationException(
-                "Nenhum administrador em src/OpenTube.Web/appsettings.Development.json (Security:AdminEmails). O make watch usa essa lista.");
+                "Nenhum administrador configurado. Defina OPENTUBE_ADMIN_EMAIL no .env: o make watch e o make mock usam esse endereço.");
         }
 
         return await db.Users.FirstAsync(u => u.Email == email, cancellationToken);

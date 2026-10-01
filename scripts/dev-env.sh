@@ -21,6 +21,9 @@ export Storage__SecretKey="${MINIO_ROOT_PASSWORD}"
 export Security__TokenPepper="${TOKEN_PEPPER}"
 export Security__IpHashPepper="${IP_HASH_PEPPER}"
 export Security__PublicUrl="http://localhost:5080"
+# O administrador do desenvolvimento vem do .env de cada máquina, e não de um arquivo do
+# repositório: o appsettings.Development.json vai dentro da imagem publicada.
+export Security__AdminEmails__0="${OPENTUBE_ADMIN_EMAIL:-admin@localhost}"
 export ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Development}"
 export DOTNET_ENVIRONMENT="${DOTNET_ENVIRONMENT:-Development}"
 

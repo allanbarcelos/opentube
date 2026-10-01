@@ -312,8 +312,8 @@ cd opentube
 make watch
 ```
 
-Abra http://localhost:5080 e entre com o email de administrador de
-`src/OpenTube.Web/appsettings.Development.json`; o código chega no Mailpit, em
+Abra http://localhost:5080 e entre com o email de administrador,
+`OPENTUBE_ADMIN_EMAIL` do `.env`; o código chega no Mailpit, em
 http://localhost:8025.
 
 | Comando | O que sobe | Ambiente | Código |
@@ -358,8 +358,8 @@ substitui só as linhas cujo slug começa com `mock-`; o restante fica.
 O `make` recusa `--videos` (lê isso como opção dele), então as quantidades vão do lado direito
 do `=`.
 
-Abra http://localhost:5080 com o `make watch` já no ar. O administrador é o email de
-`src/OpenTube.Web/appsettings.Development.json`. O código do convidado aparece no Mailpit.
+Abra http://localhost:5080 com o `make watch` já no ar. O administrador é o
+`OPENTUBE_ADMIN_EMAIL` do `.env`. O código do convidado aparece no Mailpit.
 
 ### `make up` — pilha inteira em container
 
