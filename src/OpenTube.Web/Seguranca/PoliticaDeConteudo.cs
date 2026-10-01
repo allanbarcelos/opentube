@@ -30,7 +30,9 @@ public static class PoliticaDeConteudo
 
         return app.Use(async (contexto, proximo) =>
         {
-            var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+            // Hexadecimal, e não base64: o "+" do base64 sai no HTML como "&#x2B;". O navegador
+            // decodifica e aceita, mas o atributo deixa de ser idêntico ao do cabeçalho.
+            var nonce = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
             contexto.Items[ChaveDoNonce] = nonce;
 
             contexto.Response.OnStarting(() =>
