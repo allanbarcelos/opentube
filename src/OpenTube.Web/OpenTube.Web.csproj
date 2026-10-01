@@ -16,6 +16,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- A imagem restaura só o csproj, antes de copiar os .razor, e publica sem restaurar de novo.
+         O SDK só baixa o pacote do blazor.web.js quando vê um .razor; sem este pedido o
+         script fica de fora do manifesto e o navegador recebe 404. -->
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
   </PropertyGroup>
 
 </Project>

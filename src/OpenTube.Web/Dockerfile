@@ -2,7 +2,8 @@
 # Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
 # Imagem da aplicação. A restauração vem antes do código para que uma alteração de fonte não
-# invalide o cache das dependências.
+# invalide o cache das dependências. O csproj pede RequiresAspNetWebAssets porque, sem os
+# .razor ainda no disco, o SDK não baixaria o blazor.web.js e a publicação sem restore o deixaria de fora.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
