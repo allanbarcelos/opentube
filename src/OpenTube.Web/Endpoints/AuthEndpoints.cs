@@ -136,6 +136,7 @@ public static class AuthEndpoints
         AuthFailure.CodeExpired => LocalText.Get("This code has expired. Ask for a new one."),
         AuthFailure.CodeAlreadyUsed => LocalText.Get("This link has already been used. Ask for a new code."),
         AuthFailure.TooManyAttempts => LocalText.Get("Too many attempts. Ask for a new code."),
+        AuthFailure.LockedOut => LocalText.Get("Too many wrong codes today. Use the link in the email, or try again tomorrow."),
         AuthFailure.UserDisabled => LocalText.Get("This access is disabled."),
         AuthFailure.RateLimited => LocalText.Get("Too many requests. Wait a few minutes."),
         _ => LocalText.Get("Invalid code.")

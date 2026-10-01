@@ -552,8 +552,8 @@ their own address and receives the code there, so proving the address is what pr
 to the domain. There is no DNS record to publish and no separate entry page. Public email
 providers (gmail.com, outlook.com, yahoo.com and the like, regional variants included) are refused:
 a grant for one of them would open the video to anyone with a free account. Sending and checking
-codes are rate-limited (by IP, email, and domain), the only barrier against brute-forcing a 6-digit
-code.
+codes are rate-limited (per email and per origin, with a daily cap on wrong codes), the only
+barrier against brute-forcing a 6-digit code.
 
 ---
 
@@ -897,7 +897,9 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md) — privately, never i
 
 - No password is generated or sent by email.
 - Codes and tokens are stored only as hashes, single-use and short-lived.
-- Rate limiting on sending and checking codes, with progressive lockout. Each code attempt is
+- Rate limiting on codes: 5 requests per email and 50 per origin every 10 minutes, 5 guesses per
+  code, and 20 wrong guesses per email in 24 hours (after that, only the emailed link signs in,
+  so an attacker cannot lock anyone out). Each code attempt is
   reserved in the database before the comparison, so parallel requests cannot exceed the limit,
   and a code or link opens only one session.
 - Behind Caddy, the real address and protocol come from `X-Forwarded-For` and `X-Forwarded-Proto`,

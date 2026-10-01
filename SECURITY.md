@@ -89,8 +89,9 @@ denial-of-service or volume tests against someone else's server.
   so administrators can copy a link again; the database alone does not reveal them.
   Sessions last 30 days, in an `HttpOnly`, `SameSite=Lax` cookie, and administrators can revoke
   them at once.
-- **Rate limits** by IP, email, and domain on sending and checking codes, with progressive
-  lockout. Each attempt is reserved in the database before the comparison, so parallel requests
+- **Rate limits** on codes: 5 requests per email and 50 per origin every 10 minutes, 5 guesses
+  per code, and 20 wrong guesses per email in 24 hours, after which only the emailed link signs
+  in. Each attempt is reserved in the database before the comparison, so parallel requests
   cannot exceed the limit.
 - **One access decision** (`CanWatch`) for the whole application: home, search, player, playlist,
   segments, captions, thumbnail, download. It is the most heavily tested part of the code.

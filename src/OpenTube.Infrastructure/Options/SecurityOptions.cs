@@ -37,6 +37,19 @@ public class SecurityOptions
     public int CodesPerWindow { get; set; } = 5;
 
     /// <summary>
+    /// Quantos códigos a mesma origem pode pedir em dez minutos, somando todos os emails. Folgado
+    /// de propósito: uma empresa inteira sai pelo mesmo endereço. Zero ou negativo cai no padrão.
+    /// </summary>
+    public int CodesPerIpWindow { get; set; } = 50;
+
+    /// <summary>
+    /// Quantos códigos errados o mesmo email pode digitar em 24 horas, somando todos os códigos
+    /// pedidos. Sem este teto, pedir um código novo a cada cinco erros dá cerca de 3.600 palpites
+    /// por dia. Atingido o teto, só o link do email entra. Zero ou negativo cai no padrão.
+    /// </summary>
+    public int CodeAttemptsPerDay { get; set; } = 20;
+
+    /// <summary>
     /// Quantas origens distintas podem reproduzir ao mesmo tempo com a mesma conta. Zero
     /// desliga a verificação. Detecta credencial repassada; não a impede em rede compartilhada,
     /// onde várias pessoas saem pelo mesmo endereço.

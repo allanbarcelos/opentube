@@ -72,6 +72,23 @@ public class AuthRateLimiterTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Barra_a_mesma_origem_pedindo_para_muitos_emails()
+    {
+        _opcoes.CodesPerIpWindow = 4;
+        await using var db = postgres.CreateContext();
+        var limitador = Criar(db);
+
+        for (var i = 0; i < _opcoes.CodesPerIpWindow; i++)
+            await limitador.RecordAsync(EmailAddress.Parse($"pessoa{i}@barcelos.dev"), "ip-hash");
+
+        var resultado = await limitador.CheckAsync(EmailAddress.Parse("outra@barcelos.dev"), "ip-hash");
+
+        Assert.False(resultado.Allowed);
+        Assert.Equal("ip", resultado.Scope);
+        Assert.True((await limitador.CheckAsync(EmailAddress.Parse("outra@barcelos.dev"), "outro-ip")).Allowed);
+    }
+
+    [Fact]
     public async Task A_janela_se_solta_em_dez_minutos()
     {
         await using var db = postgres.CreateContext();

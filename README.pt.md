@@ -551,8 +551,8 @@ com o próprio endereço, e recebe o código nele; provar o endereço é o que p
 domínio. Não há registro de DNS a publicar nem porta de entrada à parte. Provedores de email
 públicos (gmail.com, outlook.com, yahoo.com e parecidos, variantes regionais incluídas) são
 recusados: uma concessão para um deles abriria o vídeo a qualquer pessoa com uma conta gratuita. O
-envio e a validação de códigos são limitados por taxa (IP, email e domínio), única barreira contra
-força bruta num código de 6 dígitos.
+envio e a validação de códigos são limitados por taxa (por email e por origem, com teto diário de
+códigos errados), única barreira contra força bruta num código de 6 dígitos.
 
 ---
 
@@ -892,7 +892,9 @@ Para relatar uma vulnerabilidade, veja o [SECURITY.md](SECURITY.md) — de forma
 
 - Nenhuma senha é gerada ou enviada por email.
 - Códigos e tokens ficam apenas como hash, com uso único e expiração curta.
-- Limite de taxa no envio e na validação de códigos, com bloqueio progressivo. Cada tentativa de
+- Limite nos códigos: 5 pedidos por email e 50 por origem a cada 10 minutos, 5 palpites por
+  código e 20 palpites errados por email em 24 horas (depois disso só o link do email entra,
+  então um atacante não tranca ninguém do lado de fora). Cada tentativa de
   código é reservada no banco antes da comparação, então pedidos em paralelo não passam do
   limite, e um código ou link só abre uma sessão.
 - Atrás do Caddy, o endereço e o protocolo reais vêm de `X-Forwarded-For` e `X-Forwarded-Proto`,

@@ -258,6 +258,66 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
         Assert.Equal(AuthFailure.TooManyAttempts, comCodigoCerto.Failure);
     }
 
+    /// <summary>Pede um código e erra as cinco vezes que ele aceita.</summary>
+    private async Task QueimarUmCodigoAsync(PasswordlessAuthService servico)
+    {
+        await servico.RequestCodeAsync(Convidado);
+        var errado = _email.LastCode() == "000000" ? "111111" : "000000";
+
+        for (var tentativa = 1; tentativa <= LoginCode.MaxAttempts; tentativa++)
+            await servico.VerifyCodeAsync(Convidado, errado);
+    }
+
+    [Fact]
+    public async Task Trocar_de_codigo_nao_renova_os_palpites_alem_do_teto_do_dia()
+    {
+        await CriarUsuarioAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        // Vinte erros: quatro códigos queimados, todos dentro da janela de pedidos.
+        for (var i = 0; i < 4; i++)
+            await QueimarUmCodigoAsync(servico);
+
+        await servico.RequestCodeAsync(Convidado);
+        var comCodigoCerto = await servico.VerifyCodeAsync(Convidado, _email.LastCode());
+
+        Assert.False(comCodigoCerto.Succeeded);
+        Assert.Equal(AuthFailure.LockedOut, comCodigoCerto.Failure);
+    }
+
+    [Fact]
+    public async Task Com_a_digitacao_travada_o_link_do_email_ainda_entra()
+    {
+        await CriarUsuarioAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        for (var i = 0; i < 4; i++)
+            await QueimarUmCodigoAsync(servico);
+
+        await servico.RequestCodeAsync(Convidado);
+        var entrada = await servico.VerifyTokenAsync(_email.LastToken());
+
+        Assert.True(entrada.Succeeded);
+    }
+
+    [Fact]
+    public async Task O_teto_do_dia_se_solta_depois_de_24_horas()
+    {
+        await CriarUsuarioAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        for (var i = 0; i < 4; i++)
+            await QueimarUmCodigoAsync(servico);
+
+        _relogio.Advance(TimeSpan.FromDays(1) + TimeSpan.FromMinutes(1));
+        await servico.RequestCodeAsync(Convidado);
+
+        Assert.True((await servico.VerifyCodeAsync(Convidado, _email.LastCode())).Succeeded);
+    }
+
     [Fact]
     public async Task Palpites_em_paralelo_nao_passam_do_limite_de_tentativas()
     {

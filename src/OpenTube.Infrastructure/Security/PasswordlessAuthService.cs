@@ -24,7 +24,10 @@ public enum AuthFailure
     CodeAlreadyUsed = 5,
     TooManyAttempts = 6,
     UserDisabled = 7,
-    NotInvited = 8
+    NotInvited = 8,
+
+    /// <summary>Códigos errados demais para o email nas últimas 24 horas; só o link entra.</summary>
+    LockedOut = 9
 }
 
 /// <summary>Resultado de um pedido de código.</summary>
@@ -61,7 +64,11 @@ public class PasswordlessAuthService(
     TimeProvider clock,
     ILogger<PasswordlessAuthService> logger)
 {
+    private const int TetoDiarioPadrao = 20;
+
     private readonly SecurityOptions _options = options.Value;
+
+    private int TetoDiario => _options.CodeAttemptsPerDay < 1 ? TetoDiarioPadrao : _options.CodeAttemptsPerDay;
 
     /// <summary>
     /// Emite e envia um código de acesso. Quando <paramref name="requireExistingUser"/> está
@@ -155,6 +162,20 @@ public class PasswordlessAuthService(
 
         if (candidato.IsExpiredAt(agora))
             return SignInOutcome.Fail(AuthFailure.CodeExpired);
+
+        // Cinco palpites por código não bastam: pedindo um código novo a cada cinco erros, seis
+        // dígitos caem em semanas. O teto soma os códigos não usados do dia; o link do email,
+        // impossível de adivinhar, continua entrando, então travar a digitação não tranca a pessoa.
+        var desde = agora - TimeSpan.FromDays(1);
+        var errosDoDia = await db.LoginCodes
+            .Where(c => c.Email == endereco.Value && c.ConsumedAt == null && c.CreatedAt >= desde)
+            .SumAsync(c => c.Attempts, cancellationToken);
+
+        if (errosDoDia >= TetoDiario)
+        {
+            logger.LogWarning("Digitação de código bloqueada por excesso de erros no dia");
+            return SignInOutcome.Fail(AuthFailure.LockedOut);
+        }
 
         // A tentativa é reservada no banco antes da comparação, numa única instrução
         // condicional. Ler, comparar e só depois somar deixaria pedidos em paralelo testarem
