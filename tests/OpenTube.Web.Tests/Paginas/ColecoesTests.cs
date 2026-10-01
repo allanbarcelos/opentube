@@ -634,6 +634,11 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         Assert.Contains("This collection will be permanently deleted, along with every access grant on it. It cannot be restored.", pagina);
         Assert.Contains("Unlink them. They stay in the library.", pagina);
         Assert.Contains("Delete them too. They leave the library, the same way as deleting a video.", pagina);
+        Assert.Contains("type=\"button\" class=\"btn btn-outline-danger w-100\" data-bs-toggle=\"modal\" data-bs-target=\"#confirmar-exclusao-colecao\"", pagina);
+        Assert.Contains("data-confirmacao=\"desvincular\"", pagina);
+        Assert.Contains("data-confirmacao=\"excluir\"", pagina);
+        Assert.Contains("data-confirmacao=\"mover\"", pagina);
+        Assert.Contains("The collection will be permanently deleted and its videos will be deleted. It cannot be restored.", pagina);
         Assert.DoesNotContain("/restore", pagina);
 
         var exclusao = await FormularioHelpers.EnviarFormularioAsync(

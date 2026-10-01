@@ -1,0 +1,39 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@* O primeiro botão só abre o modal. Quem envia o formulário é o confirmar, já dentro dele. *@
+
+<button type="button" class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#@Id">
+    @Rotulo
+</button>
+
+<div class="modal fade" id="@Id" tabindex="-1" aria-labelledby="@(Id)-titulo" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5" id="@(Id)-titulo">@Rotulo</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="@T["Close"]"></button>
+            </div>
+            <div class="modal-body">
+                @ChildContent
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">@T["Cancel"]</button>
+                <button type="submit" class="btn btn-danger">@Rotulo</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Id { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public string Rotulo { get; set; } = "";
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

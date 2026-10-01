@@ -303,6 +303,9 @@ public class AdministracaoTests(PostgresFixture postgres, MinioFixture minio) : 
         Assert.Contains("Public", html);
         Assert.Contains("Restricted", html);
         Assert.Contains("Reprocess from the original", html);
+        Assert.Contains("type=\"button\" class=\"btn btn-outline-danger w-100\" data-bs-toggle=\"modal\" data-bs-target=\"#confirmar-exclusao-video\"", html);
+        Assert.Contains("Delete this video? It leaves the library and access immediately. You can restore it later from this page.", html);
+        Assert.Contains("id=\"confirmar-exclusao-video\"", html);
     }
 
     [Fact]

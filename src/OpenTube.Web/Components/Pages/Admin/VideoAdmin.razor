@@ -323,7 +323,9 @@
                             </p>
                             <form method="post" action="/admin/videos/@Video.Id/delete">
                                 <AntiforgeryToken />
-                                <button class="btn btn-outline-danger w-100" type="submit">@T["Delete video"]</button>
+                                <ConfirmacaoDeExclusao Id="confirmar-exclusao-video" Rotulo="@T["Delete video"]">
+                                    <p class="mb-0">@T["Delete this video? It leaves the library and access immediately. You can restore it later from this page."]</p>
+                                </ConfirmacaoDeExclusao>
                             </form>
                         </div>
                     </div>

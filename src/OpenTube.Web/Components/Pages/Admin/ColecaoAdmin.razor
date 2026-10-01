@@ -258,7 +258,24 @@
                                 </fieldset>
                             }
 
-                            <button class="btn btn-outline-danger w-100" type="submit">@T["Delete collection"]</button>
+                            <ConfirmacaoDeExclusao Id="confirmar-exclusao-colecao" Rotulo="@T["Delete collection"]">
+                                @if (Videos.Count == 0)
+                                {
+                                    <p class="mb-0" data-confirmacao-texto>
+                                        @T["This collection will be permanently deleted, along with every access grant on it. It cannot be restored."]
+                                    </p>
+                                }
+                                else
+                                {
+                                    <p class="mb-0" data-confirmacao-texto>
+                                        @T["The collection will be permanently deleted and its videos will be unlinked. It cannot be restored."]
+                                    </p>
+                                    <template data-confirmacao="desvincular">@T["The collection will be permanently deleted and its videos will be unlinked. It cannot be restored."]</template>
+                                    <template data-confirmacao="excluir">@T["The collection will be permanently deleted and its videos will be deleted. It cannot be restored."]</template>
+                                    <template data-confirmacao="mover">@T["The collection will be permanently deleted and its videos will be moved to '{0}'. It cannot be restored."]</template>
+                                    <template data-confirmacao="mover-vazio">@T["Choose another collection."]</template>
+                                }
+                            </ConfirmacaoDeExclusao>
                         </form>
                     </div>
                 </div>
