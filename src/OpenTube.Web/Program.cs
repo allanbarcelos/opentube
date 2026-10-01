@@ -112,11 +112,7 @@ app.MapPost("/language", (HttpContext contexto, [FromForm] string? idioma, [From
         Path = "/"
     });
 
-    var destino = voltar is { Length: > 0 } && voltar.StartsWith('/') && !voltar.StartsWith("//") && !voltar.Contains('\\')
-        ? voltar
-        : "/";
-
-    return Results.Redirect(destino);
+    return Results.Redirect(Retorno.EhLocal(voltar) && !voltar!.Contains('\\') ? voltar : "/");
 });
 
 app.MapAuthEndpoints();

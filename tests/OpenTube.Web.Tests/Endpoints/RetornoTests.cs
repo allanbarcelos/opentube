@@ -21,6 +21,10 @@ public class RetornoTests
     [InlineData("//exemplo-malicioso.com")]
     [InlineData("/\\exemplo-malicioso.com")]
     [InlineData("javascript:alert(1)")]
+    [InlineData("/\t/exemplo-malicioso.com")]
+    [InlineData("/\n/exemplo-malicioso.com")]
+    [InlineData("/\r\n/exemplo-malicioso.com")]
+    [InlineData("/\t\\exemplo-malicioso.com")]
     [InlineData("")]
     [InlineData(null)]
     public void Endereco_de_fora_volta_para_a_raiz(string? destino) =>

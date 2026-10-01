@@ -25,8 +25,13 @@ public static class Retorno
         return caminho + (caminho.Contains('?') ? "&" : "?") + parametro + ancora;
     }
 
+    /// <remarks>
+    /// Caractere de controle em qualquer posição é recusado: o navegador descarta tabulação e
+    /// quebra de linha do endereço antes de interpretá-lo, e "/\t/outro.site" vira "//outro.site".
+    /// </remarks>
     public static bool EhLocal(string? destino) =>
         !string.IsNullOrWhiteSpace(destino)
         && destino[0] == '/'
-        && (destino.Length == 1 || (destino[1] != '/' && destino[1] != '\\'));
+        && (destino.Length == 1 || (destino[1] != '/' && destino[1] != '\\'))
+        && !destino.Any(char.IsControl);
 }
