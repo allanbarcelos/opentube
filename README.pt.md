@@ -887,7 +887,10 @@ quando algo que vai para dentro dela mudou desde o push anterior: README, teste,
 próprio workflow não disparam build, e uma mudança só na web não recompila o worker (nem o
 contrário). Código compartilhado pelos dois (Domain, Infrastructure, Shared, os
 `Directory.*.props`) recompila os dois. Quem decide é o `.github/scripts/changed.sh`, e o resumo do
-job diz por que o build rodou ou foi pulado.
+job diz por que o build rodou ou foi pulado. Uma tag de versão que ainda não tem imagem no GHCR —
+criada à mão, ou deixada por um envio que falhou depois da tag — é compilada na execução seguinte
+mesmo sem mudança de código, e o **Run workflow** da página Actions compila a última versão quando
+se quiser.
 
 Cada imagem de `app` ou `worker` publicada recebe a próxima versão `A.B.C.D` e uma GitHub Release
 com a lista dos commits que entraram nela. **A** é o motor, **B** uma feature, **C** uma melhoria e

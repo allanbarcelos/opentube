@@ -8,6 +8,8 @@ name: Worker
 # never counts, and neither do install.sh or the web app's own code.
 
 on:
+  # Gera a imagem da última versão sem esperar uma mudança de código.
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -71,7 +73,7 @@ jobs:
   changes:
     name: Image inputs changed?
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     outputs:
       image: ${{ steps.filter.outputs.image }}
 
@@ -83,8 +85,24 @@ jobs:
       - name: Compare with the previous push
         id: filter
         run: |
-          # shellcheck disable=SC2086
-          IMAGE=$(bash .github/scripts/changed.sh "${{ github.event.before }}" $IMAGE_PATHS)
+          IMAGE=false
+          if [ -n "${{ github.event.before }}" ]; then
+            # shellcheck disable=SC2086
+            IMAGE=$(bash .github/scripts/changed.sh "${{ github.event.before }}" $IMAGE_PATHS)
+          fi
+          # Uma versão marcada sem imagem publicada — criada à mão, ou de um envio que falhou
+          # depois da tag — também precisa da imagem, ainda que o código não tenha mudado.
+          if [ "$IMAGE" != "true" ]; then
+            TAG_ATUAL=$(git tag -l "worker-v*" --sort=-v:refname | head -1)
+            if [ -n "$TAG_ATUAL" ] && ! docker manifest inspect "ghcr.io/${{ github.repository }}/worker:${TAG_ATUAL#worker-v}" > /dev/null 2>&1; then
+              IMAGE=true
+              echo "No image published yet for $TAG_ATUAL." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            IMAGE=true
+            echo "Manual run: building." >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           if [ "$IMAGE" = "true" ]; then
             echo "Worker image inputs changed: building." >> "$GITHUB_STEP_SUMMARY"
@@ -119,9 +137,11 @@ jobs:
             CURRENT_TAG=$(git tag -l "worker-v*" --sort=-v:refname | head -1)
             DOCKER_TAG="${CURRENT_TAG#worker-v}"
           else
+            CURRENT_TAG="$NEW_TAG"
             DOCKER_TAG="${NEW_TAG#worker-v}"
           fi
           echo "docker_tag=$DOCKER_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$CURRENT_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -155,11 +175,16 @@ jobs:
           cache-to: type=gha,scope=worker,mode=max
 
       - name: Create GitHub Release
-        if: steps.version.outputs.tag != ''
+        if: steps.version.outputs.release_tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
+          TAG="${{ steps.version.outputs.release_tag }}"
+          # A imagem de uma versão já marcada pode sair depois; a release dela, uma vez só.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists."
+            exit 0
+          fi
           PREV=$(git tag -l "worker-v*" --sort=-v:refname | grep -vx "$TAG" | head -1)
           if [ -n "$PREV" ]; then RANGE="$PREV..$TAG"; else RANGE="$TAG"; fi
           # shellcheck disable=SC2086

@@ -892,7 +892,9 @@ that goes into it changed since the previous push: a README, a test, the install
 workflow itself does not start a build, and a web-only change does not rebuild the worker (nor the
 other way round). Code shared by both (Domain, Infrastructure, Shared, the `Directory.*.props`)
 rebuilds both. The decision is `.github/scripts/changed.sh`, and the job summary says why a build
-ran or was skipped.
+ran or was skipped. A version tag that has no image in GHCR yet — created by hand, or left by a
+push that failed after tagging — is built on the next run even without a code change, and **Run
+workflow** on the Actions page builds the latest version on demand.
 
 Every published `app` or `worker` image gets the next `A.B.C.D` version and a GitHub Release
 listing the commits that went into it. **A** is the engine, **B** a feature, **C** an improvement,
