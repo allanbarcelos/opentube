@@ -17,6 +17,12 @@ namespace OpenTube.Web.Endpoints;
 /// </summary>
 public static class AuthEndpoints
 {
+    /// <summary>
+    /// Cookie com a chave deste navegador. O código pedido aqui guarda o resumo dela, e o link
+    /// do email só entra num navegador que a traga.
+    /// </summary>
+    public const string BrowserCookieName = "opentube.navegador";
+
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder rotas)
     {
         rotas.MapPost("/sign-in/code", async (
@@ -30,6 +36,7 @@ public static class AuthEndpoints
                 email,
                 AuthPurpose.Login,
                 contexto.Connection.RemoteIpAddress?.ToString(),
+                browserKey: ChaveDoNavegador(contexto),
                 cancellationToken: cancellationToken);
 
             // Endereço conhecido e desconhecido recebem a mesma resposta: a diferença
@@ -76,9 +83,15 @@ public static class AuthEndpoints
         {
             var resultado = await auth.VerifyTokenAsync(
                 token,
+                contexto.Request.Cookies[BrowserCookieName],
                 contexto.Connection.RemoteIpAddress?.ToString(),
                 contexto.Request.Headers.UserAgent.ToString(),
                 cancellationToken);
+
+            // Noutro navegador o link não entra, mas o código do mesmo email entra: a tela já
+            // abre pedindo o código para o endereço certo.
+            if (resultado.Failure is AuthFailure.OtherBrowser)
+                return Redirecionar(resultado.Email, null, enviado: true, erro: Mensagem(resultado.Failure));
 
             if (!resultado.Succeeded)
                 return Redirecionar(null, null, erro: Mensagem(resultado.Failure));
@@ -122,6 +135,30 @@ public static class AuthEndpoints
         return Results.Redirect("/sign-in" + (parametros.Count > 0 ? "?" + string.Join('&', parametros) : string.Empty));
     }
 
+    /// <summary>
+    /// Chave deste navegador, criada no primeiro pedido de código e reaproveitada depois, para
+    /// que códigos pedidos em abas diferentes do mesmo navegador continuem valendo pelo link.
+    /// </summary>
+    private static string ChaveDoNavegador(HttpContext contexto)
+    {
+        var chave = contexto.Request.Cookies[BrowserCookieName];
+
+        if (string.IsNullOrWhiteSpace(chave) || chave.Length > 100)
+            chave = OneTimeCode.GenerateToken();
+
+        contexto.Response.Cookies.Append(BrowserCookieName, chave, new CookieOptions
+        {
+            MaxAge = TimeSpan.FromDays(30),
+            IsEssential = true,
+            HttpOnly = true,
+            Secure = contexto.Request.IsHttps,
+            SameSite = SameSiteMode.Lax,
+            Path = "/sign-in"
+        });
+
+        return chave;
+    }
+
     private static Task EntrarAsync(HttpContext contexto, SignInOutcome resultado) =>
         contexto.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
@@ -141,6 +178,7 @@ public static class AuthEndpoints
         AuthFailure.LockedOut => LocalText.Get("Too many wrong codes today. Use the link in the email, or try again tomorrow."),
         AuthFailure.UserDisabled => LocalText.Get("This access is disabled."),
         AuthFailure.RateLimited => LocalText.Get("Too many requests. Wait a few minutes."),
+        AuthFailure.OtherBrowser => LocalText.Get("The email link only signs in on the browser where the code was requested. To sign in here, type the code from the email."),
         _ => LocalText.Get("Invalid code.")
     };
 }

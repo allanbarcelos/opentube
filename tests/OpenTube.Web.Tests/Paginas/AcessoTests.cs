@@ -145,20 +145,65 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
     [Fact]
     public async Task Abrir_o_link_sem_confirmar_nao_entra_nem_gasta_o_link()
     {
-        using var filtroDeEmail = _app.CreateBrowser();
-        await PedirCodigoAsync(filtroDeEmail, Admin);
+        using var pessoa = _app.CreateBrowser();
+        await PedirCodigoAsync(pessoa, Admin);
         var token = _app.Emails.LastToken();
 
         // O que um filtro de segurança de email faz: abre o link e segue em frente.
+        using var filtroDeEmail = _app.CreateBrowser();
         var aberto = await filtroDeEmail.GetAsync($"/sign-in/{token}");
 
         Assert.Equal(HttpStatusCode.OK, aberto.StatusCode);
         Assert.DoesNotContain("Administration", await filtroDeEmail.GetStringAsync("/"));
 
-        using var pessoa = _app.CreateBrowser();
         var resposta = await UsarLinkAsync(pessoa, token);
 
         Assert.Equal("/admin", resposta.Headers.Location!.ToString());
+    }
+
+    [Fact]
+    public async Task Filtro_que_confirma_o_link_nao_entra_e_o_codigo_segue_valendo()
+    {
+        using var pessoa = _app.CreateBrowser();
+        await PedirCodigoAsync(pessoa, Admin);
+        var token = _app.Emails.LastToken();
+
+        // Filtros mais novos abrem a página e clicam no botão. Sem a chave do navegador que
+        // pediu o código, o link não entra e não gasta nada.
+        using var filtroDeEmail = _app.CreateBrowser();
+        var confirmado = await UsarLinkAsync(filtroDeEmail, token);
+
+        var destino = confirmado.Headers.Location!.ToString();
+        Assert.StartsWith("/sign-in?", destino);
+        Assert.Contains("enviado=1", destino);
+        Assert.Contains("email=" + Uri.EscapeDataString(Admin), destino);
+        Assert.DoesNotContain("Administration", await filtroDeEmail.GetStringAsync("/"));
+
+        await using (var db = postgres.CreateContext())
+            Assert.Equal(0, await db.AuthSessions.CountAsync());
+
+        // A pessoa entra no navegador dela, pelo link ou pelo código.
+        var resposta = await UsarLinkAsync(pessoa, token);
+
+        Assert.Equal("/admin", resposta.Headers.Location!.ToString());
+    }
+
+    [Fact]
+    public async Task Noutro_navegador_a_pessoa_entra_digitando_o_codigo()
+    {
+        using var computador = _app.CreateBrowser();
+        await PedirCodigoAsync(computador, Admin);
+
+        // O email aberto no celular: o link manda digitar o código, e o código entra ali.
+        using var celular = _app.CreateBrowser();
+        var destino = (await UsarLinkAsync(celular, _app.Emails.LastToken())).Headers.Location!.ToString();
+
+        var resposta = await FormularioHelpers.EnviarFormularioAsync(
+            celular, destino, "/sign-in/verify",
+            new Dictionary<string, string> { ["email"] = Admin, ["codigo"] = _app.Emails.LastCode() });
+
+        Assert.Equal("/admin", resposta.Headers.Location!.ToString());
+        Assert.Contains("Administration", await celular.GetStringAsync("/"));
     }
 
     [Fact]
@@ -170,8 +215,7 @@ public class AcessoTests(PostgresFixture postgres, MinioFixture minio) : IAsyncL
 
         await UsarLinkAsync(cliente, token);
 
-        using var outro = _app.CreateBrowser();
-        var resposta = await UsarLinkAsync(outro, token);
+        var resposta = await UsarLinkAsync(cliente, token);
 
         Assert.Contains("erro=", resposta.Headers.Location!.ToString());
     }

@@ -548,6 +548,12 @@ code. The code is requested there, at the moment of signing in, and arrives by e
 minutes. After the code, the person lands on the shared video. Signing in creates a 30-day cookie
 session, which is renewable and can be revoked immediately by the administrator.
 
+The link signs in only on the browser that asked for the code, which keeps a random key in a
+cookie for that. Email security filters open links and click the confirmation button seconds
+after the message arrives; without the key, the link neither signs them in nor uses up the code.
+Opened anywhere else — a filter, or the email on a phone — the link leads to the code form for
+that address, and the code from the same email signs in there.
+
 ### Domain access
 
 Granting a video or collection to a domain works like a group: every email address at that

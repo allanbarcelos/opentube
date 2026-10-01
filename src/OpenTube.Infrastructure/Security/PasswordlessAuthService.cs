@@ -27,7 +27,13 @@ public enum AuthFailure
     NotInvited = 8,
 
     /// <summary>Códigos errados demais para o email nas últimas 24 horas; só o link entra.</summary>
-    LockedOut = 9
+    LockedOut = 9,
+
+    /// <summary>
+    /// O link foi aberto num navegador diferente do que pediu o código. Nada é gasto: neste
+    /// navegador a pessoa entra digitando o código.
+    /// </summary>
+    OtherBrowser = 10
 }
 
 /// <summary>Resultado de um pedido de código.</summary>
@@ -44,9 +50,13 @@ public readonly record struct CodeRequestResult(bool Sent, AuthFailure Failure, 
 /// <param name="Failure">Motivo, quando não entrou.</param>
 /// <param name="Session">Sessão aberta, em caso de sucesso.</param>
 /// <param name="User">Pessoa autenticada, em caso de sucesso.</param>
-public sealed record SignInOutcome(bool Succeeded, AuthFailure Failure, AuthSession? Session, User? User)
+/// <param name="Email">
+/// Endereço do código, quando o link foi aberto noutro navegador: a tela de entrada já abre
+/// pedindo o código para ele.
+/// </param>
+public sealed record SignInOutcome(bool Succeeded, AuthFailure Failure, AuthSession? Session, User? User, string? Email = null)
 {
-    public static SignInOutcome Fail(AuthFailure failure) => new(false, failure, null, null);
+    public static SignInOutcome Fail(AuthFailure failure, string? email = null) => new(false, failure, null, null, email);
 
     public static SignInOutcome Ok(AuthSession session, User user) => new(true, AuthFailure.None, session, user);
 }
@@ -81,6 +91,7 @@ public class PasswordlessAuthService(
         string? ip = null,
         bool requireExistingUser = true,
         Guid? grantId = null,
+        string? browserKey = null,
         CancellationToken cancellationToken = default)
     {
         if (!EmailAddress.TryParse(emailInput, out var endereco))
@@ -124,7 +135,8 @@ public class PasswordlessAuthService(
             agora,
             validade,
             ipHash,
-            grantId));
+            grantId,
+            ResumoDoNavegador(browserKey)));
 
         await db.SaveChangesAsync(cancellationToken);
 
@@ -199,9 +211,14 @@ public class PasswordlessAuthService(
         return await ConcluirAsync(candidato, endereco, ip, userAgent, cancellationToken);
     }
 
-    /// <summary>Confere o token do link de acesso direto e abre a sessão.</summary>
+    /// <summary>
+    /// Confere o token do link de acesso direto e abre a sessão. Só entra no navegador que
+    /// pediu o código, identificado por <paramref name="browserKey"/>; em qualquer outro, o
+    /// link não gasta nada e a pessoa entra digitando o código.
+    /// </summary>
     public async Task<SignInOutcome> VerifyTokenAsync(
         string token,
+        string? browserKey = null,
         string? ip = null,
         string? userAgent = null,
         CancellationToken cancellationToken = default)
@@ -221,6 +238,15 @@ public class PasswordlessAuthService(
 
         if (candidato.IsExpiredAt(clock.GetUtcNow()))
             return SignInOutcome.Fail(AuthFailure.CodeExpired);
+
+        // Filtros de segurança de email abrem o link e clicam no botão de confirmação segundos
+        // depois de a mensagem chegar. Sem a chave do navegador que pediu, o link é recusado
+        // antes de gastar o código, que continua valendo para a pessoa digitar.
+        if (!MesmoNavegador(candidato, browserKey))
+        {
+            logger.LogWarning("Link de acesso aberto noutro navegador; nada foi gasto ({Navegador})", userAgent);
+            return SignInOutcome.Fail(AuthFailure.OtherBrowser, candidato.Email);
+        }
 
         return await ConcluirAsync(candidato, EmailAddress.Parse(candidato.Email), ip, userAgent, cancellationToken);
     }
@@ -281,6 +307,17 @@ public class PasswordlessAuthService(
 
         return encerradas;
     }
+
+    private string? ResumoDoNavegador(string? browserKey) =>
+        string.IsNullOrWhiteSpace(browserKey) ? null : TokenHasher.Hash(Navegador(browserKey), _options.TokenPepper);
+
+    private bool MesmoNavegador(LoginCode codigo, string? browserKey) =>
+        codigo.BrowserHash is not null
+        && !string.IsNullOrWhiteSpace(browserKey)
+        && TokenHasher.Verify(Navegador(browserKey), codigo.BrowserHash, _options.TokenPepper);
+
+    /// <summary>Prefixo próprio, para o resumo da chave não coincidir com o de outro segredo.</summary>
+    private static string Navegador(string browserKey) => "navegador|" + browserKey.Trim();
 
     /// <summary>
     /// Verifica se o endereço tem alguma concessão em vigor, diretamente ou pelo domínio.

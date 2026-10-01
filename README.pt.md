@@ -547,6 +547,12 @@ digitá-lo. Os dois ficam no banco apenas como hash e expiram em 15 minutos. Dep
 pessoa cai no vídeo compartilhado. A entrada cria uma sessão em cookie de 30 dias, renovável e
 revogável de imediato pelo administrador.
 
+O link só entra no navegador que pediu o código, que guarda para isso uma chave aleatória num
+cookie. Filtros de segurança de email abrem os links e clicam no botão de confirmação segundos
+depois de a mensagem chegar; sem a chave, o link não os deixa entrar nem gasta o código. Aberto
+em qualquer outro lugar — um filtro, ou o email no celular — o link leva à tela do código para
+aquele endereço, e o código do mesmo email entra ali.
+
 ### Acesso por domínio
 
 Dar um vídeo ou uma coleção a um domínio funciona como um grupo: todo email daquele domínio pode

@@ -19,6 +19,7 @@ public class LoginCodeConfiguration : IEntityTypeConfiguration<LoginCode>
         builder.Property(c => c.CodeHash).HasMaxLength(64).IsRequired();
         builder.Property(c => c.TokenHash).HasMaxLength(64).IsRequired();
         builder.Property(c => c.IpHash).HasMaxLength(64);
+        builder.Property(c => c.BrowserHash).HasMaxLength(64);
         builder.Property(c => c.Purpose).HasConversion<int>();
 
         // A conferência do link busca direto pelo resumo do token.

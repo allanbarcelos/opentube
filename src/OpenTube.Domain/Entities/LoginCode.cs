@@ -39,6 +39,13 @@ public class LoginCode
     /// <summary>Concessão que originou o convite, quando houver.</summary>
     public Guid? GrantId { get; private set; }
 
+    /// <summary>
+    /// Resumo da chave guardada no navegador que pediu o código. O link do email só entra
+    /// nesse navegador: um filtro de segurança que abra o link e clique no botão não traz a
+    /// chave, e por isso não entra nem gasta o código. Nulo nos códigos de antes da regra.
+    /// </summary>
+    public string? BrowserHash { get; private set; }
+
     public bool IsConsumed => ConsumedAt is not null;
 
     public bool IsExhausted => Attempts >= MaxAttempts;
@@ -55,7 +62,8 @@ public class LoginCode
         DateTimeOffset now,
         TimeSpan lifetime,
         string? ipHash = null,
-        Guid? grantId = null)
+        Guid? grantId = null,
+        string? browserHash = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(codeHash);
         ArgumentException.ThrowIfNullOrWhiteSpace(tokenHash);
@@ -72,7 +80,8 @@ public class LoginCode
             CreatedAt = now,
             ExpiresAt = now + lifetime,
             IpHash = ipHash,
-            GrantId = grantId
+            GrantId = grantId,
+            BrowserHash = string.IsNullOrWhiteSpace(browserHash) ? null : browserHash
         };
     }
 

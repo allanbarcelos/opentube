@@ -39,6 +39,9 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
 
     public Task DisposeAsync() => Task.CompletedTask;
 
+    /// <summary>Chave do navegador que pede o código, guardada no cookie pela aplicação.</summary>
+    private const string Navegador = "chave-do-navegador-de-teste";
+
     private (PasswordlessAuthService Servico, OpenTubeDbContext Db) Criar()
     {
         var db = postgres.CreateContext();
@@ -296,8 +299,8 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
         for (var i = 0; i < 4; i++)
             await QueimarUmCodigoAsync(servico);
 
-        await servico.RequestCodeAsync(Convidado);
-        var entrada = await servico.VerifyTokenAsync(_email.LastToken());
+        await servico.RequestCodeAsync(Convidado, browserKey: Navegador);
+        var entrada = await servico.VerifyTokenAsync(_email.LastToken(), Navegador);
 
         Assert.True(entrada.Succeeded);
     }
@@ -352,7 +355,7 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
         await CriarUsuarioAsync();
         var (servico, db) = Criar();
         await using var _ = db;
-        await servico.RequestCodeAsync(Convidado);
+        await servico.RequestCodeAsync(Convidado, browserKey: Navegador);
         var token = _email.LastToken();
 
         var entradas = await Task.WhenAll(Enumerable.Range(0, 10).Select(async _ =>
@@ -360,7 +363,7 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
             var (paralelo, contexto) = Criar();
             await using var __ = contexto;
 
-            return await paralelo.VerifyTokenAsync(token);
+            return await paralelo.VerifyTokenAsync(token, Navegador);
         }));
 
         Assert.Single(entradas, e => e.Succeeded);
@@ -426,9 +429,9 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
         await CriarUsuarioAsync();
         var (servico, db) = Criar();
         await using var _ = db;
-        await servico.RequestCodeAsync(Convidado);
+        await servico.RequestCodeAsync(Convidado, browserKey: Navegador);
 
-        var entrada = await servico.VerifyTokenAsync(_email.LastToken());
+        var entrada = await servico.VerifyTokenAsync(_email.LastToken(), Navegador);
 
         Assert.True(entrada.Succeeded);
         Assert.Equal(Convidado, entrada.User!.Email);
@@ -440,14 +443,68 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
         await CriarUsuarioAsync();
         var (servico, db) = Criar();
         await using var _ = db;
-        await servico.RequestCodeAsync(Convidado);
+        await servico.RequestCodeAsync(Convidado, browserKey: Navegador);
         var token = _email.LastToken();
 
-        await servico.VerifyTokenAsync(token);
-        var segunda = await servico.VerifyTokenAsync(token);
+        await servico.VerifyTokenAsync(token, Navegador);
+        var segunda = await servico.VerifyTokenAsync(token, Navegador);
 
         Assert.False(segunda.Succeeded);
         Assert.Equal(AuthFailure.CodeAlreadyUsed, segunda.Failure);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("chave-de-outro-navegador")]
+    public async Task Link_aberto_noutro_navegador_nao_entra_nem_gasta_o_codigo(string? outroNavegador)
+    {
+        await CriarUsuarioAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+        await servico.RequestCodeAsync(Convidado, browserKey: Navegador);
+        var token = _email.LastToken();
+
+        // O que faz um filtro de segurança de email: abre o link e confirma, sem a chave.
+        var filtro = await servico.VerifyTokenAsync(token, outroNavegador);
+
+        Assert.False(filtro.Succeeded);
+        Assert.Equal(AuthFailure.OtherBrowser, filtro.Failure);
+        Assert.Equal(Convidado, filtro.Email);
+
+        await using (var leitura = postgres.CreateContext())
+        {
+            Assert.Equal(0, await leitura.AuthSessions.CountAsync());
+            Assert.Null((await leitura.LoginCodes.SingleAsync()).ConsumedAt);
+        }
+
+        // A pessoa ainda entra, digitando o código ou pelo link no navegador certo.
+        Assert.True((await servico.VerifyCodeAsync(Convidado, _email.LastCode())).Succeeded);
+    }
+
+    [Fact]
+    public async Task Pelo_navegador_que_pediu_o_link_entra_mesmo_depois_de_um_filtro_abrir()
+    {
+        await CriarUsuarioAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+        await servico.RequestCodeAsync(Convidado, browserKey: Navegador);
+        var token = _email.LastToken();
+
+        await servico.VerifyTokenAsync(token);
+
+        Assert.True((await servico.VerifyTokenAsync(token, Navegador)).Succeeded);
+    }
+
+    [Fact]
+    public async Task Codigo_pedido_sem_navegador_so_entra_digitado()
+    {
+        await CriarUsuarioAsync();
+        var (servico, db) = Criar();
+        await using var _ = db;
+        await servico.RequestCodeAsync(Convidado);
+
+        Assert.Equal(AuthFailure.OtherBrowser, (await servico.VerifyTokenAsync(_email.LastToken(), Navegador)).Failure);
+        Assert.True((await servico.VerifyCodeAsync(Convidado, _email.LastCode())).Succeeded);
     }
 
     [Theory]
@@ -469,12 +526,12 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
     {
         var (servico, db) = Criar();
         await using var _ = db;
-        await servico.RequestCodeAsync("novo@barcelos.dev", AuthPurpose.Invite, requireExistingUser: false);
+        await servico.RequestCodeAsync("novo@barcelos.dev", AuthPurpose.Invite, requireExistingUser: false, browserKey: Navegador);
         var token = _email.LastToken();
 
         _relogio.Advance(TimeSpan.FromDays(6));
 
-        Assert.True((await servico.VerifyTokenAsync(token)).Succeeded);
+        Assert.True((await servico.VerifyTokenAsync(token, Navegador)).Succeeded);
     }
 
     [Fact]
