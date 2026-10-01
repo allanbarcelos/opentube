@@ -340,4 +340,37 @@ public class SupportServiceTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Contains("…", _emails.Last!.TextBody);
         Assert.True(_emails.Last.TextBody.Length < 1000);
     }
+
+    [Fact]
+    public async Task Quem_assiste_tem_teto_de_mensagens_por_hora()
+    {
+        var video = await CriarVideoAsync();
+        var autor = await CriarPessoaAsync("autor@barcelos.dev");
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        var conversa = await servico.OpenAsync(video.Id, autor, "Primeira");
+        for (var i = 1; i < SupportService.MessagesPerHour; i++)
+            await servico.ReplyAsync(conversa.Id, autor, $"Mensagem {i}");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servico.ReplyAsync(conversa.Id, autor, "Mais uma"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servico.OpenAsync(video.Id, autor, "Outra conversa"));
+
+        _relogio.Advance(TimeSpan.FromHours(1) + TimeSpan.FromMinutes(1));
+        await servico.ReplyAsync(conversa.Id, autor, "Depois de uma hora");
+    }
+
+    [Fact]
+    public async Task A_administracao_responde_sem_teto()
+    {
+        var video = await CriarVideoAsync();
+        var autor = await CriarPessoaAsync("autor@barcelos.dev");
+        var admin = await CriarPessoaAsync("admin@barcelos.dev", admin: true);
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        var conversa = await servico.OpenAsync(video.Id, autor, "Dúvida");
+        for (var i = 0; i <= SupportService.MessagesPerHour; i++)
+            await servico.ReplyAsync(conversa.Id, admin, $"Resposta {i}");
+    }
 }

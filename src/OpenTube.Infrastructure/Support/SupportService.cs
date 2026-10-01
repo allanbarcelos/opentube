@@ -34,6 +34,9 @@ public class SupportService(
     TimeProvider clock,
     ILogger<SupportService> logger)
 {
+    /// <summary>Quantas mensagens quem assiste pode mandar por hora, somando todas as conversas.</summary>
+    public const int MessagesPerHour = 20;
+
     private readonly SecurityOptions _options = options.Value;
 
     /// <summary>
@@ -57,6 +60,8 @@ public class SupportService(
 
         if (!(await acesso.EvaluateAsync(viewer, video, cancellationToken)).Allowed)
             throw new InvalidOperationException("Video not found");
+
+        await ConferirRitmoAsync(viewer, cancellationToken);
 
         var conversa = SupportThread.Open(videoId, userId, message, clock.GetUtcNow(), timestampSeconds);
 
@@ -83,6 +88,8 @@ public class SupportService(
 
         if (viewer.UserId is not { } authorId)
             throw new InvalidOperationException("Sign in to reply.");
+
+        await ConferirRitmoAsync(viewer, cancellationToken);
 
         var mensagem = conversa.Reply(authorId, message, viewer.IsAdmin, clock.GetUtcNow());
 
@@ -223,6 +230,23 @@ public class SupportService(
             throw new InvalidOperationException("Conversation not found.");
 
         return conversa;
+    }
+
+    /// <summary>
+    /// Cada mensagem de quem assiste vira um email para cada administrador. Sem um teto, uma
+    /// conta com acesso a um vídeo lotaria a caixa de entrada da administração.
+    /// </summary>
+    private async Task ConferirRitmoAsync(Viewer viewer, CancellationToken cancellationToken)
+    {
+        if (viewer.IsAdmin || viewer.UserId is not { } autor)
+            return;
+
+        var desde = clock.GetUtcNow() - TimeSpan.FromHours(1);
+        var recentes = await db.SupportMessages
+            .CountAsync(m => m.AuthorId == autor && m.CreatedAt >= desde, cancellationToken);
+
+        if (recentes >= MessagesPerHour)
+            throw new InvalidOperationException("You sent too many messages. Wait a while before writing again.");
     }
 
     private Task<string> TituloDoVideoAsync(Guid videoId, CancellationToken cancellationToken) =>
