@@ -219,7 +219,18 @@ public static class CollectionEndpoints
                         AuditActions.VideoExcluido, AuditEntities.Video, videoId, LocalText.Get("Video deleted."), cancellationToken);
                 }
 
-                return Results.Redirect("/admin/collections?excluida=1");
+                var aviso = exclusao.Videos switch
+                {
+                    VideosDaColecao.Excluir => "excluir",
+                    VideosDaColecao.Mover when !string.IsNullOrWhiteSpace(exclusao.DestinationName) => "mover",
+                    _ => "desvincular"
+                };
+
+                var para = aviso == "mover"
+                    ? $"&para={Uri.EscapeDataString(exclusao.DestinationName!)}"
+                    : "";
+
+                return Results.Redirect($"/admin/collections?excluida={aviso}{para}");
             }
             catch (InvalidOperationException e)
             {

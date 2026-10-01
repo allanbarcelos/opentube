@@ -636,9 +636,13 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         Assert.Contains("Delete them too. They leave the library, the same way as deleting a video.", pagina);
         Assert.DoesNotContain("/restore", pagina);
 
-        await FormularioHelpers.EnviarFormularioAsync(
+        var exclusao = await FormularioHelpers.EnviarFormularioAsync(
             cliente, $"/admin/collections/{colecao}", $"/admin/collections/{colecao}/delete",
             new Dictionary<string, string> { ["videos"] = "desvincular", ["destino"] = "" });
+
+        Assert.Contains(
+            "Collection deleted and videos unlinked.",
+            await cliente.GetStringAsync(exclusao.Headers.Location!.ToString()));
 
         await using var db = postgres.CreateContext();
         Assert.Empty(await db.Collections.ToListAsync());
@@ -681,9 +685,13 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
             cliente, $"/admin/collections/{destino}", $"/admin/collections/{destino}/videos/add",
             new Dictionary<string, string> { ["videoId"] = movido.Id.ToString() });
 
-        await FormularioHelpers.EnviarFormularioAsync(
+        var exclusao = await FormularioHelpers.EnviarFormularioAsync(
             cliente, $"/admin/collections/{origem}", $"/admin/collections/{origem}/delete",
             new Dictionary<string, string> { ["videos"] = "excluir", ["destino"] = "" });
+
+        Assert.Contains(
+            "Collection deleted and videos deleted.",
+            await cliente.GetStringAsync(exclusao.Headers.Location!.ToString()));
 
         await using (var meio = postgres.CreateContext())
         {
@@ -696,9 +704,13 @@ public class ColecoesTests(PostgresFixture postgres, MinioFixture minio) : IAsyn
         Assert.Contains("This video is deleted and is hidden from everyone.", aviso);
 
         var outra = await CriarColecaoAsync(cliente, "Outra");
-        await FormularioHelpers.EnviarFormularioAsync(
+        var mudanca = await FormularioHelpers.EnviarFormularioAsync(
             cliente, $"/admin/collections/{destino}", $"/admin/collections/{destino}/delete",
             new Dictionary<string, string> { ["videos"] = "mover", ["destino"] = outra.ToString() });
+
+        Assert.Contains(
+            "Collection deleted and videos moved to 'Outra'.",
+            WebUtility.HtmlDecode(await cliente.GetStringAsync(mudanca.Headers.Location!.ToString())));
 
         await using var fim = postgres.CreateContext();
         Assert.Equal(outra, (await fim.CollectionVideos.SingleAsync()).CollectionId);

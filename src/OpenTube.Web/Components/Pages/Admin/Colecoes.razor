@@ -18,9 +18,9 @@
         </ol>
     </nav>
 
-    @if (Excluida)
+    @if (MensagemDeExclusao is { } mensagem)
     {
-        <div class="alert alert-success" role="status">@T["Collection deleted."]</div>
+        <div class="alert alert-success" role="status">@mensagem</div>
     }
     @if (!string.IsNullOrWhiteSpace(Erro))
     {
@@ -101,10 +101,20 @@
     [SupplyParameterFromQuery(Name = "excluida")]
     private string? ExcluidaBruta { get; set; }
 
+    [SupplyParameterFromQuery(Name = "para")]
+    private string? Para { get; set; }
+
     [SupplyParameterFromQuery(Name = "erro")]
     private string? Erro { get; set; }
 
-    private bool Excluida => ExcluidaBruta == "1";
+    private string? MensagemDeExclusao => ExcluidaBruta switch
+    {
+        "desvincular" => T["Collection deleted and videos unlinked."],
+        "excluir" => T["Collection deleted and videos deleted."],
+        "mover" when !string.IsNullOrWhiteSpace(Para) => T.Format("Collection deleted and videos moved to '{0}'.", Para),
+        "mover" => T["Collection deleted and videos moved."],
+        _ => null
+    };
 
     private IReadOnlyList<CollectionSummary> Lista = [];
 
