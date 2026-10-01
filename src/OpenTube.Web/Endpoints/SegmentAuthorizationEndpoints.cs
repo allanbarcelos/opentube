@@ -5,14 +5,15 @@ using Microsoft.Extensions.Options;
 using OpenTube.Domain.Access;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Playback;
+using OpenTube.Infrastructure.Services;
 using OpenTube.Web.Auth;
 
 namespace OpenTube.Web.Endpoints;
 
 /// <summary>
-/// Autorização de cada segmento de vídeo, para quando o servidor da frente entrega os
-/// arquivos. A aplicação decide e o servidor transporta: assim a revogação vale no segmento
-/// seguinte, e a aplicação não gasta banda nem memória com bytes de vídeo.
+/// Autorização de cada arquivo de vídeo e da capa da coleção, para quando o servidor da
+/// frente entrega os arquivos. A aplicação decide e o servidor transporta: assim a revogação
+/// vale no segmento seguinte, e a aplicação não gasta banda nem memória com bytes de vídeo.
 /// </summary>
 public static class SegmentAuthorizationEndpoints
 {
@@ -25,6 +26,7 @@ public static class SegmentAuthorizationEndpoints
         rotas.MapMethods("/_authz", ["GET", "HEAD"], async (
             IOptions<StorageOptions> options,
             PlaybackService playback,
+            CollectionThumbnailService miniaturas,
             CurrentViewer espectadores,
             HttpContext contexto,
             CancellationToken cancellationToken) =>
@@ -33,11 +35,20 @@ public static class SegmentAuthorizationEndpoints
                 return Results.StatusCode(StatusCodes.Status404NotFound);
 
             var caminho = EnderecoOriginal(contexto);
-
-            if (ExtrairSegmento(caminho, options.Value.SegmentPath) is not { } segmento)
-                return Results.Forbid();
-
+            var prefixo = options.Value.SegmentPath;
             var espectador = await espectadores.GetAsync(cancellationToken);
+
+            // A capa não fica numa pasta de vídeo. Sem este ramo o servidor da frente recusa
+            // o endereço assinado e a imagem não carrega para quem já pode ver a coleção.
+            if (ExtrairMiniaturaDeColecao(caminho, prefixo) is { } capa)
+            {
+                return await miniaturas.PodeEntregarAsync(capa.Key, espectador, cancellationToken)
+                    ? Results.Ok()
+                    : Results.Forbid();
+            }
+
+            if (ExtrairSegmento(caminho, prefixo) is not { } segmento)
+                return Results.Forbid();
 
             // Não conta visualização: o bilhete da playlist principal é que autoriza o resto.
             // A chave tem de ser a geração publicada, senão a anterior continua saindo.
@@ -73,11 +84,44 @@ public static class SegmentAuthorizationEndpoints
     /// <summary>Vídeo e chave no bucket, já sem o prefixo público do caminho.</summary>
     public readonly record struct SegmentoPedido(Guid VideoId, string Key);
 
+    /// <summary>Capa da coleção e a chave exata no bucket.</summary>
+    public readonly record struct MiniaturaDeColecao(Guid CollectionId, string Key);
+
     /// <summary>
     /// Extrai o vídeo e a chave do caminho. Devolve <c>null</c> para qualquer coisa fora do
     /// formato esperado, o que faz a autorização recusar em vez de adivinhar.
     /// </summary>
     public static SegmentoPedido? ExtrairSegmento(string? caminho, string prefixo)
+    {
+        var partes = PartesDoCaminho(caminho, prefixo);
+
+        return partes is { Length: >= 2 } && Guid.TryParse(partes[0], out var videoId)
+            ? new SegmentoPedido(videoId, string.Join('/', partes))
+            : null;
+    }
+
+    /// <summary>
+    /// Extrai a capa no formato gravado pelo storage: <c>collections/{id}/thumb-{versão}.jpg</c>.
+    /// Outra pasta, outra versão ou um caminho que muda de diretório não passa.
+    /// </summary>
+    public static MiniaturaDeColecao? ExtrairMiniaturaDeColecao(string? caminho, string prefixo)
+    {
+        if (PartesDoCaminho(caminho, prefixo) is not [var pasta, var idTexto, var arquivo])
+            return null;
+
+        if (!string.Equals(pasta, "collections", StringComparison.Ordinal)
+            || !Guid.TryParseExact(idTexto, "n", out var collectionId)
+            || !ArquivoDeMiniatura(arquivo))
+            return null;
+
+        return new MiniaturaDeColecao(collectionId, string.Join('/', ["collections", idTexto, arquivo]));
+    }
+
+    /// <summary>
+    /// Partes do caminho depois do prefixo público. Devolve <c>null</c> quando o caminho pode
+    /// escapar da pasta: codificação, barra duplicada, barra invertida ou <c>..</c>.
+    /// </summary>
+    private static string[]? PartesDoCaminho(string? caminho, string prefixo)
     {
         if (string.IsNullOrWhiteSpace(caminho))
             return null;
@@ -96,11 +140,23 @@ public static class SegmentAuthorizationEndpoints
 
         var partes = limpo[raiz.Length..].Split('/');
 
-        if (partes.Any(p => p is "" or "." or ".."))
-            return null;
+        return partes.Any(p => p is "" or "." or "..") ? null : partes;
+    }
 
-        return partes.Length >= 2 && Guid.TryParse(partes[0], out var videoId)
-            ? new SegmentoPedido(videoId, string.Join('/', partes))
-            : null;
+    /// <summary>Nome canônico <c>thumb-{versão}.jpg</c>, com versão positiva e sem zero à esquerda.</summary>
+    private static bool ArquivoDeMiniatura(string arquivo)
+    {
+        const string inicio = "thumb-";
+        const string fim = ".jpg";
+
+        if (!arquivo.StartsWith(inicio, StringComparison.Ordinal) || !arquivo.EndsWith(fim, StringComparison.Ordinal))
+            return false;
+
+        var numero = arquivo[inicio.Length..^fim.Length];
+
+        return numero.Length is > 0 and <= 19
+            && numero.All(char.IsAsciiDigit)
+            && numero[0] != '0'
+            && long.TryParse(numero, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out _);
     }
 }

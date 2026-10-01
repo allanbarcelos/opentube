@@ -2,7 +2,9 @@
 // Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
 using System.Net;
+using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Storage;
 using OpenTube.TestSupport;
 using OpenTube.Web.Endpoints;
 using OpenTube.Web.Tests.Support;
@@ -46,6 +48,30 @@ public class CaminhoDoSegmentoTests
     {
         Assert.Equal(Video, SegmentAuthorizationEndpoints.ExtrairVideo(
             "/midia/0199a0b0-0000-7000-8000-000000000001/seg.m4s", "midia"));
+    }
+
+    [Fact]
+    public void Extrai_a_capa_da_colecao()
+    {
+        var capa = SegmentAuthorizationEndpoints.ExtrairMiniaturaDeColecao(
+            "/vod/collections/0199a0b00000700080000000000000aa/thumb-10.jpg?v=1", "/vod");
+
+        Assert.Equal(Guid.Parse("0199a0b0-0000-7000-8000-0000000000aa"), capa?.CollectionId);
+        Assert.Equal("collections/0199a0b00000700080000000000000aa/thumb-10.jpg", capa?.Key);
+    }
+
+    [Theory]
+    [InlineData("/vod/collections/0199a0b0-0000-7000-8000-0000000000aa/thumb-10.jpg")]
+    [InlineData("/vod/collections/0199a0b00000700080000000000000aa/thumb-0.jpg")]
+    [InlineData("/vod/collections/0199a0b00000700080000000000000aa/thumb-01.jpg")]
+    [InlineData("/vod/collections/0199a0b00000700080000000000000aa/thumb-10.png")]
+    [InlineData("/vod/collections/0199a0b00000700080000000000000aa/thumb-10.jpg/extra")]
+    [InlineData("/vod/collections/0199a0b00000700080000000000000aa/../thumb-10.jpg")]
+    [InlineData("/vod/collections/%2e%2e/0199a0b00000700080000000000000aa/thumb-10.jpg")]
+    [InlineData("/vod/0199a0b0-0000-7000-8000-000000000001/thumb.jpg")]
+    public void Capa_fora_do_formato_nao_autoriza(string caminho)
+    {
+        Assert.Null(SegmentAuthorizationEndpoints.ExtrairMiniaturaDeColecao(caminho, "/vod"));
     }
 }
 
@@ -165,6 +191,47 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
 
         // É a diferença em relação ao endereço assinado: o corte vale no segmento seguinte.
         Assert.NotEqual(HttpStatusCode.OK, (await PerguntarAsync(cliente, $"/vod/{video.Id}/360p/seg-2.m4s")).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_capa_da_colecao_visivel_e_autorizada_e_a_outra_nao()
+    {
+        using var storage = minio.CreateStorage();
+        var aberta = await AcervoDeTeste.PublicarAsync(postgres, storage, "Aberta", VideoVisibility.Public);
+        var fechada = await AcervoDeTeste.PublicarAsync(postgres, storage, "Fechada", VideoVisibility.Private);
+
+        string chaveAberta, chaveFechada;
+        Guid colecaoAberta;
+        await using (var db = postgres.CreateContext())
+        {
+            var agora = DateTimeOffset.UtcNow;
+            var autor = Guid.CreateVersion7();
+
+            var publica = Collection.Create("Aberta", "aberta", autor, agora);
+            publica.Add(aberta.Id, agora);
+            chaveAberta = StorageKeys.CollectionThumbnail(publica.Id, 10);
+            publica.SetThumbnail(chaveAberta, 10);
+
+            var privada = Collection.Create("Fechada", "fechada", autor, agora);
+            privada.Add(fechada.Id, agora);
+            chaveFechada = StorageKeys.CollectionThumbnail(privada.Id, 10);
+            privada.SetThumbnail(chaveFechada, 10);
+
+            db.Collections.AddRange(publica, privada);
+            await db.SaveChangesAsync();
+            colecaoAberta = publica.Id;
+        }
+
+        using var cliente = _app.CreateBrowser();
+
+        Assert.Equal(HttpStatusCode.OK, (await PerguntarAsync(cliente, "/vod/" + chaveAberta)).StatusCode);
+        Assert.NotEqual(HttpStatusCode.OK, (await PerguntarAsync(cliente, "/vod/" + chaveFechada)).StatusCode);
+        Assert.NotEqual(HttpStatusCode.OK,
+            (await PerguntarAsync(cliente, $"/vod/collections/{colecaoAberta:n}/thumb-11.jpg")).StatusCode);
+
+        await EntrarComoAdminAsync(cliente);
+
+        Assert.Equal(HttpStatusCode.OK, (await PerguntarAsync(cliente, "/vod/" + chaveFechada)).StatusCode);
     }
 
     [Fact]

@@ -82,16 +82,42 @@ public class CollectionThumbnailService(
         if (colecao?.ThumbnailKey is null)
             return null;
 
-        if (!viewer.IsAdmin)
-        {
-            if (colecao.DeletedAt is not null)
-                return null;
-
-            if (!await catalogo.CollectionIsVisibleAsync(viewer, collectionId, cancellationToken))
-                return null;
-        }
+        if (!await LiberadaAsync(collectionId, colecao.DeletedAt, viewer, cancellationToken))
+            return null;
 
         return storage.SignDownloadUrl(StorageBucket.Vod, colecao.ThumbnailKey, storageOptions.Value.PlaybackUrlLifetime);
+    }
+
+    /// <summary>
+    /// O servidor da frente pergunta isto antes de entregar a capa. Só a imagem atual da
+    /// coleção, e só para quem já pode vê-la. Administrador vê mesmo a coleção excluída.
+    /// </summary>
+    public async Task<bool> PodeEntregarAsync(string chave, Viewer viewer, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(viewer);
+        ArgumentException.ThrowIfNullOrWhiteSpace(chave);
+
+        var colecao = await db.Collections
+            .AsNoTracking()
+            .Where(c => c.ThumbnailKey == chave)
+            .Select(c => new { c.Id, c.DeletedAt })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return colecao is not null
+            && await LiberadaAsync(colecao.Id, colecao.DeletedAt, viewer, cancellationToken);
+    }
+
+    /// <summary>Mesma regra da URL assinada e da autorização por pedido.</summary>
+    private async Task<bool> LiberadaAsync(
+        Guid collectionId, DateTimeOffset? deletedAt, Viewer viewer, CancellationToken cancellationToken)
+    {
+        if (viewer.IsAdmin)
+            return true;
+
+        if (deletedAt is not null)
+            return false;
+
+        return await catalogo.CollectionIsVisibleAsync(viewer, collectionId, cancellationToken);
     }
 
     private async Task<Domain.Entities.Collection> CarregarAsync(Guid collectionId, CancellationToken cancellationToken) =>

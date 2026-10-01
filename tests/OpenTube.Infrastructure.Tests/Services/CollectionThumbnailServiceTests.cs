@@ -53,6 +53,14 @@ public class CollectionThumbnailServiceTests(PostgresFixture postgres, MinioFixt
         Assert.Null(daPrivada);
         Assert.NotNull(await servico.GetUrlAsync(privada, admin));
         Assert.Null(await servico.GetUrlAsync(Guid.CreateVersion7(), admin));
+
+        var chavePublica = (await db.Collections.AsNoTracking().SingleAsync(c => c.Id == publica)).ThumbnailKey!;
+        var chavePrivada = (await db.Collections.AsNoTracking().SingleAsync(c => c.Id == privada)).ThumbnailKey!;
+
+        Assert.True(await servico.PodeEntregarAsync(chavePublica, Viewer.Anonymous));
+        Assert.False(await servico.PodeEntregarAsync(chavePrivada, Viewer.Anonymous));
+        Assert.True(await servico.PodeEntregarAsync(chavePrivada, admin));
+        Assert.False(await servico.PodeEntregarAsync($"collections/{publica:n}/thumb-1.jpg", Viewer.Anonymous));
     }
 
     [Fact]

@@ -18,7 +18,11 @@
 		}
 
 		rewrite * /vod{uri}
-		reverse_proxy minio:9000
+		# A URL não identifica quem pode ver. Sem isto, um cache compartilhado na frente
+		# guardaria o arquivo de um visitante e o entregaria a outro.
+		reverse_proxy minio:9000 {
+			header_down Cache-Control "private, max-age=3600"
+		}
 	}
 
 	# Envio direto do navegador. A autorização é a assinatura da URL; o Host tem de ser
