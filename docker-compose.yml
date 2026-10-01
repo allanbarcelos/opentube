@@ -37,8 +37,10 @@ services:
 
   mailpit:
     image: axllent/mailpit:latest
+    # Só nesta máquina: o Mailpit mostra os códigos de acesso de todo mundo, inclusive do
+    # administrador. Publicado em todas as interfaces, qualquer um na rede entraria.
     ports:
-      - "8025:8025"
+      - "127.0.0.1:8025:8025"
     environment:
       MP_MAX_MESSAGES: 5000
       MP_SMTP_AUTH_ACCEPT_ANY: 1

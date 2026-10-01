@@ -2,18 +2,19 @@
 # Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
 # Portas só para o hot-reload: a aplicação roda no host e precisa alcançar banco,
-# storage e SMTP. Não use este arquivo no `make up`.
+# storage e SMTP. Não use este arquivo no `make up`. Publicadas só em 127.0.0.1: as senhas
+# de desenvolvimento não podem ficar ao alcance de quem está na mesma rede.
 
 services:
   postgres:
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   minio:
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
 
   mailpit:
     ports:
-      - "1025:1025"
+      - "127.0.0.1:1025:1025"
