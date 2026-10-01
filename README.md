@@ -139,7 +139,7 @@ user are kept.
 | --- | --- | --- |
 | Public hostname | Let's Encrypt, or a certificate file you provide | 80 and 443 |
 | Local network | Internal certificate | 80 and 443, private networks only |
-| Cloudflare | Cloudflare terminates HTTPS; the origin answers HTTP | One port (default 8080), Cloudflare ranges only |
+| Cloudflare | Cloudflare terminates HTTPS; the origin answers HTTPS too | One port (default 8443), Cloudflare ranges only |
 
 On a public hostname the installer asks which certificate to use. Let's Encrypt is the
 default: Caddy requests it, and the email is the account for expiry notices. The other
@@ -158,9 +158,13 @@ In Cloudflare mode, the origin port is restricted to Cloudflare's ranges in UFW 
 `DOCKER-USER` (Docker-published ports skip UFW), through a systemd unit that reapplies the rules
 after Docker starts. A monthly cron job refreshes the ranges. Caddy trusts `CF-Connecting-IP` only
 on connections coming from those ranges, so the application sees the real visitor address. In the
-Cloudflare dashboard: a proxied DNS record, SSL/TLS set to Flexible, Always Use HTTPS, and an
-Origin Rule when the port is not one Cloudflare proxies as is (80, 8080, 8880, 2052, 2082, 2086,
-2095). Serving video through Cloudflare's CDN is subject to their plan terms.
+Cloudflare dashboard: a proxied DNS record, SSL/TLS set to Full (Caddy's own certificate) or
+Full (strict) (a Cloudflare Origin CA certificate, which the installer imports), Always Use HTTPS,
+and an Origin Rule pointing at the port unless it is 443. The connection between Cloudflare and the
+server is encrypted: with Flexible, session cookies and sign-in codes would cross the internet in
+the clear. Installations made with Flexible keep it on `update.sh`, because switching without
+changing the dashboard first would take the site down; run the installer without `--update` to
+move to HTTPS. Serving video through Cloudflare's CDN is subject to their plan terms.
 
 Caddy is published in host mode: Swarm's ingress mesh would replace the visitor address with an
 internal one, and the per-origin limits would apply to everyone at once.

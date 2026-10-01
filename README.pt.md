@@ -140,7 +140,7 @@ do banco que já existem são mantidos.
 | --- | --- | --- |
 | Domínio público | Let's Encrypt, ou um ficheiro de certificado indicado por si | 80 e 443 |
 | Rede local | Certificado interno | 80 e 443, só redes privadas |
-| Cloudflare | A Cloudflare termina o HTTPS; a origem responde em HTTP | Uma porta (padrão 8080), só faixas da Cloudflare |
+| Cloudflare | A Cloudflare termina o HTTPS; a origem também responde em HTTPS | Uma porta (padrão 8443), só faixas da Cloudflare |
 
 No domínio público o instalador pergunta qual certificado usar. Let's Encrypt é o padrão:
 o Caddy pede o certificado, e o email é a conta dos avisos de expiração. A outra opção é um
@@ -159,9 +159,13 @@ No modo Cloudflare, a porta da origem fica restrita às faixas da Cloudflare no 
 `DOCKER-USER` (porta publicada pelo Docker não passa pelo UFW), com uma unidade systemd que
 reaplica as regras depois que o Docker sobe. Um cron mensal atualiza as faixas. O Caddy só aceita
 o `CF-Connecting-IP` em conexões vindas dessas faixas, então a aplicação vê o endereço real de
-quem acessa. No painel da Cloudflare: registro DNS com proxy, SSL/TLS em Flexible, Always Use
-HTTPS e uma Origin Rule quando a porta não é uma das que a Cloudflare repassa direto (80, 8080,
-8880, 2052, 2082, 2086, 2095). Servir vídeo pela CDN da Cloudflare está sujeito aos termos do plano.
+quem acessa. No painel da Cloudflare: registro DNS com proxy, SSL/TLS em Full (certificado do
+próprio Caddy) ou Full (strict) (certificado Origin CA da Cloudflare, que o instalador importa),
+Always Use HTTPS e uma Origin Rule apontando para a porta, a não ser que ela seja a 443. A conexão
+entre a Cloudflare e o servidor é cifrada: em Flexible, cookies de sessão e códigos de acesso
+atravessariam a internet em texto claro. Instalações feitas em Flexible continuam assim no
+`update.sh`, porque trocar sem mudar o painel antes derrubaria o site; rode o instalador sem
+`--update` para passar a HTTPS. Servir vídeo pela CDN da Cloudflare está sujeito aos termos do plano.
 
 O Caddy é publicado em modo host: a malha de ingress do Swarm trocaria o endereço de quem acessa
 por um interno, e os limites por origem passariam a valer para todo mundo de uma vez.

@@ -62,8 +62,9 @@ denial-of-service or volume tests against someone else's server.
 - **Privacy**: exposing viewers' emails, IP addresses, or viewing history to anyone other than
   the administrators.
 - **Deployment**: `install.sh` or `update.sh` leaving secrets on disk or in logs, opening ports
-  beyond what the chosen mode needs, or letting the origin be reached around Cloudflare in
-  Cloudflare mode; the published images carrying secrets.
+  beyond what the chosen mode needs, letting the origin be reached around Cloudflare in
+  Cloudflare mode, or traffic between Cloudflare and the origin going unencrypted on a new
+  installation; the published images carrying secrets.
 
 **Out of scope** — known and documented limits:
 

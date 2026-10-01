@@ -1017,7 +1017,7 @@ _access_default="1"
 echo -e "  ${BOLD}Access${NC}"
 echo -e "  ${BOLD}1)${NC} Public hostname — Let's Encrypt or your own certificate (ports 80 and 443)"
 echo -e "  ${BOLD}2)${NC} Local network — internal certificate, UFW limited to private networks"
-echo -e "  ${BOLD}3)${NC} Cloudflare — Cloudflare terminates HTTPS; this server answers HTTP on one"
+echo -e "  ${BOLD}3)${NC} Cloudflare — Cloudflare terminates HTTPS; this server answers HTTPS on one"
 echo -e "     port that only Cloudflare can reach (UFW and DOCKER-USER)"
 echo ""
 while [[ "$UPDATE_MODE" == "n" ]]; do
@@ -1034,6 +1034,7 @@ fi
 
 CERTBOT_EMAIL=""
 APP_PORT=""
+CF_ORIGIN_TLS=""
 CERT_FILE=""
 KEY_FILE=""
 CHAIN_FILE=""
@@ -1049,9 +1050,41 @@ if [[ "$ACCESS_CHOICE" == "3" ]]; then
   [[ "$PUBLIC_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}$ ]] \
     || die "Invalid domain: ${PUBLIC_HOST}"
 
-  # 8080 is one of the HTTP ports Cloudflare proxies without an Origin Rule.
+  # Cloudflare talks to this server over HTTPS (SSL mode Full): between Cloudflare and the
+  # origin, session cookies and sign-in codes no longer travel in the clear. With a Cloudflare
+  # Origin CA certificate the mode can be Full (strict), which also checks who answers.
+  # An installation from before this choice ("off": plain HTTP, SSL mode Flexible) keeps it on
+  # --update: switching without changing the dashboard first would take the site down.
+  _cf_tls_default="$(read_conf "$INSTALL_CONF" CF_ORIGIN_TLS)"
+  if [[ "$UPDATE_MODE" == "y" ]]; then
+    CF_ORIGIN_TLS="${_cf_tls_default:-off}"
+    answered "Origin connection" "$CF_ORIGIN_TLS"
+  else
+    _cf_choice_default="1"
+    [[ "$_cf_tls_default" == "certificate" ]] && _cf_choice_default="2"
+    echo ""
+    echo -e "  ${BOLD}Connection from Cloudflare to this server${NC}"
+    echo -e "  ${BOLD}1)${NC} HTTPS with Caddy's own certificate — SSL/TLS mode ${BOLD}Full${NC}"
+    echo -e "  ${BOLD}2)${NC} HTTPS with a Cloudflare Origin CA certificate — SSL/TLS mode ${BOLD}Full (strict)${NC}"
+    echo -e "     ${DIM}Create it in the dashboard: SSL/TLS → Origin Server → Create Certificate.${NC}"
+    echo ""
+    while true; do
+      read -rp "$(echo -e "  ${BOLD}Connection${NC} ${DIM}[${_cf_choice_default}]${NC}: ")" _cf_choice </dev/tty
+      _cf_choice="${_cf_choice:-$_cf_choice_default}"
+      [[ "$_cf_choice" =~ ^[12]$ ]] && break
+      echo -e "  ${RED}Choose 1 or 2.${NC}"
+    done
+    CF_ORIGIN_TLS="internal"
+    [[ "$_cf_choice" == "2" ]] && CF_ORIGIN_TLS="certificate"
+  fi
+  [[ "$CF_ORIGIN_TLS" == "certificate" ]] && prepare_own_certificate
+
+  # 8443 is one of the HTTPS ports Cloudflare proxies; 8080 the HTTP one older installations use.
   _port_default="$(read_conf "$INSTALL_CONF" APP_PORT)"
-  [[ -z "$_port_default" ]] && _port_default="8080"
+  if [[ -z "$_port_default" ]]; then
+    _port_default="8443"
+    [[ "$CF_ORIGIN_TLS" == "off" ]] && _port_default="8080"
+  fi
   while true; do
     ask "Port Cloudflare connects to on this server" "$_port_default" APP_PORT
     if ! [[ "$APP_PORT" =~ ^[0-9]+$ && "$APP_PORT" -ge 1 && "$APP_PORT" -le 65535 ]]; then
@@ -1202,11 +1235,16 @@ case "$INSTALL_MODE" in
   letsencrypt) ACCESS_LABEL="public hostname, Let's Encrypt" ;;
   certificate) ACCESS_LABEL="public hostname, own certificate" ;;
   local) ACCESS_LABEL="local network" ;;
-  cloudflare) ACCESS_LABEL="Cloudflare" ;;
+  cloudflare)
+    case "$CF_ORIGIN_TLS" in
+      certificate) ACCESS_LABEL="Cloudflare, HTTPS with Origin CA certificate (Full strict)" ;;
+      internal) ACCESS_LABEL="Cloudflare, HTTPS with Caddy's certificate (Full)" ;;
+      *) ACCESS_LABEL="Cloudflare, plain HTTP to this server (Flexible)" ;;
+    esac ;;
   *) ACCESS_LABEL="$INSTALL_MODE" ;;
 esac
 echo -e "  Access      : ${CYAN}${ACCESS_LABEL}${NC}  ${PUBLIC_URL}"
-if [[ "$INSTALL_MODE" == "certificate" ]]; then
+if [[ "$INSTALL_MODE" == "certificate" || "$CF_ORIGIN_TLS" == "certificate" ]]; then
   echo -e "  Certificate : ${CYAN}${CERT_LABEL}${NC}"
 fi
 echo -e "  MinIO     : ${CYAN}${MINIO_DATA_DIR}${NC}"
@@ -1439,13 +1477,15 @@ SITE_ADDRESS="${PUBLIC_HOST}"
 PROXY_HEADERS=""
 CADDY_CERT_LABEL=""
 CF_TRUSTED="${APP_DIR}/etc/cloudflare-trusted.caddy"
-if [[ "$INSTALL_MODE" != "certificate" && -d "${APP_DIR}/etc/tls" ]]; then
+if [[ "$INSTALL_MODE" != "certificate" && "$CF_ORIGIN_TLS" != "certificate" && -d "${APP_DIR}/etc/tls" ]]; then
   # The copy made for a previous "own certificate" run. This mode does not use
   # it, and the key would otherwise stay on disk with nothing pointing at it.
   rm -rf "${APP_DIR}/etc/tls"
   info "Removed the previously installed certificate; this mode does not use it."
 fi
-if [[ "$INSTALL_MODE" == "certificate" ]]; then
+# Copies the converted certificate where Caddy reads it. Used by the "own certificate" mode
+# and by Cloudflare with an Origin CA certificate.
+install_tls_files() {
   # The converted files live on the host. Caddy only ever sees the fixed
   # paths inside the container, so a strange character in the original path
   # cannot change the Caddyfile.
@@ -1472,12 +1512,23 @@ if [[ "$INSTALL_MODE" == "certificate" ]]; then
         opentube.certificate: \"${CERT_FINGERPRINT}\""
   fi
   ok "Certificate installed for Caddy"
+}
+
+if [[ "$INSTALL_MODE" == "certificate" ]]; then
+  install_tls_files
 elif [[ "$INSTALL_MODE" == "local" ]]; then
   TLS_LINE=$'\n\ttls internal'
 elif [[ "$INSTALL_MODE" == "cloudflare" ]]; then
-  # Cloudflare terminates TLS and talks plain HTTP to this port. The real client
+  # Cloudflare terminates the visitor's TLS and opens its own connection to this port: HTTPS,
+  # or plain HTTP on installations that kept the old Flexible mode. The real client
   # comes in CF-Connecting-IP, trusted only when the connection itself comes from
   # a Cloudflare range; the application receives it as X-Forwarded-For.
+  case "$CF_ORIGIN_TLS" in
+    certificate)
+      install_tls_files ;;
+    internal)
+      TLS_LINE=$'\n\ttls internal' ;;
+  esac
   fetch_cloudflare_ips
   printf '%s\n' "$CF_IPV4" > "${APP_DIR}/etc/cloudflare-ips-v4.txt"
   printf '%s\n' "$CF_IPV6" > "${APP_DIR}/etc/cloudflare-ips-v6.txt"
@@ -1492,7 +1543,8 @@ elif [[ "$INSTALL_MODE" == "cloudflare" ]]; then
 	}
 }
 "
-  SITE_ADDRESS="http://${PUBLIC_HOST}"
+  SITE_ADDRESS="https://${PUBLIC_HOST}"
+  [[ "$CF_ORIGIN_TLS" == "off" ]] && SITE_ADDRESS="http://${PUBLIC_HOST}"
   PROXY_HEADERS=$'\n\t\t\theader_up X-Forwarded-For {client_ip}\n\t\t\theader_up X-Forwarded-Proto https'
 else
   ACME_BLOCK="{
@@ -1566,12 +1618,18 @@ EOF
 # origin (rate limits, simultaneous playbacks, Cloudflare ranges).
 CADDY_EXTRA_VOLUMES=""
 if [[ "$INSTALL_MODE" == "cloudflare" ]]; then
-  CADDY_PORTS="      - target: 80
+  CF_TARGET_PORT="443"
+  [[ "$CF_ORIGIN_TLS" == "off" ]] && CF_TARGET_PORT="80"
+  CADDY_PORTS="      - target: ${CF_TARGET_PORT}
         published: ${APP_PORT}
         protocol: tcp
         mode: host"
   CADDY_EXTRA_VOLUMES="
       - ${CF_TRUSTED}:/etc/caddy/cloudflare-trusted.caddy:ro"
+  if [[ "$CF_ORIGIN_TLS" == "certificate" ]]; then
+    CADDY_EXTRA_VOLUMES="${CADDY_EXTRA_VOLUMES}
+      - ${APP_DIR}/etc/tls:/etc/caddy/certs:ro"
+  fi
 else
   CADDY_PORTS="      - target: 80
         published: 80
@@ -1854,6 +1912,7 @@ CERT_FILE='${CERT_FILE}'
 KEY_FILE='${KEY_FILE}'
 CHAIN_FILE='${CHAIN_FILE}'
 APP_PORT='${APP_PORT}'
+CF_ORIGIN_TLS='${CF_ORIGIN_TLS}'
 WHISPER_ENABLED='${WHISPER_ENABLED}'
 WHISPER_VARIANT='${WHISPER_VARIANT}'
 WHISPER_MODEL='${WHISPER_MODEL}'
@@ -2145,7 +2204,7 @@ phase "PHASE 12 — Summary"
 echo ""
 sep
 echo -e "  URL       : ${BOLD}${PUBLIC_URL}${NC}"
-if [[ "$INSTALL_MODE" == "certificate" ]]; then
+if [[ "$INSTALL_MODE" == "certificate" || "$CF_ORIGIN_TLS" == "certificate" ]]; then
   echo -e "  Certificate : ${BOLD}${CERT_LABEL}${NC}"
   echo -e "  ${DIM}Caddy reads it from ${APP_DIR}/etc/tls. Run the installer again to replace the file.${NC}"
 fi
@@ -2176,15 +2235,28 @@ if [[ "$INSTALL_MODE" == "cloudflare" ]]; then
   echo ""
   echo -e "  ${BOLD}Cloudflare${NC} (dashboard, zone of ${PUBLIC_HOST})"
   echo -e "  - DNS: record for ${PUBLIC_HOST} pointing at this server, ${BOLD}proxied${NC} (orange cloud)."
-  echo -e "  - SSL/TLS: ${BOLD}Flexible${NC} (for the zone, or a Configuration Rule for this hostname) —"
-  echo -e "    the origin answers plain HTTP."
-  echo -e "    Turn on ${BOLD}Always Use HTTPS${NC}: the application builds its links with https."
-  case "$APP_PORT" in
-    80|8080|8880|2052|2082|2086|2095)
-      echo -e "  - Port ${APP_PORT} is one Cloudflare proxies as is; no Origin Rule needed." ;;
+  case "$CF_ORIGIN_TLS" in
+    certificate)
+      echo -e "  - SSL/TLS: ${BOLD}Full (strict)${NC} (for the zone, or a Configuration Rule for this hostname)." ;;
+    internal)
+      echo -e "  - SSL/TLS: ${BOLD}Full${NC} (for the zone, or a Configuration Rule for this hostname)."
+      echo -e "    ${DIM}For Full (strict), run the installer again and choose an Origin CA certificate.${NC}" ;;
     *)
-      echo -e "  - ${YELLOW}Origin Rule${NC}: hostname ${PUBLIC_HOST} → destination port ${APP_PORT}." ;;
+      echo -e "  - SSL/TLS: ${BOLD}Flexible${NC} — the origin answers plain HTTP."
+      echo -e "    ${YELLOW}Cookies and sign-in codes cross the internet unencrypted between Cloudflare and this${NC}"
+      echo -e "    ${YELLOW}server. Run the installer again (without --update) to switch to HTTPS.${NC}" ;;
   esac
+  echo -e "    Turn on ${BOLD}Always Use HTTPS${NC}: the application builds its links with https."
+  if [[ "$CF_ORIGIN_TLS" == "off" ]]; then
+    case "$APP_PORT" in
+      80|8080|8880|2052|2082|2086|2095)
+        echo -e "  - Port ${APP_PORT} is one Cloudflare proxies as is; no Origin Rule needed." ;;
+      *)
+        echo -e "  - ${YELLOW}Origin Rule${NC}: hostname ${PUBLIC_HOST} → destination port ${APP_PORT}." ;;
+    esac
+  elif [[ "$APP_PORT" != "443" ]]; then
+    echo -e "  - ${YELLOW}Origin Rule${NC}: hostname ${PUBLIC_HOST} → destination port ${APP_PORT}."
+  fi
   echo -e "  - Origin port ${APP_PORT} only answers Cloudflare (UFW + DOCKER-USER); ranges refreshed monthly."
   echo -e "  ${DIM}Serving video through Cloudflare's CDN is subject to their plan terms; check them for your volume.${NC}"
 fi
