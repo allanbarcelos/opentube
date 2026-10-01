@@ -895,7 +895,23 @@ rebuilds both. The decision is `.github/scripts/changed.sh`, and the job summary
 ran or was skipped.
 
 Every published `app` or `worker` image gets the next `A.B.C.D` version and a GitHub Release
-listing the commits that went into it. The gist job needs a `GIST_TOKEN` secret with the `gist`
+listing the commits that went into it. **A** is the engine, **B** a feature, **C** an improvement,
+and **D** a bug fix; a bump resets every level to its right, and one push bumps once, at the highest
+level among its commits. Each commit states its level on a line of its own in the message body —
+the subject stays a plain sentence:
+
+```
+Allows marking a video as a favorite
+
+Why and how, in a few lines.
+
+Tipo: feature
+```
+
+`Tipo:` takes `motor`, `feature`, `melhoria` or `correção` (`engine`, `improvement` and `fix` work
+too). A commit without it falls back to a Conventional Commits prefix (`feat:`, `improve:`) and,
+failing that, counts as a bug fix. `BUMP_DRY_RUN=1 bash .github/scripts/bump-version.sh app <paths>`
+shows how each commit was read and the version it would produce, without tagging. The gist job needs a `GIST_TOKEN` secret with the `gist`
 scope and the `GIST_ID` repository variable; the first run without `GIST_ID` creates the gist and
 prints the id to save.
 

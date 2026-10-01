@@ -890,7 +890,23 @@ contrário). Código compartilhado pelos dois (Domain, Infrastructure, Shared, o
 job diz por que o build rodou ou foi pulado.
 
 Cada imagem de `app` ou `worker` publicada recebe a próxima versão `A.B.C.D` e uma GitHub Release
-com a lista dos commits que entraram nela. O job do gist precisa do segredo `GIST_TOKEN`, com o
+com a lista dos commits que entraram nela. **A** é o motor, **B** uma feature, **C** uma melhoria e
+**D** uma correção; subir um nível zera os da direita, e cada envio sobe uma vez, no nível mais alto
+entre os seus commits. Cada commit diz o seu nível numa linha própria no corpo da mensagem — o
+título continua uma frase comum:
+
+```
+Permite favoritar vídeos
+
+O porquê e o como, em poucas linhas.
+
+Tipo: feature
+```
+
+`Tipo:` aceita `motor`, `feature`, `melhoria` ou `correção` (também `engine`, `improvement` e
+`fix`). Sem ele, vale o prefixo do Conventional Commits (`feat:`, `improve:`) e, na falta dele, o
+commit conta como correção. `BUMP_DRY_RUN=1 bash .github/scripts/bump-version.sh app <caminhos>`
+mostra como cada commit foi lido e a versão que sairia, sem criar tag. O job do gist precisa do segredo `GIST_TOKEN`, com o
 escopo `gist`, e da variável de repositório `GIST_ID`; a primeira execução sem `GIST_ID` cria o
 gist e imprime o id para ser salvo.
 

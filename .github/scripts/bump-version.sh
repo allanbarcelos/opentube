@@ -10,16 +10,27 @@
 #   path     one or more git pathspecs the component is built from
 #
 # Version model (A.B.C.D). A bump resets every level to its right:
-#   A — breaking change        : commit type "feat!"/"fix!"/…, or a "BREAKING CHANGE:" footer
-#   B — new feature            : commit type "feat"
-#   C — improvement            : commit type "improve" or "perf"
-#   D — everything else        : fix, docs, chore, and any non-conventional subject
+#   A — engine      : a change to the platform's core
+#   B — feature     : a new capability
+#   C — improvement : a change or refinement of something that already exists
+#   D — bug fix     : anything else
+#
+# Each commit's level comes, in this order, from:
+#   1. a "Tipo:" line in the message body (the project's convention, which keeps
+#      the subject a plain sentence):
+#        Tipo: motor | feature | melhoria | correção
+#      English and unaccented spellings are accepted too (engine, improvement,
+#      fix, correcao).
+#   2. a Conventional Commits subject: "feat!:"/"fix!:"/… or a "BREAKING CHANGE:"
+#      footer -> A; "feat:" -> B; "improve:"/"perf:" -> C.
+#   3. otherwise, D.
 #
 # Only one bump is applied per run, at the highest level found among the commits
 # since this component's last tag.
 #
 # Prints the new tag on stdout. Prints nothing (and exits 0) when no commit
-# touched the given paths since the last tag.
+# touched the given paths since the last tag. With BUMP_DRY_RUN=1 it prints the
+# level of each commit and the tag it would create, without tagging or pushing.
 set -euo pipefail
 
 PREFIX="$1"
@@ -38,36 +49,61 @@ else
   RANGE="${LAST_TAG}..HEAD"
 fi
 
-SUBJECTS=$(git log "$RANGE" --format='%s' -- "${PATHS[@]}" || true)
-BODIES=$(git log "$RANGE" --format='%B' -- "${PATHS[@]}" || true)
+COMMITS=$(git log "$RANGE" --format='%H' -- "${PATHS[@]}" || true)
 
-if [ -z "$SUBJECTS" ]; then
+if [ -z "$COMMITS" ]; then
   exit 0
 fi
 
-LEVEL="D"
+# Level of a single commit, from its full message.
+nivel_do_commit() {
+  local mensagem="$1"
+  local assunto tipo
+  assunto=$(printf '%s\n' "$mensagem" | head -1)
 
-while IFS= read -r subject; do
-  [ -z "$subject" ] && continue
+  tipo=$(printf '%s\n' "$mensagem" \
+    | grep -iE '^[[:space:]]*Tipo:' | tail -1 \
+    | sed -E 's/^[[:space:]]*[Tt][Ii][Pp][Oo]:[[:space:]]*//; s/[[:space:]]+$//' \
+    | tr '[:upper:]' '[:lower:]')
 
-  if [[ "$subject" =~ ^[a-z]+(\([a-zA-Z0-9_,\ /-]+\))?!: ]]; then
-    LEVEL="A"; break
+  case "$tipo" in
+    motor|engine) echo A; return ;;
+    feature|funcionalidade) echo B; return ;;
+    melhoria|improvement) echo C; return ;;
+    "correção"|correcao|fix|bugfix) echo D; return ;;
+    "") ;;
+    *) echo "::warning::Unknown 'Tipo: ${tipo}' in \"${assunto}\" — counted as a bug fix." >&2 ;;
+  esac
+
+  if [[ "$assunto" =~ ^[a-z]+(\([a-zA-Z0-9_,\ /-]+\))?!: ]] \
+     || printf '%s\n' "$mensagem" | grep -q "^BREAKING CHANGE:"; then
+    echo A; return
   fi
 
-  TYPE=$(echo "$subject" | sed -E 's/^([a-z]+)(\(.+\))?:.*/\1/')
-  case "$TYPE" in
-    feat)
-      [ "$LEVEL" != "A" ] && LEVEL="B"
-      ;;
-    improve|perf)
-      [ "$LEVEL" != "A" ] && [ "$LEVEL" != "B" ] && LEVEL="C"
-      ;;
+  case "$(printf '%s\n' "$assunto" | sed -nE 's/^([a-z]+)(\(.+\))?:.*/\1/p')" in
+    feat) echo B ;;
+    improve|perf) echo C ;;
+    *) echo D ;;
   esac
-done <<< "$SUBJECTS"
+}
 
-if echo "$BODIES" | grep -q "BREAKING CHANGE:"; then
-  LEVEL="A"
-fi
+ordem() { case "$1" in A) echo 4 ;; B) echo 3 ;; C) echo 2 ;; *) echo 1 ;; esac; }
+
+LEVEL="D"
+
+while IFS= read -r hash; do
+  [ -z "$hash" ] && continue
+
+  nivel=$(nivel_do_commit "$(git log -1 --format='%B' "$hash")")
+
+  if [ "${BUMP_DRY_RUN:-}" = "1" ]; then
+    echo "${nivel}  $(git log -1 --format='%h %s' "$hash")" >&2
+  fi
+
+  if [ "$(ordem "$nivel")" -gt "$(ordem "$LEVEL")" ]; then
+    LEVEL="$nivel"
+  fi
+done <<< "$COMMITS"
 
 case "$LEVEL" in
   A) A=$((A + 1)); B=0; C=0; D=0 ;;
@@ -77,6 +113,12 @@ case "$LEVEL" in
 esac
 
 NEW_TAG="${PREFIX}-v${A}.${B}.${C}.${D}"
+
+if [ "${BUMP_DRY_RUN:-}" = "1" ]; then
+  echo "${LEVEL} bump from ${LAST_TAG}" >&2
+  echo "$NEW_TAG"
+  exit 0
+fi
 
 git tag -a "$NEW_TAG" -m "Auto-bump (${LEVEL}) from ${LAST_TAG}"
 git push origin "$NEW_TAG"
