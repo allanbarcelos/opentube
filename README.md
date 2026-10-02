@@ -340,7 +340,8 @@ reuses it after that.
 | Docker (Docker Desktop or Colima) | Dependencies and integration tests. `make` starts Colima if it is installed and stopped |
 | .NET 10 SDK | The application and the worker |
 | FFmpeg | Transcoding by the worker under `make watch`, and the sample catalog from `make mock`. Tests that use it are skipped without it |
-| Homebrew (optional) | `make whisper`, to turn on automatic captions |
+| Homebrew (optional) | `make whisper`, to turn on automatic captions. On Windows, install [whisper.cpp](https://github.com/ggml-org/whisper.cpp) by hand and put `whisper-cli` on the PATH |
+| `make` or PowerShell 7.2+ | The development targets: the `Makefile` on macOS and Linux, `make.ps1` (`pwsh`) on Windows |
 
 ### Quick start
 
@@ -349,6 +350,12 @@ git clone https://github.com/allanbarcelos/opentube.git
 cd opentube
 make watch
 ```
+
+On Windows, or on any system with PowerShell 7.2+ and no `make`, `make.ps1` has the same targets,
+with the variables turned into options: `./make.ps1 watch`, `./make.ps1 test -p Web`,
+`./make.ps1 logs -s app`, `./make.ps1 mock -videos 10 -collections 5.3-10`. With no argument it
+shows the menu. If the Windows execution policy blocks the script, use
+`pwsh -ExecutionPolicy Bypass -File .\make.ps1 watch`.
 
 Open http://localhost:5080 and sign in with the administrator email,
 `OPENTUBE_ADMIN_EMAIL` in `.env`; the code arrives in Mailpit, at
@@ -453,6 +460,10 @@ pure classes (access rules, interval merging, transcoding ladder calculation, ra
 testable without a database or network; the rest uses ephemeral containers.
 
 ### Make targets
+
+In `make.ps1` each target has the same name and the variables become options: `make test p=Web`
+is `./make.ps1 test -p Web`, `make restart s=app` is `./make.ps1 restart -s app`, `make whisper m=base`
+is `./make.ps1 whisper -m base`.
 
 | Target | What it does |
 | --- | --- |

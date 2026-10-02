@@ -31,7 +31,7 @@ IGNORADOS = (
 )
 
 # Extensão (ou nome de arquivo) → como comentar.
-LINHA = {".cs": "// {}", ".js": "// {}", ".sh": "# {}", ".py": "# {}", ".yml": "# {}", ".yaml": "# {}"}
+LINHA = {".cs": "// {}", ".js": "// {}", ".sh": "# {}", ".py": "# {}", ".ps1": "# {}", ".yml": "# {}", ".yaml": "# {}"}
 BLOCO = {
     ".css": ("/*", " * {}", " */"),
     ".razor": ("@*", "    {}", "*@"),
