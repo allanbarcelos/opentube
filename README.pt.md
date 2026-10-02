@@ -267,7 +267,9 @@ A pilha leva o nome da aplicação (`opentube` por padrão; hífens viram sublin
 `--update`: sem perguntas, com as respostas guardadas em `etc/install.conf` e os segredos que já
 existem. Tudo sai como a versão nova descreve — imagens, arquivo da pilha, Caddy, regras de
 firewall e o próprio `update.sh` —, então uma correção de infraestrutura chega do mesmo jeito que
-uma correção de código. Nada que exija decisão acontece sozinho: instalar o toolkit da NVIDIA,
+uma correção de código. No fim, todos os serviços são reiniciados, em ordem (banco e storage,
+depois aplicação e worker, por último o Caddy), para que nada siga com uma configuração antiga
+lida na partida. Por isso o site fica fora do ar por alguns segundos. Nada que exija decisão acontece sozinho: instalar o toolkit da NVIDIA,
 reiniciar o Docker ou ligar as legendas numa instalação que nunca as teve fica para uma execução
 interativa. Um download cortado, ou que não seja o instalador, é recusado antes de rodar qualquer
 coisa, e cada execução é acrescentada em `logs/update.log`.

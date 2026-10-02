@@ -1882,10 +1882,6 @@ if [[ -n "$SMTP_HOST" ]]; then
   fi
 fi
 
-# Caddy reads the Caddyfile only when it starts. Compared after the deploy, to restart it when
-# an update changed the file.
-CADDYFILE_BEFORE="$(cat "${APP_DIR}/etc/Caddyfile" 2>/dev/null || true)"
-
 cat > "${APP_DIR}/etc/Caddyfile" <<EOF
 ${ACME_BLOCK}${SITE_ADDRESS} {${TLS_LINE}
 	encode zstd gzip
@@ -2320,16 +2316,12 @@ ok "Stack, Caddy, update.sh, snapshot.sh, and rollback.sh"
 phase "PHASE 9 — Deploy"
 # ==============================================================================
 
+# Whether this run updates a stack that was already up: then it ends with a full restart.
+STACK_EXISTED="n"
+[[ -n "$(docker stack services "$STACK_NAME" --format '{{.Name}}' 2>/dev/null || true)" ]] && STACK_EXISTED="y"
+
 docker stack deploy --compose-file "$STACK_FILE" --resolve-image always --prune "$STACK_NAME"
 ok "Stack ${STACK_NAME} published"
-
-# The deploy only restarts a service whose definition changed, and the Caddyfile is a mounted
-# file: a new one would stay unread, and the routes it adds would fall through to the app.
-if [[ -n "$CADDYFILE_BEFORE" && "$(cat "${APP_DIR}/etc/Caddyfile")" != "$CADDYFILE_BEFORE" ]] \
-   && docker service inspect "${STACK_NAME}_caddy" >/dev/null 2>&1; then
-  docker service update --force --detach "${STACK_NAME}_caddy" >/dev/null
-  ok "Caddy restarted with the new Caddyfile"
-fi
 
 # ==============================================================================
 phase "PHASE 10 — Firewall"
@@ -2533,6 +2525,26 @@ fi
 # ==============================================================================
 phase "PHASE 11 — Startup"
 # ==============================================================================
+
+# An update ends with every service restarted. The deploy only restarts a service whose
+# definition changed, and what lives in mounted files (the Caddyfile, certificates, the
+# Cloudflare ranges) is read only at start: without this, a new Caddyfile would stay unread.
+# In order — the data first, then what uses it, then the front — each one up before the next.
+if [[ "$STACK_EXISTED" == "y" ]]; then
+  info "Restarting every service..."
+  for svc in postgres minio whisper app worker caddy; do
+    docker service inspect "${STACK_NAME}_${svc}" >/dev/null 2>&1 || continue
+    if [[ "$svc" == "whisper" ]]; then
+      # It may download its model on start; nothing else waits for it.
+      docker service update --force --detach "${STACK_NAME}_${svc}" >/dev/null \
+        || warn "Could not restart ${svc}."
+    elif timeout 300 docker service update --force --detach=false --quiet "${STACK_NAME}_${svc}" >/dev/null; then
+      ok "${svc} restarted"
+    else
+      warn "${svc} did not come back within 5 minutes. See: docker service ps ${STACK_NAME}_${svc} --no-trunc"
+    fi
+  done
+fi
 
 info "Waiting for replicas (up to 3 minutes)..."
 ready="n"

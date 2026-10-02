@@ -267,7 +267,9 @@ The stack is named after the application (`opentube` by default; dashes become u
 questions, the answers saved in `etc/install.conf`, and the existing secrets. Everything comes out
 as the latest version describes it — images, the stack file, Caddy, the firewall rules, and
 `update.sh` itself — so a fix to the infrastructure arrives the same way as a fix to the code.
-Nothing that needs a decision happens on its own: installing the NVIDIA toolkit, restarting
+At the end every service is restarted, in order (database and storage, then the app and the
+worker, Caddy last), so nothing keeps running on a configuration it read at start; the site is
+down for a few seconds. Nothing that needs a decision happens on its own: installing the NVIDIA toolkit, restarting
 Docker, or turning on captions for an installation that never had them is left for an interactive
 run. A download that is cut or is not the installer is refused before anything runs, and each
 run is appended to `logs/update.log`.
