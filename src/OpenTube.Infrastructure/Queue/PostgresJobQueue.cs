@@ -37,15 +37,30 @@ public class PostgresJobQueue(OpenTubeDbContext db, TimeProvider clock) : IJobQu
         var connection = db.Database.GetDbConnection();
 
         // A condição inclui os trabalhos cuja reserva venceu: se um worker morreu no meio,
-        // o trabalho precisa voltar a ficar disponível sem intervenção manual.
+        // o trabalho precisa voltar a ficar disponível sem intervenção manual. Mas um trabalho
+        // que derruba o worker nunca chega a relatar a falha, e sem limite seria resgatado para
+        // sempre: esgotadas as tentativas, a reserva vencida o encerra como falho.
         const string sql = """
-            WITH escolhido AS (
+            WITH esgotado AS (
+                UPDATE processing_jobs
+                   SET status = @Failed,
+                       completed_at = @Now,
+                       locked_by = NULL,
+                       locked_until = NULL,
+                       last_error = @Abandonado
+                 WHERE kind = ANY(@Kinds)
+                   AND status = @Running
+                   AND locked_until IS NOT NULL AND locked_until < @Now
+                   AND attempts >= @MaxAttempts
+            ),
+            escolhido AS (
                 SELECT id
                 FROM processing_jobs
                 WHERE kind = ANY(@Kinds)
                   AND (
                         (status = @Pending AND run_after <= @Now)
-                     OR (status = @Running AND locked_until IS NOT NULL AND locked_until < @Now)
+                     OR (status = @Running AND locked_until IS NOT NULL AND locked_until < @Now
+                         AND attempts < @MaxAttempts)
                   )
                 ORDER BY run_after
                 FOR UPDATE SKIP LOCKED
@@ -67,6 +82,9 @@ public class PostgresJobQueue(OpenTubeDbContext db, TimeProvider clock) : IJobQu
             Kinds = kinds.Select(k => (int)k).ToArray(),
             Pending = (int)JobStatus.Pending,
             Running = (int)JobStatus.Running,
+            Failed = (int)JobStatus.Failed,
+            MaxAttempts = ProcessingJob.MaxAttempts,
+            Abandonado = "The worker stopped before finishing the last attempt.",
             Now = now,
             WorkerId = workerId,
             LockedUntil = now + lease

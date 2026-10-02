@@ -147,6 +147,33 @@ public class PostgresJobQueueTests(PostgresFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Trabalho_que_derruba_o_worker_para_depois_das_tentativas()
+    {
+        var (fila, db) = Criar();
+        await using var _ = db;
+        var id = await fila.EnqueueAsync(JobKind.Transcode);
+
+        // Cada worker morre no meio, sem relatar a falha: só a reserva vencida devolve o trabalho.
+        for (var tentativa = 1; tentativa <= Domain.Entities.ProcessingJob.MaxAttempts; tentativa++)
+        {
+            var job = await fila.DequeueAsync($"worker-{tentativa}", Transcodificacao, Reserva);
+            Assert.NotNull(job);
+            Assert.Equal(tentativa, job.Attempts);
+
+            _relogio.Advance(Reserva + TimeSpan.FromMinutes(1));
+        }
+
+        Assert.Null(await fila.DequeueAsync("worker-seguinte", Transcodificacao, Reserva));
+
+        var esgotado = await db.ProcessingJobs.AsNoTracking().SingleAsync(j => j.Id == id);
+        Assert.Equal(JobStatus.Failed, esgotado.Status);
+        Assert.Equal(Domain.Entities.ProcessingJob.MaxAttempts, esgotado.Attempts);
+        Assert.NotNull(esgotado.CompletedAt);
+        Assert.Null(esgotado.LockedBy);
+        Assert.NotNull(esgotado.LastError);
+    }
+
+    [Fact]
     public async Task Renovar_a_reserva_impede_o_resgate()
     {
         var (fila, db) = Criar();
