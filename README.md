@@ -748,7 +748,9 @@ The video only plays in the site's own player:
 - Segments come out at most at about four times the speed of the video, after a three-minute
   head start (`Security:SegmentBurst` and `Security:SegmentsPerSecond`). The player buffers at
   most a minute ahead and never reaches it; downloading takes at least a quarter of the video's
-  length, and each attempt is logged.
+  length, and each attempt is logged The limit is per account and video; visitors without an account (a
+  public video, a secret link) are told apart by their origin, so a few of them watching together
+  do not share one limit.
 
 None of this stops someone with access from recording the screen, or a determined user from
 replaying the requests with the right cookies and token; it closes the direct address and makes

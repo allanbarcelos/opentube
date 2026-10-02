@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using OpenTube.Domain.Access;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Playback;
+using OpenTube.Infrastructure.Security;
 using OpenTube.Infrastructure.Services;
 using OpenTube.Web.Auth;
 using OpenTube.Web.Seguranca;
@@ -29,6 +30,7 @@ public static class SegmentAuthorizationEndpoints
             PlaybackService playback,
             PlaybackSeals selos,
             SegmentRateLimiter limite,
+            PrivacyHasher privacidade,
             CollectionThumbnailService miniaturas,
             CurrentViewer espectadores,
             HttpContext contexto,
@@ -53,7 +55,9 @@ public static class SegmentAuthorizationEndpoints
                 if (selos.Open(selo, PlaybackSealKind.Segment, espectador) is not { } aberto)
                     return Recusado();
 
-                if (!limite.TryAcquire(PlaybackTokens.ViewerKey(espectador), aberto.VideoId))
+                var origem = privacidade.HashIp(contexto.Connection.RemoteIpAddress?.ToString());
+
+                if (!limite.TryAcquire(SegmentRateLimiter.ViewerKey(espectador, origem), aberto.VideoId))
                     return Results.StatusCode(StatusCodes.Status429TooManyRequests);
 
                 // Não conta visualização: o bilhete da playlist principal é que autoriza o resto.

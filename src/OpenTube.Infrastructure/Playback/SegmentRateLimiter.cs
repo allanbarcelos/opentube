@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTube.Domain.Access;
 using OpenTube.Infrastructure.Options;
 
 namespace OpenTube.Infrastructure.Playback;
@@ -29,6 +30,18 @@ public class SegmentRateLimiter(IOptions<SecurityOptions> options, TimeProvider 
     private readonly SecurityOptions _options = options.Value;
     private readonly ConcurrentDictionary<string, Balde> _baldes = new(StringComparer.Ordinal);
     private DateTimeOffset _ultimaFaxina = DateTimeOffset.MinValue;
+
+    /// <summary>
+    /// Quem consome o balde. A conta identifica a pessoa; sem conta, o visitante anônimo e o
+    /// link secreto são iguais para todos que os usam, e um balde só para eles travaria o vídeo
+    /// de todo mundo assim que poucos assistissem juntos. Para esses, a origem separa as pessoas.
+    /// </summary>
+    public static string ViewerKey(Viewer viewer, string? ipHash)
+    {
+        var chave = PlaybackTokens.ViewerKey(viewer);
+
+        return viewer.UserId is null && ipHash is not null ? chave + "@" + ipHash : chave;
+    }
 
     /// <summary>Consome uma ficha. Devolve <c>false</c> quando a pessoa está buscando rápido demais.</summary>
     public bool TryAcquire(string viewerKey, Guid videoId)

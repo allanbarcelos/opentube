@@ -746,7 +746,8 @@ O vídeo só toca no player do próprio site:
 - Os segmentos saem no máximo a cerca de quatro vezes a velocidade do vídeo, depois de uma folga de
   três minutos (`Security:SegmentBurst` e `Security:SegmentsPerSecond`). O player adianta no máximo
   um minuto e nunca chega lá; baixar leva pelo menos um quarto da duração do vídeo, e cada tentativa
-  fica no log.
+  fica no log. O limite é por conta e vídeo; quem assiste sem conta (vídeo público, link
+  secreto) é separado pela origem, para que poucos assistindo juntos não dividam um limite só.
 
 Nada disso impede quem tem acesso de gravar a tela, nem alguém determinado de repetir os pedidos
 com os cookies e o token certos; fecha o endereço direto e torna o download lento e visível.

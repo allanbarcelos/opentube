@@ -216,6 +216,25 @@ public class SegmentRateLimiterTests
     }
 
     [Fact]
+    public void Sem_conta_a_origem_separa_quem_assiste()
+    {
+        Assert.NotEqual(
+            SegmentRateLimiter.ViewerKey(Viewer.Anonymous, "ip-a"),
+            SegmentRateLimiter.ViewerKey(Viewer.Anonymous, "ip-b"));
+        Assert.Equal("anon", SegmentRateLimiter.ViewerKey(Viewer.Anonymous, null));
+    }
+
+    [Fact]
+    public void Com_conta_trocar_de_origem_nao_renova_o_limite()
+    {
+        var conta = Viewer.Authenticated(Guid.CreateVersion7(), EmailAddress.Parse("allan@barcelos.dev"));
+
+        Assert.Equal(
+            SegmentRateLimiter.ViewerKey(conta, "ip-a"),
+            SegmentRateLimiter.ViewerKey(conta, "ip-b"));
+    }
+
+    [Fact]
     public void A_folga_nao_acumula_alem_do_teto()
     {
         var limite = Criar(folga: 3, porSegundo: 1);

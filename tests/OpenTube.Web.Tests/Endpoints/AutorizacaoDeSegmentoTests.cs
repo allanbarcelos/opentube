@@ -2,10 +2,12 @@
 // Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
 
 using System.Net;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTube.Domain.Access;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Playback;
 using OpenTube.Infrastructure.Storage;
 using OpenTube.TestSupport;
 using OpenTube.Web.Endpoints;
@@ -317,6 +319,34 @@ public class AutorizacaoDeSegmentoTests(PostgresFixture postgres, MinioFixture m
         await EntrarComoAdminAsync(cliente);
 
         Assert.Equal(HttpStatusCode.OK, (await PerguntarAsync(cliente, "/vod/" + chaveFechada)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Visitantes_anonimos_de_origens_diferentes_tem_limites_separados()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Boas-vindas", VideoVisibility.Public);
+
+        // Folga de 3 segmentos e reposição desprezível: o quarto pedido seguido esbarra no limite.
+        await using var app = _app.WithWebHostBuilder(b =>
+        {
+            b.UseSetting("Security:SegmentBurst", "3");
+            b.UseSetting("Security:SegmentsPerSecond", "0.0001");
+        });
+        using var cliente = app.CreateClient();
+        var segmento = "/s/" + app.Services.GetRequiredService<PlaybackSeals>()
+            .Seal(PlaybackSealKind.Segment, video.Id, Viewer.Anonymous, "360p/seg-00000.m4s");
+
+        var deUmLado = new Dictionary<string, string> { ["X-Forwarded-For"] = "203.0.113.10" };
+        var doOutro = new Dictionary<string, string> { ["X-Forwarded-For"] = "198.51.100.20" };
+
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(HttpStatusCode.OK, (await PerguntarAsync(cliente, segmento, deUmLado)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await PerguntarAsync(cliente, segmento, deUmLado)).StatusCode);
+
+        // Outra pessoa, assistindo de outro lugar, não paga pelo excesso da primeira.
+        Assert.Equal(HttpStatusCode.OK, (await PerguntarAsync(cliente, segmento, doOutro)).StatusCode);
     }
 
     [Fact]
