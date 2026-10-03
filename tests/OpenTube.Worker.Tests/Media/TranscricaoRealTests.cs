@@ -38,16 +38,7 @@ public class TranscricaoRealTests : IDisposable
             Microsoft.Extensions.Options.Options.Create(new MediaToolOptions()),
             NullLogger<CommandLineTranscriber>.Instance);
 
-    private async Task<string> FalarAsync(string voz, string frase)
-    {
-        var arquivo = Path.Combine(_pasta, $"{voz}.aiff");
-
-        using var processo = Process.Start(WhisperLocal.Fala!, ["-v", voz, "-o", arquivo, frase])!;
-        await processo.WaitForExitAsync();
-
-        Assert.Equal(0, processo.ExitCode);
-        return arquivo;
-    }
+    private Task<string> FalarAsync(string voz, string frase) => WhisperLocal.FalarAsync(_pasta, voz, frase);
 
     [WhisperFact]
     public async Task Transcreve_fala_em_portugues()
@@ -185,16 +176,7 @@ public class TranscricaoPeloServidorTests(WhisperServerLocal servidor) : IClassF
             Microsoft.Extensions.Options.Options.Create(new MediaToolOptions()),
             NullLogger<WhisperServerTranscriber>.Instance);
 
-    private async Task<string> FalarAsync(string voz, string frase)
-    {
-        var arquivo = Path.Combine(_pasta, $"{voz}.aiff");
-
-        using var processo = Process.Start(WhisperLocal.Fala!, ["-v", voz, "-o", arquivo, frase])!;
-        await processo.WaitForExitAsync();
-
-        Assert.Equal(0, processo.ExitCode);
-        return arquivo;
-    }
+    private Task<string> FalarAsync(string voz, string frase) => WhisperLocal.FalarAsync(_pasta, voz, frase);
 
     [WhisperServerFact]
     public async Task Servidor_responde_e_detecta_portugues_e_ingles()

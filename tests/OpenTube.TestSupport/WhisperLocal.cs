@@ -21,6 +21,23 @@ public static class WhisperLocal
 
     public static bool Disponivel => Executavel is not null && Modelo is not null;
 
+    /// <summary>
+    /// Grava <paramref name="frase"/> na voz pedida e devolve o arquivo num contêiner que o
+    /// worker aceita: o <c>say</c> grava AIFF, que o worker recusa, e o áudio vai para um Matroska.
+    /// </summary>
+    public static async Task<string> FalarAsync(string pasta, string voz, string frase)
+    {
+        var aiff = Path.Combine(pasta, $"{voz}.aiff");
+
+        using var processo = System.Diagnostics.Process.Start(Fala!, ["-v", voz, "-o", aiff, frase])!;
+        await processo.WaitForExitAsync();
+
+        if (processo.ExitCode != 0)
+            throw new InvalidOperationException($"O 'say' falhou ao gravar a voz {voz}.");
+
+        return await MediaTools.ToMatroskaAsync(aiff);
+    }
+
     private static string? Procurar(string programa) =>
         (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)

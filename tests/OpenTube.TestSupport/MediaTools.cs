@@ -48,6 +48,22 @@ public static class MediaTools
         return caminho;
     }
 
+    /// <summary>
+    /// Regrava o áudio num Matroska, sem perda (PCM). O worker só lê contêineres de vídeo; um
+    /// AIFF, como o que o <c>say</c> do macOS grava, seria recusado antes da transcrição.
+    /// </summary>
+    public static async Task<string> ToMatroskaAsync(string audioPath)
+    {
+        var destino = Path.ChangeExtension(audioPath, ".mkv");
+
+        var resultado = await ExecutarAsync("ffmpeg", ["-y", "-v", "error", "-i", audioPath, "-c:a", "pcm_s16le", destino]);
+
+        if (resultado.code != 0)
+            throw new InvalidOperationException($"Não foi possível converter o áudio: {resultado.erro}");
+
+        return destino;
+    }
+
     private static bool Existe(string programa)
     {
         try
