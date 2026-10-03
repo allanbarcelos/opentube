@@ -26,6 +26,8 @@ public static class AuditActions
     public const string MarcaDefinida = "marca.definida";
     public const string MarcaReposicionada = "marca.reposicionada";
     public const string MarcaRemovida = "marca.removida";
+    public const string PersonalizacaoAlterada = "personalizacao.alterada";
+    public const string LogoRemovido = "personalizacao.logo-removido";
     public const string TrabalhoCancelado = "fila.cancelado";
     public const string TrabalhoDescartado = "fila.descartado";
 }
@@ -40,6 +42,7 @@ public static class AuditEntities
     public const string Dominio = "dominio";
     public const string Pessoa = "pessoa";
     public const string MarcaDagua = "marca";
+    public const string Personalizacao = "personalizacao";
 }
 
 /// <summary>

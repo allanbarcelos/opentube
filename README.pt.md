@@ -502,6 +502,7 @@ No `make.ps1`, cada alvo tem o mesmo nome e as variáveis viram opções: `make 
 | Legendas | Aba por idioma: automáticas com o Whisper (idioma detectado sozinho), envio de arquivo e editor no próprio sistema |
 | Proteção | Marca d'água móvel com o email de quem assiste, marca d'água do acervo em PNG, sem download nem transmissão, limite de reproduções simultâneas |
 | Auditoria | Toda ação administrativa fica registrada: concessão, revogação, publicação, exclusão |
+| Personalização | Nome do site (barra, títulos e emails), logotipo da barra em PNG e o crédito e o link do repositório no rodapé, que podem ser ocultados, em Administração → Personalização |
 | Idiomas | Interface em inglês, português e francês |
 
 A interface é em inglês, português e francês. O inglês é a base: é o que aparece quando o

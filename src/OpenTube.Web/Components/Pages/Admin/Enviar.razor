@@ -9,7 +9,7 @@
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject IAntiforgery Antifalsificacao
 
-<PageTitle>@T["Upload videos — OpenTube"]</PageTitle>
+<TituloDaPagina Pagina="@T["Upload videos"]" />
 
 @* O envio é todo feito pelo upload.js, carregado para todas as páginas no App.razor: um script
    colocado aqui não rodaria quando se chega pela navegação aprimorada. *@

@@ -43,7 +43,7 @@ public class SupportServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var opcoes = Microsoft.Extensions.Options.Options.Create(_seguranca);
 
         return (new SupportService(
-            db, new AccessService(db, opcoes, _relogio), _emails, opcoes, _relogio,
+            db, new AccessService(db, opcoes, _relogio), _emails, new IdentidadeFixa(), opcoes, _relogio,
             NullLogger<SupportService>.Instance), db);
     }
 

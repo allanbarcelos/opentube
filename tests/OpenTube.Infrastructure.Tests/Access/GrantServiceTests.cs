@@ -45,7 +45,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var db = postgres.CreateContext();
         var opcoes = Microsoft.Extensions.Options.Options.Create(_seguranca);
 
-        return (new GrantService(db, _emails, opcoes, _relogio, NullLogger<GrantService>.Instance), db);
+        return (new GrantService(db, _emails, new IdentidadeFixa(), opcoes, _relogio, NullLogger<GrantService>.Instance), db);
     }
 
     private async Task<Video> VideoRestritoAsync(string titulo = "Plano Confidencial")
@@ -471,7 +471,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
 
         var opcoes = Microsoft.Extensions.Options.Options.Create(_seguranca);
         var auth = new PasswordlessAuthService(
-            db, _emails, new AuthRateLimiter(db, opcoes, _relogio), new PrivacyHasher(opcoes),
+            db, _emails, new IdentidadeFixa(), new AuthRateLimiter(db, opcoes, _relogio), new PrivacyHasher(opcoes),
             opcoes, _relogio, NullLogger<PasswordlessAuthService>.Instance);
 
         // Ainda não é usuário: a concessão é o que deixa pedir o código.

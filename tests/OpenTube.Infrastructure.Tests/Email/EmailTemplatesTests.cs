@@ -9,7 +9,7 @@ namespace OpenTube.Infrastructure.Tests.Email;
 public class EmailTemplatesTests
 {
     private static EmailMessage Montar(AuthPurpose proposito = AuthPurpose.Login) =>
-        EmailTemplates.AccessCode("allan@barcelos.dev", "123456", "https://opentube.org/sign-in/tok", proposito, TimeSpan.FromMinutes(15));
+        EmailTemplates.AccessCode("allan@barcelos.dev", "123456", "https://opentube.org/sign-in/tok", proposito, TimeSpan.FromMinutes(15), "OpenTube");
 
     [Fact]
     public void Traz_o_codigo_e_o_link_nas_duas_versoes_do_corpo()
@@ -57,10 +57,23 @@ public class EmailTemplatesTests
     public void Escapa_conteudo_no_corpo_em_html()
     {
         var mensagem = EmailTemplates.AccessCode(
-            "a@b.com", "123456", "https://opentube.org/sign-in/a\"><script>alert(1)</script>", AuthPurpose.Login, TimeSpan.FromMinutes(15));
+            "a@b.com", "123456", "https://opentube.org/sign-in/a\"><script>alert(1)</script>", AuthPurpose.Login, TimeSpan.FromMinutes(15), "OpenTube");
 
         Assert.DoesNotContain("<script>", mensagem.HtmlBody);
         Assert.Contains("&lt;script&gt;", mensagem.HtmlBody);
+    }
+
+    [Theory]
+    [InlineData(AuthPurpose.Login)]
+    [InlineData(AuthPurpose.Invite)]
+    public void Usa_o_nome_do_site_definido_pela_administracao(AuthPurpose proposito)
+    {
+        var mensagem = EmailTemplates.AccessCode(
+            "a@b.com", "123456", "https://videos.acme.com/sign-in/t", proposito, TimeSpan.FromMinutes(15), "Acme <Videos>");
+
+        Assert.Contains("Acme <Videos>", mensagem.Subject);
+        Assert.Contains("Acme &lt;Videos&gt;", mensagem.HtmlBody);
+        Assert.DoesNotContain("OpenTube", mensagem.Subject + mensagem.HtmlBody + mensagem.TextBody);
     }
 
     [Fact]

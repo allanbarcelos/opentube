@@ -4,6 +4,8 @@
 *@
 
 @inherits LayoutComponentBase
+@using OpenTube.Infrastructure.Branding
+@inject ISiteIdentity Identidades
 
 <div class="d-flex flex-column min-vh-100 bg-body-tertiary">
     <NavMenu />
@@ -15,17 +17,24 @@
     <footer class="border-top bg-body py-3 mt-4">
         <div class="container rodape small text-body-secondary">
             @* Créditos: o autor e o projeto original. A licença MIT não obriga a mantê-los, mas o
-               pedido está no NOTICE: quem usa o OpenTube, por favor, deixe os dois links. *@
-            <span class="rodape-credito" data-credito="autor">
-                @T["Powered by"]
-                <a class="link-secondary" href="https://www.barcelos.dev" target="_blank" rel="noopener">Barcelos.Dev</a>
-            </span>
+               pedido está no NOTICE: quem usa o OpenTube, por favor, deixe os dois links. A
+               administração pode ocultar cada um na personalização. *@
+            @if (Site.ShowPoweredBy)
+            {
+                <span class="rodape-credito" data-credito="autor">
+                    @T["Powered by"]
+                    <a class="link-secondary" href="https://www.barcelos.dev" target="_blank" rel="noopener">Barcelos.Dev</a>
+                </span>
+            }
             <span class="rodape-aviso">@T["Access to this platform is recorded."]</span>
-            <a class="rodape-github link-secondary fs-5 lh-1" href="https://github.com/allanbarcelos/opentube"
-               target="_blank" rel="noopener" data-credito="opentube"
-               title="@T["OpenTube on GitHub"]" aria-label="@T["OpenTube on GitHub"]">
-                <i class="bi bi-github" aria-hidden="true"></i>
-            </a>
+            @if (Site.ShowRepositoryLink)
+            {
+                <a class="rodape-github link-secondary fs-5 lh-1" href="https://github.com/allanbarcelos/opentube"
+                   target="_blank" rel="noopener" data-credito="opentube"
+                   title="@T["OpenTube on GitHub"]" aria-label="@T["OpenTube on GitHub"]">
+                    <i class="bi bi-github" aria-hidden="true"></i>
+                </a>
+            }
         </div>
     </footer>
 </div>
@@ -34,3 +43,9 @@
     @T["An unexpected error occurred."]
     <a href="." class="alert-link">@T["Reload"]</a>
 </div>
+
+@code {
+    private SiteIdentity Site = SiteIdentity.Default;
+
+    protected override async Task OnInitializedAsync() => Site = await Identidades.GetAsync();
+}

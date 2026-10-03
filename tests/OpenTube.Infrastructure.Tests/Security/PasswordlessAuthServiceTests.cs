@@ -50,7 +50,7 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
         var limitador = new AuthRateLimiter(db, opcoes, _relogio);
 
         return (new PasswordlessAuthService(
-            db, _email, limitador, privacidade, opcoes, _relogio, NullLogger<PasswordlessAuthService>.Instance), db);
+            db, _email, new IdentidadeFixa(), limitador, privacidade, opcoes, _relogio, NullLogger<PasswordlessAuthService>.Instance), db);
     }
 
     private async Task<User> CriarUsuarioAsync(string email = Convidado, bool admin = false)
@@ -618,7 +618,7 @@ public class PasswordlessAuthServiceTests(PostgresFixture postgres) : IAsyncLife
 
         await using var db3 = postgres.CreateContext();
         var (servico2, _) = (new PasswordlessAuthService(
-            db3, _email,
+            db3, _email, new IdentidadeFixa(),
             new AuthRateLimiter(db3, Microsoft.Extensions.Options.Options.Create(_seguranca), _relogio),
             new PrivacyHasher(Microsoft.Extensions.Options.Options.Create(_seguranca)),
             Microsoft.Extensions.Options.Options.Create(_seguranca), _relogio,

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using OpenTube.Domain.Access;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
+using OpenTube.Infrastructure.Branding;
 using OpenTube.Infrastructure.Access;
 using OpenTube.Infrastructure.Email;
 using OpenTube.Infrastructure.Localization;
@@ -30,6 +31,7 @@ public class SupportService(
     OpenTubeDbContext db,
     AccessService acesso,
     IEmailSender email,
+    ISiteIdentity site,
     IOptions<SecurityOptions> options,
     TimeProvider clock,
     ILogger<SupportService> logger)
@@ -261,11 +263,12 @@ public class SupportService(
             .ToListAsync(cancellationToken);
 
         var endereco = $"{_options.PublicUrl.TrimEnd('/')}/admin/support/{conversa.Id}";
+        var nome = (await site.GetAsync(cancellationToken)).Name;
 
         foreach (var destinatario in administradores)
         {
             await email.SendAsync(EmailTemplates.SupportForAdmin(
-                destinatario, autor, videoTitle ?? LocalText.Get("A video"), mensagem, endereco), cancellationToken);
+                destinatario, autor, videoTitle ?? LocalText.Get("A video"), mensagem, endereco, nome), cancellationToken);
         }
     }
 
@@ -286,8 +289,9 @@ public class SupportService(
             .FirstOrDefaultAsync(cancellationToken);
 
         var endereco = $"{_options.PublicUrl.TrimEnd('/')}/watch/{video}";
+        var nome = (await site.GetAsync(cancellationToken)).Name;
 
         await email.SendAsync(EmailTemplates.SupportForUser(
-            destinatario, videoTitle ?? LocalText.Get("A video"), mensagem, endereco), cancellationToken);
+            destinatario, videoTitle ?? LocalText.Get("A video"), mensagem, endereco, nome), cancellationToken);
     }
 }

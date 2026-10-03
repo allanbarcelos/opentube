@@ -88,6 +88,8 @@ public static class DependencyInjection
         services.AddScoped<SupportService>();
         services.AddScoped<VideoCatalog>();
         services.AddScoped<WatermarkService>();
+        services.AddScoped<SiteBrandingService>();
+        services.AddSingleton<ISiteIdentity, SiteIdentityProvider>();
         services.AddScoped<OpenTube.Infrastructure.Transcription.TranscriptionAvailability>();
 
         return services;

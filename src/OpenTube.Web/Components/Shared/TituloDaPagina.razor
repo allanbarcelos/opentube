@@ -1,0 +1,23 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@using OpenTube.Infrastructure.Branding
+@inject ISiteIdentity Identidades
+
+@* Título da aba com o nome do site que a administração definiu: "Página — Nome", ou só o nome. *@
+@if (Site is not null)
+{
+    <PageTitle>@Site.Title(Pagina)</PageTitle>
+}
+
+@code {
+    /// <summary>Nome da página; sem ele, o título é só o nome do site.</summary>
+    [Parameter]
+    public string? Pagina { get; set; }
+
+    private SiteIdentity? Site;
+
+    protected override async Task OnInitializedAsync() => Site = await Identidades.GetAsync();
+}

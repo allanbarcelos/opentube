@@ -5,13 +5,19 @@
 
 @using System.Globalization
 @using OpenTube.Web.Seguranca
+@using OpenTube.Infrastructure.Branding
+@inject ISiteIdentity Identidades
 <!DOCTYPE html>
 <html lang="@CultureInfo.CurrentUICulture.Name">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="generator" content="OpenTube (https://github.com/allanbarcelos/opentube)" />
+    @* Leva o link do repositório: some junto com o link do rodapé, quando a personalização o oculta. *@
+    @if (Site.ShowRepositoryLink)
+    {
+        <meta name="generator" content="OpenTube (https://github.com/allanbarcelos/opentube)" />
+    }
     <base href="/" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
@@ -54,4 +60,8 @@
 @code {
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
+
+    private SiteIdentity Site = SiteIdentity.Default;
+
+    protected override async Task OnInitializedAsync() => Site = await Identidades.GetAsync();
 }

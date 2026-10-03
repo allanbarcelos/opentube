@@ -8,6 +8,7 @@ using OpenTube.Domain.Access;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Domain.ValueObjects;
+using OpenTube.Infrastructure.Branding;
 using OpenTube.Infrastructure.Email;
 using OpenTube.Infrastructure.Localization;
 using OpenTube.Infrastructure.Options;
@@ -85,6 +86,7 @@ public sealed record ShareLink(Guid GrantId, string Url);
 public class GrantService(
     OpenTubeDbContext db,
     IEmailSender email,
+    ISiteIdentity site,
     IOptions<SecurityOptions> options,
     TimeProvider clock,
     ILogger<GrantService> logger)
@@ -139,8 +141,10 @@ public class GrantService(
 
             if (sendEmail)
             {
+                var nome = (await site.GetAsync(cancellationToken)).Name;
+
                 await email.SendAsync(EmailTemplates.Invite(
-                    endereco.Value, rotulo, validity.Describe(), EnderecoDeEntrada(endereco, destino)),
+                    endereco.Value, rotulo, validity.Describe(), EnderecoDeEntrada(endereco, destino), nome),
                     cancellationToken);
 
                 enviado = true;

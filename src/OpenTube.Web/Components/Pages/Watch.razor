@@ -19,7 +19,7 @@
 @inject Microsoft.Extensions.Options.IOptions<OpenTube.Infrastructure.Options.SecurityOptions> Seguranca
 @inject NavigationManager Navegacao
 
-<PageTitle>@(Video?.Title ?? T["Video not found"]) — OpenTube</PageTitle>
+<TituloDaPagina Pagina="@(Video?.Title ?? T["Video not found"])" />
 
 <div class="container py-4">
     @if (Video is null)

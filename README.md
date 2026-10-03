@@ -501,6 +501,7 @@ is `./make.ps1 whisper -m base`.
 | Captions | Per-language tab: automatic with Whisper (language detected on its own), upload, and an in-app editor |
 | Protection | Moving watermark with the viewer's email, library PNG watermark, no download or casting, limit on simultaneous playbacks |
 | Audit | Every administrative action is recorded: grant, revoke, publish, delete |
+| Customization | Site name (top bar, page titles, and emails), a PNG logo for the top bar, and the footer credit and repository link, which can be hidden, in Administration → Customization |
 | Languages | Interface in English, Portuguese, and French |
 
 The interface is available in English, Portuguese, and French. English is the base: it is what

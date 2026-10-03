@@ -71,6 +71,7 @@ public partial class PoliticaDeConteudoTests(PostgresFixture postgres, MinioFixt
     [InlineData("/admin/collections")]
     [InlineData("/admin/people")]
     [InlineData("/admin/watermark")]
+    [InlineData("/admin/customization")]
     [InlineData("/admin/upload")]
     [InlineData("/admin/audit")]
     [InlineData("/admin/support")]

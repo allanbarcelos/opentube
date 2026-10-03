@@ -9,7 +9,7 @@
 @inject VideoCatalog Catalogo
 @inject CurrentViewer Espectadores
 
-<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "OpenTube" : T.Format("Search: {0} — OpenTube", Q))</PageTitle>
+<TituloDaPagina Pagina="@(string.IsNullOrWhiteSpace(Q) ? null : T.Format("Search: {0}", Q))" />
 
 <div class="container py-4">
     @if (!string.IsNullOrWhiteSpace(Q))

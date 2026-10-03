@@ -135,6 +135,7 @@ rotas.MapSupportEndpoints();
 rotas.MapCaptionEndpoints();
 rotas.MapRatingEndpoints();
 rotas.MapWatermarkEndpoints();
+rotas.MapSiteBrandingEndpoints();
 app.MapAnalyticsEndpoints();
 // Fora do grupo: o pedido de reprodução é um POST que o player faz sem token antifalsificação,
 // e não muda nada no servidor.

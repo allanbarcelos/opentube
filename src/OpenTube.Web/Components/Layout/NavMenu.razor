@@ -4,12 +4,24 @@
 *@
 
 @using Microsoft.AspNetCore.Components.Authorization
+@using OpenTube.Infrastructure.Branding
+@using OpenTube.Web.Endpoints
+@inject ISiteIdentity Identidades
 
 <nav class="navbar navbar-expand-md bg-body border-bottom sticky-top barra-superior">
     <div class="container gap-2">
         <a class="navbar-brand fw-semibold d-flex align-items-center gap-2 me-0" href="/">
-            <i class="bi bi-play-btn-fill text-danger fs-4" aria-hidden="true"></i>
-            <span>OpenTube</span>
+            @* O logotipo da personalização substitui o ícone de fábrica; o nome fica ao lado dele. *@
+            @if (Site.HasLogo)
+            {
+                <img class="logo-do-site" src="@SiteBrandingEndpoints.LogoUrl(Site)" alt=""
+                     height="32" width="@LarguraDoLogo" />
+            }
+            else
+            {
+                <i class="bi bi-play-btn-fill text-danger fs-4" aria-hidden="true"></i>
+            }
+            <span>@Site.Name</span>
         </a>
 
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu-principal"
@@ -111,6 +123,16 @@
 
     [CascadingParameter]
     private HttpContext? Http { get; set; }
+
+    private SiteIdentity Site = SiteIdentity.Default;
+
+    /// <summary>Largura na barra, com 32 px de altura: reservada já no HTML, a barra não pula ao carregar.</summary>
+    private int LarguraDoLogo =>
+        Site.LogoWidth is int largura && Site.LogoHeight is int altura && altura > 0
+            ? Math.Max(1, (int)Math.Round(32.0 * largura / altura))
+            : 32;
+
+    protected override async Task OnInitializedAsync() => Site = await Identidades.GetAsync();
 
     private string? Termo => Http?.Request.Query["q"].ToString();
 

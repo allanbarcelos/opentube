@@ -32,6 +32,7 @@ public class OpenTubeDbContext(DbContextOptions<OpenTubeDbContext> options) : Db
     public DbSet<SupportMessage> SupportMessages => Set<SupportMessage>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<PlayerWatermark> PlayerWatermarks => Set<PlayerWatermark>();
+    public DbSet<SiteBranding> SiteBrandings => Set<SiteBranding>();
     public DbSet<TranscriptionWorker> TranscriptionWorkers => Set<TranscriptionWorker>();
     public DbSet<VideoChapter> VideoChapters => Set<VideoChapter>();
     public DbSet<VideoRating> VideoRatings => Set<VideoRating>();

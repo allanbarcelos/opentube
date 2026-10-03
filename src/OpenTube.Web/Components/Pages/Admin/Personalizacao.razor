@@ -1,0 +1,131 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@page "/admin/customization"
+@using OpenTube.Domain.Entities
+@using OpenTube.Infrastructure.Branding
+@using OpenTube.Web.Endpoints
+@attribute [Authorize(Policy = Policies.Administrator)]
+@inject ISiteIdentity Identidades
+
+<PageTitle>@T["Customization — Administration"]</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="@T["Breadcrumb"]">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/admin">@T["Administration"]</a></li>
+            <li class="breadcrumb-item active" aria-current="page">@T["Customization"]</li>
+        </ol>
+    </nav>
+
+    @if (!string.IsNullOrWhiteSpace(Erro))
+    {
+        <div class="alert alert-danger" role="alert">@Erro</div>
+    }
+    else if (Salvo is not null)
+    {
+        <div class="alert alert-success" role="status">@T["Customization saved."]</div>
+    }
+    else if (LogoRemovido is not null)
+    {
+        <div class="alert alert-success" role="status">@T["Logo removed."]</div>
+    }
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <form method="post" action="@(SiteBrandingEndpoints.AdminPath + "/save")" enctype="multipart/form-data" class="card">
+                <AntiforgeryToken />
+                <div class="card-body">
+                    <div class="mb-4">
+                        <label class="form-label" for="nome">@T["Site name"]</label>
+                        <input class="form-control" type="text" id="nome" name="nome" value="@Site.Name"
+                               maxlength="@SiteBranding.MaxNameLength" required />
+                        <div class="form-text">@T["It appears in the top bar, in the browser tab, and in the emails."]</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label" for="logo">@T["Logo"]</label>
+                        <input class="form-control" type="file" id="logo" name="logo" accept="image/png,.png" />
+                        <div class="form-text">
+                            @T.Format("PNG up to 5 MB. It is resized to fit {0} × {1} pixels without distortion and shown 32 pixels tall in the top bar, in place of the default icon. A transparent background works best. Leave it empty to keep the current logo.",
+                                SiteBranding.LogoStandardWidth, SiteBranding.LogoStandardHeight)
+                        </div>
+                    </div>
+
+                    <fieldset>
+                        <legend class="form-label fs-6">@T["Footer"]</legend>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="credito" name="credito" value="true"
+                                   checked="@Site.ShowPoweredBy" />
+                            <label class="form-check-label" for="credito">@T["Show “Powered by Barcelos.Dev”"]</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="repositorio" name="repositorio" value="true"
+                                   checked="@Site.ShowRepositoryLink" />
+                            <label class="form-check-label" for="repositorio">@T["Show the link to the OpenTube repository on GitHub"]</label>
+                        </div>
+                        <div class="form-text">
+                            @T["The MIT license does not require keeping these credits; the project's NOTICE asks, if possible, that they stay."]
+                        </div>
+                    </fieldset>
+                </div>
+                <div class="card-footer bg-body">
+                    <button class="btn btn-primary" type="submit">@T["Save"]</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card">
+                <div class="card-header">@T["Preview"]</div>
+                <div class="card-body">
+                    @* A mesma marca da barra superior, com o que está salvo agora. *@
+                    <div class="border rounded px-3 py-2 bg-body d-flex align-items-center gap-2 fw-semibold fs-5">
+                        @if (Site.HasLogo)
+                        {
+                            <img class="logo-do-site" src="@SiteBrandingEndpoints.LogoUrl(Site)" alt="@T["Current logo"]" />
+                        }
+                        else
+                        {
+                            <i class="bi bi-play-btn-fill text-danger fs-4" aria-hidden="true"></i>
+                        }
+                        <span class="text-truncate">@Site.Name</span>
+                    </div>
+
+                    @if (Site.HasLogo)
+                    {
+                        <p class="small text-body-secondary mt-2 mb-3">
+                            @T.Format("{0} × {1} pixels.", Site.LogoWidth ?? 0, Site.LogoHeight ?? 0)
+                        </p>
+                        <form method="post" action="@(SiteBrandingEndpoints.AdminPath + "/remove-logo")">
+                            <AntiforgeryToken />
+                            <button class="btn btn-outline-danger w-100" type="submit">@T["Remove the logo"]</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <p class="small text-body-secondary mt-2 mb-0">@T["No logo: the top bar shows the default icon."]</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "erro")]
+    private string? Erro { get; set; }
+
+    // Texto, como nas outras páginas: o endereço traz "salvo=1", que não vira bool.
+    [SupplyParameterFromQuery(Name = "salvo")]
+    private string? Salvo { get; set; }
+
+    [SupplyParameterFromQuery(Name = "logo-removido")]
+    private string? LogoRemovido { get; set; }
+
+    private SiteIdentity Site = SiteIdentity.Default;
+
+    protected override async Task OnInitializedAsync() => Site = await Identidades.GetAsync();
+}

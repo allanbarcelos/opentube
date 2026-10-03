@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using OpenTube.Domain.Entities;
 using OpenTube.Domain.Enums;
 using OpenTube.Domain.ValueObjects;
+using OpenTube.Infrastructure.Branding;
 using OpenTube.Infrastructure.Email;
 using OpenTube.Infrastructure.Options;
 using OpenTube.Infrastructure.Persistence;
@@ -68,6 +69,7 @@ public sealed record SignInOutcome(bool Succeeded, AuthFailure Failure, AuthSess
 public class PasswordlessAuthService(
     OpenTubeDbContext db,
     IEmailOutbox email,
+    ISiteIdentity site,
     IAuthRateLimiter rateLimiter,
     PrivacyHasher privacy,
     IOptions<SecurityOptions> options,
@@ -143,7 +145,8 @@ public class PasswordlessAuthService(
         // O envio vai para a fila em vez de esperar o SMTP: só quem tem convite chega até aqui,
         // e uma resposta mais lenta nesse caso revelaria quem está na lista.
         var link = $"{_options.PublicUrl.TrimEnd('/')}/sign-in/{token}";
-        await email.EnqueueAsync(EmailTemplates.AccessCode(endereco.Value, codigo, link, purpose, validade), cancellationToken);
+        var nome = (await site.GetAsync(cancellationToken)).Name;
+        await email.EnqueueAsync(EmailTemplates.AccessCode(endereco.Value, codigo, link, purpose, validade, nome), cancellationToken);
 
         return CodeRequestResult.Ok();
     }

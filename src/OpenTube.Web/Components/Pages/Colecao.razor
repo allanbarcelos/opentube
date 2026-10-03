@@ -9,7 +9,7 @@
 @inject CurrentViewer Espectadores
 @inject NavigationManager Navegacao
 
-<PageTitle>@(Lista?.Name ?? T["Collection"]) — OpenTube</PageTitle>
+<TituloDaPagina Pagina="@(Lista?.Name ?? T["Collection"])" />
 
 <div class="container py-4">
     @if (Lista is not null)

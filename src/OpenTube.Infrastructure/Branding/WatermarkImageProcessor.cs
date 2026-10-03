@@ -22,7 +22,17 @@ public static class WatermarkImageProcessor
     /// </summary>
     public const int MaxSourceDimension = 4096;
 
-    public static byte[] Normalize(byte[] original)
+    /// <summary>Leva a imagem ao tamanho padrão da marca d'água.</summary>
+    public static byte[] Normalize(byte[] original) =>
+        Normalize(original, PlayerWatermark.StandardWidth, PlayerWatermark.StandardHeight,
+            PlayerWatermark.MinLongestSide, "The image must be at least 160 pixels on its longest side.");
+
+    /// <summary>
+    /// Leva a imagem a caber em <paramref name="maxWidth"/> × <paramref name="maxHeight"/>, com
+    /// as mesmas regras da marca d'água. Serve também ao logotipo do site, que tem outro tamanho.
+    /// </summary>
+    /// <param name="tooSmall">Mensagem para um lado maior abaixo de <paramref name="minLongestSide"/>.</param>
+    public static byte[] Normalize(byte[] original, int maxWidth, int maxHeight, int minLongestSide, string tooSmall)
     {
         ArgumentNullException.ThrowIfNull(original);
 
@@ -34,14 +44,14 @@ public static class WatermarkImageProcessor
         if (largura > MaxSourceDimension || altura > MaxSourceDimension)
             throw new ArgumentException("The image must be at most 4096 pixels on each side.");
 
-        if (Math.Max(largura, altura) < PlayerWatermark.MinLongestSide)
-            throw new ArgumentException("The image must be at least 160 pixels on its longest side.");
+        if (Math.Max(largura, altura) < minLongestSide)
+            throw new ArgumentException(tooSmall);
 
         using var decodificada = Decodificar(original);
 
         var escala = Math.Min(1.0, Math.Min(
-            (double)PlayerWatermark.StandardWidth / decodificada.Width,
-            (double)PlayerWatermark.StandardHeight / decodificada.Height));
+            (double)maxWidth / decodificada.Width,
+            (double)maxHeight / decodificada.Height));
 
         var alvoLargura = Math.Max(1, (int)Math.Round(decodificada.Width * escala));
         var alvoAltura = Math.Max(1, (int)Math.Round(decodificada.Height * escala));
