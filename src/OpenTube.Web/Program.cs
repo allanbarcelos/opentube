@@ -126,6 +126,7 @@ rotas.MapAuthEndpoints();
 rotas.MapAdminEndpoints();
 rotas.MapShareEndpoints();
 rotas.MapCollectionEndpoints();
+rotas.MapLookupEndpoints();
 rotas.MapCollectionFavoriteEndpoints();
 rotas.MapListingPreferenceEndpoints();
 rotas.MapVideoFavoriteEndpoints();

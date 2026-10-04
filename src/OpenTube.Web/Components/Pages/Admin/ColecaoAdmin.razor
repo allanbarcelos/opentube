@@ -7,10 +7,10 @@
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Playback
 @using OpenTube.Infrastructure.Services
+@using OpenTube.Web.Endpoints
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject CollectionService Colecoes
-@inject VideoCatalog Catalogo
-@inject CurrentViewer Espectadores
+@inject AdminLookup Opcoes
 @inject NavigationManager Navegacao
 
 <PageTitle>@(Colecao?.Name ?? T["Collection"]) — @T["Administration"]</PageTitle>
@@ -110,13 +110,9 @@
 
                             <div class="col-sm-8">
                                 <label class="form-label visually-hidden" for="videoId">@T["Video"]</label>
-                                <select class="form-select" id="videoId" name="videoId" required>
-                                    <option value="">@T["Choose a video…"]</option>
-                                    @foreach (var video in Disponiveis)
-                                    {
-                                        <option value="@video.Id">@video.Title</option>
-                                    }
-                                </select>
+                                <SeletorDinamico Id="videoId" Nome="videoId" Obrigatorio="true"
+                                                 Fonte="@LookupEndpoints.VideosForCollection(Colecao.Id)"
+                                                 Placeholder="@T["Search for a video…"]" />
                             </div>
 
                             <div class="col-sm-4">
@@ -226,26 +222,24 @@
 
                                     <div class="form-check">
                                         <input class="form-check-input" type="radio" name="videos" id="videos-mover"
-                                               value="mover" required disabled="@(OutrasColecoes.Count == 0)" />
+                                               value="mover" required disabled="@(!HaOutrasColecoes)" />
                                         <label class="form-check-label" for="videos-mover">
                                             @T["Move them to another collection."]
                                         </label>
                                     </div>
 
-                                    @if (OutrasColecoes.Count == 0)
+                                    @if (!HaOutrasColecoes)
                                     {
                                         <p class="form-text">@T["There is no other collection to move them to."]</p>
                                     }
                                     else
                                     {
-                                        <select class="form-select form-select-sm my-2" id="destino" name="destino"
-                                                aria-label="@T["Choose a collection…"]">
-                                            <option value="">@T["Choose a collection…"]</option>
-                                            @foreach (var outra in OutrasColecoes)
-                                            {
-                                                <option value="@outra.Id">@outra.Name</option>
-                                            }
-                                        </select>
+                                        <div class="my-2">
+                                            <SeletorDinamico Id="destino" Nome="destino" Classe="form-control-sm"
+                                                             Fonte="@LookupEndpoints.Collections(Colecao.Id)"
+                                                             Placeholder="@T["Search for a collection…"]"
+                                                             AriaLabel="@T["Choose a collection…"]" />
+                                        </div>
                                     }
 
                                     <div class="form-check">
@@ -322,9 +316,8 @@
 
     private IReadOnlyList<VideoSummary> Videos = [];
 
-    private IReadOnlyList<VideoSummary> Disponiveis = [];
-
-    private IReadOnlyList<CollectionSummary> OutrasColecoes = [];
+    /// <summary>Se há outra coleção para onde mover os vídeos ao excluir esta.</summary>
+    private bool HaOutrasColecoes;
 
     private ConflitoDeVideo? Conflito;
 
@@ -359,16 +352,10 @@
         }
 
         Videos = await Colecoes.VideosOfAsync(CollectionId, Http.RequestAborted);
-        OutrasColecoes = (await Colecoes.ListAsync(cancellationToken: Http.RequestAborted))
-            .Where(c => c.Id != CollectionId)
-            .ToList();
 
-        var jaNaColecao = Videos.Select(v => v.Id).ToHashSet();
-        var espectador = await Espectadores.GetAsync(Http.RequestAborted);
-
-        var acervo = await Catalogo.BrowseAsync(espectador, page: 1, pageSize: 100, cancellationToken: Http.RequestAborted);
-
-        Disponiveis = acervo.Items.Where(v => !jaNaColecao.Contains(v.Id)).ToList();
+        // Os vídeos para adicionar e as coleções de destino chegam pelo seletor com busca, aos
+        // poucos; aqui só importa se existe alguma outra coleção.
+        HaOutrasColecoes = (await Opcoes.CollectionsAsync(null, CollectionId, cancellationToken: Http.RequestAborted)).Items.Count > 0;
 
         if (Guid.TryParse(Mover, out var videoEmOutra))
             Conflito = await Colecoes.FindPlacementConflictAsync(CollectionId, videoEmOutra, Http.RequestAborted);

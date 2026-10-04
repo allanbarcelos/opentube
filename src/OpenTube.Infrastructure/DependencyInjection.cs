@@ -66,6 +66,7 @@ public static class DependencyInjection
         services.AddScoped<VideoChapterService>();
         services.AddScoped<VideoRatingService>();
         services.AddScoped<CollectionService>();
+        services.AddScoped<AdminLookup>();
         services.AddScoped<CollectionFavoriteService>();
         services.AddScoped<VideoFavoriteService>();
         services.AddScoped<CollectionNoticeService>();

@@ -1091,6 +1091,17 @@
     display: block;
 }
 
+/* Seletor com busca (seletor.js): a lista rola dentro de uma altura fixa, e chegar ao fim dela
+   pede a página seguinte. */
+.seletor-opcoes {
+    max-height: 18rem;
+    overflow-y: auto;
+}
+
+.seletor-opcao {
+    cursor: pointer;
+}
+
 /* Logotipo da personalização na barra: 32 px de altura e largura limitada, para um logotipo
    muito horizontal não empurrar a busca. */
 .logo-do-site {

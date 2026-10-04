@@ -1,0 +1,53 @@
+@*
+    SPDX-License-Identifier: MIT
+    Copyright (c) 2026 Allan Barcelos. OpenTube: https://github.com/allanbarcelos/opentube
+*@
+
+@*
+    Seletor com busca para listas que vêm do banco, no lugar de um <select> com tudo. A pessoa
+    digita, e as opções chegam do servidor (Fonte) vinte por vez, filtradas pelo que foi digitado;
+    o fim da lista pede a página seguinte. O valor escolhido vai no campo escondido (Nome), como
+    iria o do <select>. O comportamento está em js/seletor.js; os textos vêm daqui, traduzidos.
+*@
+<div class="seletor position-relative" data-seletor data-fonte="@Fonte"
+     data-obrigatorio="@(Obrigatorio ? "1" : null)"
+     data-vazio="@T["Nothing found."]"
+     data-carregando="@T["Loading…"]"
+     data-mais="@T["Load more"]"
+     data-erro="@T["Could not load the options. Try again."]"
+     data-escolha="@T["Choose an option from the list."]">
+    <input type="hidden" name="@Nome" value="" data-seletor-valor />
+    <input type="text" class="form-control @Classe" id="@Id" placeholder="@Placeholder" autocomplete="off"
+           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="@(Id)-opcoes"
+           aria-label="@AriaLabel" data-seletor-busca />
+    <ul class="dropdown-menu seletor-opcoes w-100" id="@(Id)-opcoes" role="listbox"></ul>
+</div>
+
+@code {
+    /// <summary>Id do campo de busca, para o &lt;label for&gt; apontar para ele.</summary>
+    [Parameter, EditorRequired]
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>Nome do campo enviado no formulário.</summary>
+    [Parameter, EditorRequired]
+    public string Nome { get; set; } = string.Empty;
+
+    /// <summary>Endereço que devolve as opções (LookupEndpoints).</summary>
+    [Parameter, EditorRequired]
+    public string Fonte { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Placeholder { get; set; }
+
+    /// <summary>Rótulo para leitores de tela, quando não há um &lt;label&gt; visível.</summary>
+    [Parameter]
+    public string? AriaLabel { get; set; }
+
+    /// <summary>Impede o envio do formulário sem uma opção escolhida.</summary>
+    [Parameter]
+    public bool Obrigatorio { get; set; }
+
+    /// <summary>Classes a mais do campo de busca (form-control-sm, por exemplo).</summary>
+    [Parameter]
+    public string? Classe { get; set; }
+}

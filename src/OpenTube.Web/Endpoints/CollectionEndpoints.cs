@@ -83,17 +83,22 @@ public static class CollectionEndpoints
 
         grupo.MapPost("/{collectionId:guid}/videos/add", async (
             Guid collectionId,
-            [FromForm] Guid videoId,
+            [FromForm] string? videoId,
             [FromForm] bool? confirmar,
             CollectionService colecoes,
             CancellationToken cancellationToken) =>
         {
+            // Sem uma opção escolhida no seletor, o campo chega vazio. Guid recusaria com 400; a
+            // página volta dizendo o que faltou.
+            if (!Guid.TryParse(videoId, out var video))
+                return Results.Redirect($"/admin/collections/{collectionId}?erro={Uri.EscapeDataString(LocalText.Get("Choose a video from the list."))}");
+
             try
             {
-                var resultado = await colecoes.AddVideoAsync(collectionId, videoId, confirmar == true, cancellationToken);
+                var resultado = await colecoes.AddVideoAsync(collectionId, video, confirmar == true, cancellationToken);
 
                 if (resultado.NeedsConfirmation)
-                    return Results.Redirect($"/admin/collections/{collectionId}?mover={videoId}");
+                    return Results.Redirect($"/admin/collections/{collectionId}?mover={video}");
 
                 if (resultado.Moved)
                     return Results.Redirect($"/admin/collections/{collectionId}?movido=1");
