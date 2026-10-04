@@ -8,18 +8,31 @@ namespace OpenTube.Web.Tests.Endpoints;
 /// <summary>Conversão dos campos do formulário de concessão, que não depende de servidor.</summary>
 public class FormularioDeAcessoTests
 {
+    private static readonly DateTimeOffset Agora = new(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void A_data_final_e_conferida_contra_o_instante_da_aplicacao_e_nao_o_da_maquina()
+    {
+        // O mesmo dia é futuro para um instante e passado para outro: quem decide é o relógio
+        // que a aplicação passa (o TimeProvider), não a hora do servidor que roda o teste.
+        Assert.NotNull(AccessEndpoints.MontarValidade(Agora, "ate", null, data: "2026-10-10").ExpiresAt);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            AccessEndpoints.MontarValidade(Agora.AddDays(30), "ate", null, data: "2026-10-10"));
+    }
+
     [Fact]
     public void Sem_prazo_e_o_padrao()
     {
-        Assert.Equal("no end date", AccessEndpoints.MontarValidade("sempre", null).Describe());
-        Assert.Equal("no end date", AccessEndpoints.MontarValidade(null, "30").Describe());
-        Assert.Equal("no end date", AccessEndpoints.MontarValidade("qualquer-coisa", "30").Describe());
+        Assert.Equal("no end date", AccessEndpoints.MontarValidade(Agora, "sempre", null).Describe());
+        Assert.Equal("no end date", AccessEndpoints.MontarValidade(Agora, null, "30").Describe());
+        Assert.Equal("no end date", AccessEndpoints.MontarValidade(Agora, "qualquer-coisa", "30").Describe());
     }
 
     [Fact]
     public void Prazo_em_dias_conta_do_primeiro_acesso()
     {
-        var validade = AccessEndpoints.MontarValidade("dias", "30");
+        var validade = AccessEndpoints.MontarValidade(Agora, "dias", "30");
 
         Assert.Equal(TimeSpan.FromDays(30), validade.DurationAfterFirstUse);
         Assert.Null(validade.ExpiresAt);
@@ -33,7 +46,7 @@ public class FormularioDeAcessoTests
     [InlineData("99999")]
     public void Prazo_em_dias_invalido_e_recusado_em_vez_de_virar_sem_prazo(string valor)
     {
-        var erro = Assert.Throws<InvalidOperationException>(() => AccessEndpoints.MontarValidade("dias", valor));
+        var erro = Assert.Throws<InvalidOperationException>(() => AccessEndpoints.MontarValidade(Agora, "dias", valor));
 
         Assert.Equal("Enter the number of days, from 1 to 3650.", erro.Message);
     }
@@ -41,13 +54,13 @@ public class FormularioDeAcessoTests
     [Fact]
     public void Campo_proprio_de_dias_tem_preferencia()
     {
-        Assert.Equal(TimeSpan.FromDays(15), AccessEndpoints.MontarValidade("dias", null, dias: "15").DurationAfterFirstUse);
+        Assert.Equal(TimeSpan.FromDays(15), AccessEndpoints.MontarValidade(Agora, "dias", null, dias: "15").DurationAfterFirstUse);
     }
 
     [Fact]
     public void Data_fixa_define_o_termino()
     {
-        var validade = AccessEndpoints.MontarValidade("ate", "2099-12-31");
+        var validade = AccessEndpoints.MontarValidade(Agora, "ate", "2099-12-31");
 
         Assert.NotNull(validade.ExpiresAt);
         Assert.Null(validade.DurationAfterFirstUse);
@@ -56,7 +69,7 @@ public class FormularioDeAcessoTests
     [Fact]
     public void A_data_vale_ate_o_fim_do_dia_escolhido()
     {
-        var validade = AccessEndpoints.MontarValidade("ate", null, data: "2099-12-31");
+        var validade = AccessEndpoints.MontarValidade(Agora, "ate", null, data: "2099-12-31");
 
         var fim = validade.ExpiresAt!.Value.ToLocalTime();
         Assert.Equal(new DateTime(2100, 1, 1), fim.DateTime);
@@ -68,7 +81,7 @@ public class FormularioDeAcessoTests
     [InlineData("2001-01-01")]
     public void Data_invalida_ou_passada_e_recusada(string valor)
     {
-        Assert.Throws<InvalidOperationException>(() => AccessEndpoints.MontarValidade("ate", null, data: valor));
+        Assert.Throws<InvalidOperationException>(() => AccessEndpoints.MontarValidade(Agora, "ate", null, data: valor));
     }
 
     [Theory]

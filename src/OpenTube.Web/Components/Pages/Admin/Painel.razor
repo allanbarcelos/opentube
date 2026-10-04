@@ -12,6 +12,7 @@
 @inject CurrentViewer Espectadores
 @inject OpenTube.Infrastructure.Support.SupportService Suporte
 @inject ProcessingQueueService Fila
+@inject TimeProvider Relogio
 
 <TituloDaPagina Pagina="@T["Administration"]" />
 
@@ -311,7 +312,7 @@
 
     private string Quando(QueueItem trabalho)
     {
-        var agora = DateTimeOffset.UtcNow;
+        var agora = Relogio.GetUtcNow();
 
         return trabalho.Status switch
         {

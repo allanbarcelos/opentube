@@ -13,9 +13,12 @@ namespace OpenTube.Domain.Access;
 /// </summary>
 public static class AccessPolicy
 {
-    /// <summary>Avalia o acesso a um vídeo sem considerar concessões.</summary>
+    /// <summary>
+    /// Avalia o acesso a um vídeo sem considerar concessões. O instante só serve para conferir o
+    /// prazo de uma concessão; sem nenhuma, ele não é consultado, e o domínio não lê o relógio.
+    /// </summary>
     public static AccessDecision Evaluate(Viewer viewer, Video video) =>
-        Evaluate(viewer, video, [], [], DateTimeOffset.UtcNow);
+        Evaluate(viewer, video, [], [], DateTimeOffset.MinValue);
 
     /// <summary>
     /// Avalia o acesso considerando as concessões existentes para o vídeo.

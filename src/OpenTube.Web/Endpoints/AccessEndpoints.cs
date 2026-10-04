@@ -36,6 +36,7 @@ public static class AccessEndpoints
             [FromForm] string? enviarEmail,
             [FromForm] string? escolhaDoEmail,
             GrantService concessoes,
+            TimeProvider relogio,
             HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
@@ -44,7 +45,7 @@ public static class AccessEndpoints
 
             try
             {
-                var prazo = MontarValidade(validade, valorDaValidade, dias, dataFinal);
+                var prazo = MontarValidade(relogio.GetUtcNow(), validade, valorDaValidade, dias, dataFinal);
 
                 // Sem a escolha no formulário (formulários antigos), o email sai como sempre saiu.
                 var enviar = escolhaDoEmail is null || enviarEmail is "1" or "on" or "true";
@@ -77,6 +78,7 @@ public static class AccessEndpoints
             [FromForm] string? dataFinal,
             [FromForm] string? nota,
             GrantService concessoes,
+            TimeProvider relogio,
             HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
@@ -85,7 +87,7 @@ public static class AccessEndpoints
 
             try
             {
-                var prazo = MontarValidade(validade, valorDaValidade, dias, dataFinal);
+                var prazo = MontarValidade(relogio.GetUtcNow(), validade, valorDaValidade, dias, dataFinal);
                 var lista = SepararEmails(dominios ?? dominio).ToList();
 
                 var concedidos = await concessoes.GrantToDomainsAsync(
@@ -115,6 +117,7 @@ public static class AccessEndpoints
             [FromForm] string? nota,
             GrantService concessoes,
             ShareLinkFlash flash,
+            TimeProvider relogio,
             HttpContext contexto,
             CancellationToken cancellationToken) =>
         {
@@ -123,7 +126,7 @@ public static class AccessEndpoints
 
             try
             {
-                var prazo = MontarValidade(validade, valorDaValidade, dias, dataFinal);
+                var prazo = MontarValidade(relogio.GetUtcNow(), validade, valorDaValidade, dias, dataFinal);
 
                 var link = await concessoes.CreateShareLinkAsync(
                     tipo, alvoId, prazo, admin.UserId!.Value, LimiteDeVisualizacoes(limiteDeVisualizacoes), nota, cancellationToken);
@@ -221,7 +224,8 @@ public static class AccessEndpoints
     /// <param name="valor">Campo antigo, único para dias e data.</param>
     /// <param name="dias">Número de dias a partir do primeiro acesso.</param>
     /// <param name="data">Último dia de acesso (aaaa-mm-dd), incluído inteiro.</param>
-    public static GrantValidity MontarValidade(string? modo, string? valor, string? dias = null, string? data = null)
+    public static GrantValidity MontarValidade(
+        DateTimeOffset agora, string? modo, string? valor, string? dias = null, string? data = null)
     {
         switch (modo)
         {
@@ -240,7 +244,7 @@ public static class AccessEndpoints
                     var meiaNoite = dia.AddDays(1).ToDateTime(TimeOnly.MinValue);
                     var fim = new DateTimeOffset(meiaNoite, TimeZoneInfo.Local.GetUtcOffset(meiaNoite));
                     // O banco guarda instantes em UTC; o fim do dia é o do fuso do servidor.
-                    return fim > DateTimeOffset.Now
+                    return fim > agora
                         ? GrantValidity.Until(fim.ToUniversalTime())
                         : throw new InvalidOperationException("Choose an end date in the future.");
                 }

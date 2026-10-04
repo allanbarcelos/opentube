@@ -13,7 +13,7 @@ namespace OpenTube.Infrastructure.Analytics;
 /// Consultas dos painéis. Ficam em SQL porque são agregações sobre milhares de linhas, onde
 /// a tradução automática de consulta costuma render planos ruins.
 /// </summary>
-public class AnalyticsQueries(OpenTubeDbContext db)
+public class AnalyticsQueries(OpenTubeDbContext db, TimeProvider clock)
 {
     /// <summary>Resumo de audiência de um vídeo.</summary>
     public async Task<VideoAudience> VideoAudienceAsync(Guid videoId, CancellationToken cancellationToken = default)
@@ -134,7 +134,7 @@ public class AnalyticsQueries(OpenTubeDbContext db)
     public async Task<IReadOnlyList<DailyPoint>> DailySeriesAsync(
         Guid videoId, int days = 30, CancellationToken cancellationToken = default)
     {
-        var desde = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-days);
+        var desde = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime).AddDays(-days);
 
         var pontos = await db.VideoDailyStats
             .AsNoTracking()

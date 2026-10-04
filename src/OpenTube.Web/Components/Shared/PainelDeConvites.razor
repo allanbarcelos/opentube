@@ -7,6 +7,7 @@
 @using OpenTube.Infrastructure.Access
 @inject GrantService Concessoes
 @inject ShareLinkFlash Links
+@inject TimeProvider Relogio
 
 @* Convites de um vídeo ou de uma coleção. Cada convite é independente: o que um cria ou
    revoga não mexe nos outros, e a mesma pessoa em dois convites tem os dois acessos. *@
@@ -293,7 +294,8 @@
 
     private IReadOnlyList<InvitationView> Convites = [];
 
-    private readonly DateTimeOffset Agora = DateTimeOffset.UtcNow;
+    // Pelo relógio da aplicação, o mesmo que decide o acesso: "ativo" aqui é ativo de fato.
+    private DateTimeOffset Agora => Relogio.GetUtcNow();
 
     private int Ativos => Grupos.Sum(g => g.Linhas.Count(l => Situacao(l.Concessao) == "ativo"));
 

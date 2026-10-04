@@ -30,7 +30,7 @@ public class AnalyticsQueriesTests(PostgresFixture postgres) : IAsyncLifetime
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private AnalyticsQueries Consultas(OpenTubeDbContext db) => new(db);
+    private AnalyticsQueries Consultas(OpenTubeDbContext db) => new(db, _relogio);
 
     private async Task<Video> CriarVideoAsync(string titulo = "Reunião")
     {
@@ -240,11 +240,29 @@ public class AnalyticsQueriesTests(PostgresFixture postgres) : IAsyncLifetime
         await new AnalyticsAggregator(db, _relogio, NullLogger<AnalyticsAggregator>.Instance)
             .RollupDayAsync(new DateOnly(2026, 9, 24));
 
-        var serie = await Consultas(db).DailySeriesAsync(video.Id, days: 3650);
+        var serie = await Consultas(db).DailySeriesAsync(video.Id, days: 7);
 
         var ponto = Assert.Single(serie);
         Assert.Equal(1, ponto.Views);
         Assert.Equal(300, ponto.WatchSeconds);
+    }
+
+    [Fact]
+    public async Task A_janela_da_serie_diaria_conta_a_partir_do_relogio_da_aplicacao()
+    {
+        var video = await CriarVideoAsync();
+        await AssistirAsync(video.Id, null, "v1", 300);
+
+        await using var db = postgres.CreateContext();
+        await new AnalyticsAggregator(db, _relogio, NullLogger<AnalyticsAggregator>.Instance)
+            .RollupDayAsync(new DateOnly(2026, 9, 24));
+
+        // Um ano depois, pelo relógio da aplicação, o dia sai da janela de 30 dias. Contada pela
+        // hora da máquina, a janela não andaria com o relógio e o dia continuaria dentro.
+        _relogio.Advance(TimeSpan.FromDays(400));
+
+        Assert.Empty(await Consultas(db).DailySeriesAsync(video.Id, days: 30));
+        Assert.Single(await Consultas(db).DailySeriesAsync(video.Id, days: 500));
     }
 
     [Fact]

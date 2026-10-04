@@ -157,6 +157,9 @@ public class S3VideoStorage : IVideoStorage, IDisposable
         // O protocolo S3 limita um envio multipart a 10.000 pedaços.
         ArgumentOutOfRangeException.ThrowIfGreaterThan(firstPart + partCount - 1, 10_000);
 
+        // Relógio real, de propósito, aqui e na assinatura de leitura: o SDK assina com a hora da
+        // máquina, e o prazo tem de ser contado a partir dela. Um TimeProvider falso nos testes
+        // geraria endereços já vencidos ou com prazo maior que o pedido.
         var expiration = DateTime.UtcNow + _options.UploadUrlLifetime;
 
         return Enumerable.Range(firstPart, partCount)
