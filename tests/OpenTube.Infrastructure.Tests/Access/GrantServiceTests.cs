@@ -45,8 +45,15 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var db = postgres.CreateContext();
         var opcoes = Microsoft.Extensions.Options.Options.Create(_seguranca);
 
-        return (new GrantService(db, _emails, new IdentidadeFixa(), opcoes, _relogio, NullLogger<GrantService>.Instance), db);
+        var mensageiro = new InvitationMailer(db, new GrantQueries(db), _emails, new IdentidadeFixa(), opcoes);
+
+        return (new GrantService(db, mensageiro, _relogio, NullLogger<GrantService>.Instance), db);
     }
+
+    private ShareLinkService Links(OpenTubeDbContext db) =>
+        new(db, Microsoft.Extensions.Options.Options.Create(_seguranca), _relogio);
+
+    private static GrantQueries Consultas(OpenTubeDbContext db) => new(db);
 
     private async Task<Video> VideoRestritoAsync(string titulo = "Plano Confidencial")
     {
@@ -109,6 +116,53 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.DoesNotMatch(@"\b\d{6}\b", mensagem.TextBody);
         await using var leitura = postgres.CreateContext();
         Assert.Equal(0, await leitura.LoginCodes.CountAsync());
+    }
+
+    [Fact]
+    public async Task O_convite_do_acervo_leva_a_pagina_inicial()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        await servico.InviteAsync(["allan@barcelos.dev"], GrantTargetType.All, null, GrantValidity.Forever, Admin);
+
+        var mensagem = _emails.Last!;
+
+        Assert.Contains("The whole library", mensagem.Subject);
+        Assert.Matches(@"https://opentube\.org/sign-in\?email=allan%40barcelos\.dev&voltar=%2F(\s|$)", mensagem.TextBody);
+    }
+
+    [Fact]
+    public async Task Convite_de_um_alvo_que_nao_existe_mais_usa_um_nome_generico()
+    {
+        var (servico, db) = Criar();
+        await using var _ = db;
+
+        // O nome vem da mesma consulta da auditoria; sem o vídeo, o convite não fica sem título.
+        await servico.InviteAsync(["allan@barcelos.dev"], GrantTargetType.Video, Guid.CreateVersion7(), GrantValidity.Forever, Admin);
+
+        Assert.Contains("A video", _emails.Last!.Subject);
+        Assert.Matches(@"voltar=%2F(\s|$)", _emails.Last!.TextBody);
+    }
+
+    [Fact]
+    public void O_servico_de_concessoes_so_concede_e_revoga()
+    {
+        // Links secretos, leitura e o email de convite têm classes próprias: o serviço de
+        // concessões não depende de email, da identidade do site nem do segredo dos links.
+        var dependencias = typeof(GrantService).GetConstructors().Single().GetParameters().Select(p => p.ParameterType).ToList();
+
+        Assert.DoesNotContain(typeof(OpenTube.Infrastructure.Email.IEmailSender), dependencias);
+        Assert.DoesNotContain(typeof(OpenTube.Infrastructure.Branding.ISiteIdentity), dependencias);
+        Assert.DoesNotContain(typeof(Microsoft.Extensions.Options.IOptions<SecurityOptions>), dependencias);
+
+        var metodos = typeof(GrantService).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly)
+            .Select(m => m.Name)
+            .ToHashSet();
+
+        Assert.Equal(
+            new HashSet<string> { "InviteAsync", "GrantToDomainAsync", "GrantToDomainsAsync", "RevokeAsync", "RestoreAsync" },
+            metodos);
     }
 
     [Fact]
@@ -309,7 +363,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         _relogio.Advance(TimeSpan.FromMinutes(1));
         await servico.GrantToDomainsAsync(["barcelos.dev"], GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
         _relogio.Advance(TimeSpan.FromMinutes(1));
-        await servico.CreateShareLinkAsync(GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin, maxViews: 3);
+        await Links(db).CreateShareLinkAsync(GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin, maxViews: 3);
 
         // Concessão de antes dos convites.
         await using (var antigo = postgres.CreateContext())
@@ -319,7 +373,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
             await antigo.SaveChangesAsync();
         }
 
-        var convites = await servico.ListInvitationsAsync(GrantTargetType.Video, video.Id);
+        var convites = await Consultas(db).ListInvitationsAsync(GrantTargetType.Video, video.Id);
 
         Assert.Equal([InvitationKind.Link, InvitationKind.Domains, InvitationKind.People, InvitationKind.People],
             convites.Select(c => c.Kind));
@@ -343,7 +397,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var (servico, db) = Criar();
         await using var _ = db;
 
-        var link = await servico.CreateShareLinkAsync(
+        var link = await Links(db).CreateShareLinkAsync(
             GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
 
         Assert.StartsWith("https://opentube.org/link/", link.Url);
@@ -364,7 +418,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var (servico, db) = Criar();
         await using var _ = db;
 
-        var link = await servico.CreateShareLinkAsync(GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
+        var link = await Links(db).CreateShareLinkAsync(GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
         var token = link.Url[(link.Url.LastIndexOf('/') + 1)..];
 
         await using var leitura = postgres.CreateContext();
@@ -380,12 +434,12 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var (servico, db) = Criar();
         await using var _ = db;
 
-        var link = await servico.CreateShareLinkAsync(GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
+        var link = await Links(db).CreateShareLinkAsync(GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
 
         await using var leitura = postgres.CreateContext();
         var concessao = await leitura.AccessGrants.SingleAsync();
 
-        Assert.Equal(link.Url, servico.ShareLinkAddress(concessao));
+        Assert.Equal(link.Url, Links(db).ShareLinkAddress(concessao));
     }
 
     [Fact]
@@ -397,7 +451,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var antigo = AccessGrant.ForLink(TokenHasher.Hash("token-antigo", "segredo-de-teste"),
             GrantTargetType.Video, Guid.CreateVersion7(), Admin, DateTimeOffset.UtcNow);
 
-        Assert.Null(servico.ShareLinkAddress(antigo));
+        Assert.Null(Links(db).ShareLinkAddress(antigo));
     }
 
     [Fact]
@@ -407,7 +461,7 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
         var (servico, db) = Criar();
         await using var _ = db;
 
-        var link = await servico.CreateShareLinkAsync(
+        var link = await Links(db).CreateShareLinkAsync(
             GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin, maxViews: 5);
 
         await using var leitura = postgres.CreateContext();
@@ -456,8 +510,8 @@ public class GrantServiceTests(PostgresFixture postgres) : IAsyncLifetime
             GrantTargetType.Video, video.Id, GrantValidity.Forever, Admin);
         await servico.InviteAsync(["a@barcelos.dev"], GrantTargetType.All, null, GrantValidity.Forever, Admin);
 
-        Assert.Equal(2, (await servico.ListForTargetAsync(GrantTargetType.Video, video.Id)).Count);
-        Assert.Equal(2, (await servico.ListForEmailAsync("A@Barcelos.dev")).Count);
+        Assert.Equal(2, (await Consultas(db).ListForTargetAsync(GrantTargetType.Video, video.Id)).Count);
+        Assert.Equal(2, (await Consultas(db).ListForEmailAsync("A@Barcelos.dev")).Count);
     }
 
     [Fact]

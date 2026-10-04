@@ -115,7 +115,7 @@ public static class AccessEndpoints
             [FromForm] string? dataFinal,
             [FromForm] string? limiteDeVisualizacoes,
             [FromForm] string? nota,
-            GrantService concessoes,
+            ShareLinkService links,
             ShareLinkFlash flash,
             TimeProvider relogio,
             HttpContext contexto,
@@ -128,7 +128,7 @@ public static class AccessEndpoints
             {
                 var prazo = MontarValidade(relogio.GetUtcNow(), validade, valorDaValidade, dias, dataFinal);
 
-                var link = await concessoes.CreateShareLinkAsync(
+                var link = await links.CreateShareLinkAsync(
                     tipo, alvoId, prazo, admin.UserId!.Value, LimiteDeVisualizacoes(limiteDeVisualizacoes), nota, cancellationToken);
 
                 await contexto.RegistrarAsync(
@@ -149,10 +149,10 @@ public static class AccessEndpoints
         // Uma pessoa, domínio ou link, sozinho.
         grupo.MapPost("/{grantId:guid}/revoke", async (
             Guid grantId, [FromForm] int alvoTipo, [FromForm] Guid? alvoId,
-            GrantService concessoes, HttpContext contexto, CancellationToken cancellationToken) =>
+            GrantService concessoes, GrantQueries consultas, HttpContext contexto, CancellationToken cancellationToken) =>
         {
             var concessao = await concessoes.RevokeAsync(grantId, cancellationToken);
-            var alvo = await concessoes.TargetNameAsync(concessao.TargetType, concessao.TargetId, cancellationToken);
+            var alvo = await consultas.TargetNameAsync(concessao.TargetType, concessao.TargetId, cancellationToken);
 
             await contexto.RegistrarAsync(
                 AuditActions.AcessoRevogado, AuditEntities.Concessao, grantId,
@@ -164,10 +164,10 @@ public static class AccessEndpoints
 
         grupo.MapPost("/{grantId:guid}/restore", async (
             Guid grantId, [FromForm] int alvoTipo, [FromForm] Guid? alvoId,
-            GrantService concessoes, HttpContext contexto, CancellationToken cancellationToken) =>
+            GrantService concessoes, GrantQueries consultas, HttpContext contexto, CancellationToken cancellationToken) =>
         {
             var concessao = await concessoes.RestoreAsync(grantId, cancellationToken);
-            var alvo = await concessoes.TargetNameAsync(concessao.TargetType, concessao.TargetId, cancellationToken);
+            var alvo = await consultas.TargetNameAsync(concessao.TargetType, concessao.TargetId, cancellationToken);
 
             await contexto.RegistrarAsync(
                 AuditActions.AcessoRestaurado, AuditEntities.Concessao, grantId,

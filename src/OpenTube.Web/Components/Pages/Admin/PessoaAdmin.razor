@@ -11,7 +11,7 @@
 @using Microsoft.EntityFrameworkCore
 @attribute [Authorize(Policy = Policies.Administrator)]
 @inject AnalyticsQueries Consultas
-@inject GrantService Concessoes
+@inject GrantQueries Concessoes
 @inject OpenTubeDbContext Db
 @inject NavigationManager Navegacao
 

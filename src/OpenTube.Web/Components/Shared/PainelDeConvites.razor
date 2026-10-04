@@ -5,7 +5,8 @@
 
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Access
-@inject GrantService Concessoes
+@inject GrantQueries Concessoes
+@inject ShareLinkService LinksSecretos
 @inject ShareLinkFlash Links
 @inject TimeProvider Relogio
 
@@ -104,7 +105,7 @@
 
                                 @if (concessao.SubjectType == GrantSubjectType.Link)
                                 {
-                                    var endereco = Concessoes.ShareLinkAddress(concessao);
+                                    var endereco = LinksSecretos.ShareLinkAddress(concessao);
                                     @if (endereco is not null)
                                     {
                                         var campo = $"link-{concessao.Id:n}";

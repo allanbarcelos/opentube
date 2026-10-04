@@ -199,7 +199,7 @@ public class ColetaDeAudienciaTests(PostgresFixture postgres, MinioFixture minio
 
         using var escopo = _app.Services.CreateScope();
         var link = await escopo.ServiceProvider
-            .GetRequiredService<OpenTube.Infrastructure.Access.GrantService>()
+            .GetRequiredService<OpenTube.Infrastructure.Access.ShareLinkService>()
             .CreateShareLinkAsync(GrantTargetType.Video, video.Id,
                 OpenTube.Infrastructure.Access.GrantValidity.Forever, Guid.CreateVersion7());
 

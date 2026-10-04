@@ -81,7 +81,7 @@ public class MarcaDaguaTests(PostgresFixture postgres, MinioFixture minio) : IAs
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Plano", VideoVisibility.Restricted);
 
         using var escopo = _app.Services.CreateScope();
-        var link = await escopo.ServiceProvider.GetRequiredService<GrantService>().CreateShareLinkAsync(
+        var link = await escopo.ServiceProvider.GetRequiredService<ShareLinkService>().CreateShareLinkAsync(
             GrantTargetType.Video, video.Id, GrantValidity.Forever, Guid.CreateVersion7());
 
         using var cliente = _app.CreateBrowser();

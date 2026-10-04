@@ -82,6 +82,9 @@ public static class DependencyInjection
         services.AddScoped<AuditTrail>();
         services.AddScoped<AccessService>();
         services.AddScoped<GrantService>();
+        services.AddScoped<GrantQueries>();
+        services.AddScoped<ShareLinkService>();
+        services.AddScoped<InvitationMailer>();
         services.AddScoped<PlaybackGuard>();
         services.AddScoped<PlaybackService>();
         services.AddSingleton<PlaybackTickets>();

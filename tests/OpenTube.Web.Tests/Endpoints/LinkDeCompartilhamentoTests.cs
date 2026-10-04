@@ -39,9 +39,9 @@ public class LinkDeCompartilhamentoTests(PostgresFixture postgres, MinioFixture 
         var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Plano Confidencial", VideoVisibility.Restricted);
 
         using var escopo = _app.Services.CreateScope();
-        var concessoes = escopo.ServiceProvider.GetRequiredService<GrantService>();
+        var links = escopo.ServiceProvider.GetRequiredService<ShareLinkService>();
 
-        var link = await concessoes.CreateShareLinkAsync(
+        var link = await links.CreateShareLinkAsync(
             GrantTargetType.Video, video.Id, GrantValidity.Forever, Guid.CreateVersion7(), maxViews);
 
         return (link.Url, link.GrantId, video.Slug);
