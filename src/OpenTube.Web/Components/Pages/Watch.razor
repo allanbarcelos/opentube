@@ -7,16 +7,8 @@
 @using OpenTube.Domain.Entities
 @using OpenTube.Infrastructure.Playback
 @using OpenTube.Domain.Media
-@inject VideoCatalog Catalogo
+@inject WatchPageService Paginas
 @inject CurrentViewer Espectadores
-@inject PlaybackTokens Tokens
-@inject OpenTube.Infrastructure.Branding.WatermarkService Marcas
-@inject OpenTube.Infrastructure.Services.CaptionService Legendas
-@inject OpenTube.Infrastructure.Services.VideoChapterService Sumarios
-@inject OpenTube.Infrastructure.Services.VideoRatingService Avaliacoes
-@inject OpenTube.Infrastructure.Services.VideoFavoriteService Favoritos
-@inject OpenTube.Infrastructure.Services.CollectionNoticeService Avisos
-@inject Microsoft.Extensions.Options.IOptions<OpenTube.Infrastructure.Options.SecurityOptions> Seguranca
 @inject NavigationManager Navegacao
 
 <TituloDaPagina Pagina="@(Video?.Title ?? T["Video not found"])" />
@@ -229,11 +221,11 @@
     private int? MinhaNota;
 
     /// <summary>Pedaços da barra de progresso; um trecho antes do primeiro capítulo fica sem título.</summary>
-    private readonly List<(int Inicio, int Fim, string Titulo)> Segmentos = [];
+    private IReadOnlyList<ProgressSegment> Segmentos = [];
 
     /// <summary>Capítulos para os controles do player (controles.js), em JSON.</summary>
     private string CapitulosDoPlayer => System.Text.Json.JsonSerializer.Serialize(
-        Segmentos.Select(s => new { inicio = s.Inicio, fim = s.Fim, titulo = s.Titulo }));
+        Segmentos.Select(s => new { inicio = s.Start, fim = s.End, titulo = s.Title }));
 
     /// <summary>Textos dos controles do player, na língua da página.</summary>
     private string Rotulos => System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string>
@@ -276,51 +268,28 @@
     {
         Espectador = await Espectadores.GetAsync(Http.RequestAborted);
 
-        // Abrir a página é pedir uma reprodução nova: o bilhete de uma reprodução anterior não
-        // pode mostrar o player a quem já esgotou as visualizações.
-        // Video só é preenchido no fim. O Blazor desenha a página na primeira espera que não termina
-        // na hora; se Video já estivesse preenchido, os painéis filhos começariam a consultar o banco
-        // pelo mesmo contexto enquanto esta página ainda consulta, e o EF recusa duas operações
-        // simultâneas (erro 500 intermitente).
-        var video = await Catalogo.FindBySlugAsync(Espectador.StartingNewView(), Slug, Http.RequestAborted);
-
-        if (video is not null)
-        {
-            // Abrir o vídeo é o clique que apaga o distintivo. A playlist já sai sem ele.
-            if (Espectador.UserId is Guid usuario)
-            {
-                await Avisos.MarkSeenAsync(usuario, video.Id, Http.RequestAborted);
-                VideoFavorito = await Favoritos.IsFavoriteAsync(usuario, video.Id, Http.RequestAborted);
-            }
-
-            var playlist = await Catalogo.PlaylistAsync(Espectador, ColecaoSlug, Http.RequestAborted);
-            if (playlist is not null && playlist.Contains(video.Id))
-                Playlist = playlist;
-
-            ListaDeLegendas = await Legendas.ListPlayableAsync(video.Id, Http.RequestAborted);
-            Capitulos = await Sumarios.ListAsync(video.Id, Http.RequestAborted);
-            MinhaNota = await Avaliacoes.GetMineAsync(video.Id, Espectador, Http.RequestAborted);
-            Logo = await Marcas.GetInfoAsync(Http.RequestAborted);
-
-            Reproducao = Tokens.Issue(video.Id, Espectador);
-            Video = video;
-            MontarSegmentos();
-        }
-
-        // Quem entrou pelo link secreto não tem email: a marca leva o começo do identificador
-        // da concessão, que a administração encontra na lista de acessos do vídeo. Vídeo
-        // público visto por anônimo fica sem marca: não há de quem seria o vazamento.
-        if (Seguranca.Value.WatermarkEnabled)
-        {
-            MarcaDagua = Espectador.IsAuthenticated
-                ? Espectador.Email
-                : Espectador.LinkGrantId is { } link ? $"link {link.ToString("n")[..8]}" : null;
-        }
+        // O serviço monta a página inteira; aqui ela só é exibida. Video é o último campo
+        // preenchido: com ele, os painéis filhos começam a consultar o banco.
+        var pagina = await Paginas.OpenAsync(Espectador, Slug, ColecaoSlug, Http.RequestAborted);
 
         // Vídeo inexistente e vídeo sem acesso respondem exatamente igual. A diferença entre
         // "não existe" e "existe mas não é para você" já seria informação sobre o acervo.
-        if (Video is null)
+        if (pagina is null)
+        {
             Navegacao.NotFound();
+            return;
+        }
+
+        Playlist = pagina.Playlist;
+        VideoFavorito = pagina.IsFavorite;
+        ListaDeLegendas = pagina.Captions;
+        Capitulos = pagina.Chapters;
+        Segmentos = pagina.Segments;
+        MinhaNota = pagina.MyRating;
+        Logo = pagina.Logo;
+        Reproducao = pagina.PlaybackToken;
+        MarcaDagua = pagina.WatermarkText;
+        Video = pagina.Video;
     }
 
     private string EnderecoDoCapitulo(int segundos)
@@ -329,22 +298,5 @@
         return Playlist is null
             ? endereco
             : endereco + "&collection=" + Uri.EscapeDataString(Playlist.Slug);
-    }
-
-    private void MontarSegmentos()
-    {
-        Segmentos.Clear();
-        var duracao = TimeSpan.FromSeconds(Video?.DurationSeconds ?? 0);
-        if (Capitulos.Count == 0 || duracao <= TimeSpan.Zero)
-            return;
-
-        if (Capitulos[0].StartSeconds > 0)
-            Segmentos.Add((0, Capitulos[0].StartSeconds, string.Empty));
-
-        for (var i = 0; i < Capitulos.Count; i++)
-        {
-            var fim = VideoChapters.EndOf(Capitulos, i, duracao);
-            Segmentos.Add((Capitulos[i].StartSeconds, fim, Capitulos[i].Title));
-        }
     }
 }

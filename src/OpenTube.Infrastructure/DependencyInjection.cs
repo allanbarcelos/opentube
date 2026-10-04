@@ -96,6 +96,7 @@ public static class DependencyInjection
         services.AddScoped<AnalyticsQueries>();
         services.AddScoped<SupportService>();
         services.AddScoped<VideoCatalog>();
+        services.AddScoped<WatchPageService>();
         services.AddScoped<WatermarkService>();
         services.AddScoped<SiteBrandingService>();
         services.AddSingleton<ISiteIdentity, SiteIdentityProvider>();
