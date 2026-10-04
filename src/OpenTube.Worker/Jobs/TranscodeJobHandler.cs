@@ -31,7 +31,8 @@ public interface IJobHandler
 /// </summary>
 public class TranscodeJobHandler(
     OpenTubeDbContext db,
-    IVideoStorage storage,
+    IStorageReader storageReader,
+    IStorageWriter storageWriter,
     TranscodePipeline pipeline,
     IJobQueue queue,
     IOptions<StorageOptions> storageOptions,
@@ -82,7 +83,7 @@ public class TranscodeJobHandler(
         try
         {
             var original = Path.Combine(trabalho.FullName, "original" + StorageKeys.SafeExtension(payload.OriginalKey));
-            await storage.GetFileAsync(StorageBucket.Originals, payload.OriginalKey, original, cancellationToken);
+            await storageReader.GetFileAsync(StorageBucket.Originals, payload.OriginalKey, original, cancellationToken);
 
             var saida = await pipeline.RunAsync(original, trabalho.FullName, cancellationToken);
 
@@ -110,7 +111,7 @@ public class TranscodeJobHandler(
             // Um save que já commitou e depois falhou no processo não pode levar a geração
             // que acabou de entrar no ar.
             if (!await EhOPrefixoPublicadoAsync(video.Id, prefixo))
-                await TentarApagarAsync(storage.DeletePrefixAsync(StorageBucket.Vod, prefixo, CancellationToken.None), prefixo);
+                await TentarApagarAsync(storageWriter.DeletePrefixAsync(StorageBucket.Vod, prefixo, CancellationToken.None), prefixo);
 
             throw;
         }
@@ -170,7 +171,7 @@ public class TranscodeJobHandler(
         {
             var relativo = Path.GetRelativePath(saida.OutputDirectory, arquivo).Replace(Path.DirectorySeparatorChar, '/');
 
-            await storage.PutFileAsync(
+            await storageWriter.PutFileAsync(
                 StorageBucket.Vod,
                 prefixo + relativo,
                 arquivo,
@@ -178,9 +179,9 @@ public class TranscodeJobHandler(
                 cancellationToken);
         }
 
-        await storage.PutFileAsync(StorageBucket.Vod, StorageKeys.ThumbnailUnder(prefixo), saida.ThumbnailPath, MediaTypes.Jpeg, cancellationToken);
-        await storage.PutFileAsync(StorageBucket.Vod, StorageKeys.SpriteUnder(prefixo), saida.SpritePath, MediaTypes.Jpeg, cancellationToken);
-        await storage.PutFileAsync(StorageBucket.Vod, StorageKeys.SpriteMetadataUnder(prefixo), saida.SpriteVttPath, MediaTypes.WebVtt, cancellationToken);
+        await storageWriter.PutFileAsync(StorageBucket.Vod, StorageKeys.ThumbnailUnder(prefixo), saida.ThumbnailPath, MediaTypes.Jpeg, cancellationToken);
+        await storageWriter.PutFileAsync(StorageBucket.Vod, StorageKeys.SpriteUnder(prefixo), saida.SpritePath, MediaTypes.Jpeg, cancellationToken);
+        await storageWriter.PutFileAsync(StorageBucket.Vod, StorageKeys.SpriteMetadataUnder(prefixo), saida.SpriteVttPath, MediaTypes.WebVtt, cancellationToken);
     }
 
     /// <summary>Limpeza no storage é melhor esforço: falhar nela não desfaz o processamento.</summary>

@@ -47,7 +47,7 @@ public sealed record RetireOutputsPayload(Guid VideoId, string Prefix);
 /// </summary>
 public class VideoUploadService(
     OpenTubeDbContext db,
-    IVideoStorage storage,
+    IMultipartUpload storage,
     IJobQueue queue,
     IOptions<StorageOptions> options,
     TimeProvider clock,

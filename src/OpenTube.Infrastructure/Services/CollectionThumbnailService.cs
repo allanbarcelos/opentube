@@ -18,7 +18,8 @@ namespace OpenTube.Infrastructure.Services;
 /// </summary>
 public class CollectionThumbnailService(
     OpenTubeDbContext db,
-    IVideoStorage storage,
+    IStorageReader storageReader,
+    IStorageWriter storageWriter,
     VideoCatalog catalogo,
     TimeProvider clock,
     IOptions<StorageOptions> storageOptions,
@@ -37,7 +38,7 @@ public class CollectionThumbnailService(
         var chave = StorageKeys.CollectionThumbnail(colecao.Id, versao);
         var anterior = colecao.ThumbnailKey;
 
-        await storage.PutBytesAsync(StorageBucket.Vod, chave, jpeg, MediaTypes.Jpeg, cancellationToken);
+        await storageWriter.PutBytesAsync(StorageBucket.Vod, chave, jpeg, MediaTypes.Jpeg, cancellationToken);
 
         colecao.SetThumbnail(chave, versao);
         await db.SaveChangesAsync(cancellationToken);
@@ -85,7 +86,7 @@ public class CollectionThumbnailService(
         if (!await LiberadaAsync(collectionId, colecao.DeletedAt, viewer, cancellationToken))
             return null;
 
-        return storage.SignDownloadUrl(StorageBucket.Vod, colecao.ThumbnailKey, storageOptions.Value.PlaybackUrlLifetime);
+        return storageReader.SignDownloadUrl(StorageBucket.Vod, colecao.ThumbnailKey, storageOptions.Value.PlaybackUrlLifetime);
     }
 
     /// <summary>
@@ -129,7 +130,7 @@ public class CollectionThumbnailService(
     {
         try
         {
-            await storage.DeleteKeysAsync(StorageBucket.Vod, [chave], cancellationToken);
+            await storageWriter.DeleteKeysAsync(StorageBucket.Vod, [chave], cancellationToken);
         }
         catch (Exception e)
         {

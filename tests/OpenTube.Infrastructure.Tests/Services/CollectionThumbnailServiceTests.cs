@@ -124,7 +124,7 @@ public class CollectionThumbnailServiceTests(PostgresFixture postgres, MinioFixt
         var catalogo = new VideoCatalog(db, acesso, _relogio);
 
         return new CollectionThumbnailService(
-            db, storage, catalogo, _relogio, Microsoft.Extensions.Options.Options.Create(minio.Options), NullLogger<CollectionThumbnailService>.Instance);
+            db, storage, storage, catalogo, _relogio, Microsoft.Extensions.Options.Options.Create(minio.Options), NullLogger<CollectionThumbnailService>.Instance);
     }
 
     private async Task<Guid> PrepararAsync(IVideoStorage storage, string nome, VideoVisibility visibilidade)

@@ -34,7 +34,7 @@ public class AdminVideoServiceTests(PostgresFixture postgres, MinioFixture minio
         var storage = minio.CreateStorage();
         var fila = new PostgresJobQueue(db, _relogio);
 
-        return (new AdminVideoService(db, fila, storage, NullLogger<AdminVideoService>.Instance), db, fila, storage);
+        return (new AdminVideoService(db, fila, storage, storage, NullLogger<AdminVideoService>.Instance), db, fila, storage);
     }
 
     private async Task<Video> CriarVideoAsync(bool pronto = true, IVideoStorage? storage = null)

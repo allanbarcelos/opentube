@@ -34,7 +34,8 @@ public sealed record CaptionStatusView(Guid Id, string Language, CaptionStatus S
 /// </summary>
 public class CaptionService(
     OpenTubeDbContext db,
-    IVideoStorage storage,
+    IStorageReader storageReader,
+    IStorageWriter storageWriter,
     IJobQueue fila,
     TranscriptionAvailability disponibilidade,
     TimeProvider clock,
@@ -128,7 +129,7 @@ public class CaptionService(
         var conteudo = CaptionDocument.FromCues([]).ToWebVtt();
         var chave = StorageKeys.Caption(videoId, idioma);
 
-        await storage.PutTextAsync(StorageBucket.Vod, chave, conteudo, MediaTypes.WebVtt, cancellationToken);
+        await storageWriter.PutTextAsync(StorageBucket.Vod, chave, conteudo, MediaTypes.WebVtt, cancellationToken);
 
         var nova = VideoAsset.CaptionWithContent(
             videoId, idioma, Rotulo(label, idioma), chave, CaptionSource.Edited,
@@ -172,7 +173,7 @@ public class CaptionService(
         if (video.Status is VideoStatus.Draft)
             throw new InvalidOperationException("This video's file has not finished uploading.");
 
-        if (!await storage.ExistsAsync(StorageBucket.Originals, video.OriginalKey, cancellationToken))
+        if (!await storageReader.ExistsAsync(StorageBucket.Originals, video.OriginalKey, cancellationToken))
             throw new InvalidOperationException("The original file is no longer in storage.");
 
         var agora = clock.GetUtcNow();
@@ -243,7 +244,7 @@ public class CaptionService(
         db.VideoAssets.Remove(legenda);
         await db.SaveChangesAsync(cancellationToken);
 
-        await storage.DeleteKeysAsync(StorageBucket.Vod, [legenda.StorageKey], cancellationToken);
+        await storageWriter.DeleteKeysAsync(StorageBucket.Vod, [legenda.StorageKey], cancellationToken);
     }
 
     /// <summary>Conteúdo de uma legenda, para ser servido ou baixado. Nulo enquanto não houver arquivo.</summary>
@@ -257,7 +258,7 @@ public class CaptionService(
         if (legenda is null || !legenda.HasContent)
             return null;
 
-        var conteudo = await storage.GetTextAsync(StorageBucket.Vod, legenda.StorageKey, cancellationToken);
+        var conteudo = await storageReader.GetTextAsync(StorageBucket.Vod, legenda.StorageKey, cancellationToken);
 
         return (legenda, conteudo);
     }
@@ -287,7 +288,7 @@ public class CaptionService(
         var chave = existente?.StorageKey ?? StorageKeys.Caption(videoId, idioma);
         var agora = clock.GetUtcNow();
 
-        await storage.PutTextAsync(StorageBucket.Vod, chave, conteudo, MediaTypes.WebVtt, cancellationToken);
+        await storageWriter.PutTextAsync(StorageBucket.Vod, chave, conteudo, MediaTypes.WebVtt, cancellationToken);
 
         if (existente is null)
         {

@@ -35,7 +35,7 @@ public readonly record struct PlaybackResult(bool Allowed, AccessReason Reason, 
 /// </summary>
 public class PlaybackService(
     OpenTubeDbContext db,
-    IVideoStorage storage,
+    IStorageReader storage,
     AccessService acesso,
     PlaybackGuard limite,
     PlaybackTickets bilhetes,

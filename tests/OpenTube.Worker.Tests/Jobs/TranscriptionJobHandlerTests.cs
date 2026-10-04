@@ -33,7 +33,7 @@ public class TranscriptionJobHandlerTests(PostgresFixture postgres, MinioFixture
     public Task DisposeAsync() => Task.CompletedTask;
 
     private TranscriptionJobHandler Criar(OpenTube.Infrastructure.Persistence.OpenTubeDbContext db, IVideoStorage storage) =>
-        new(db, storage, _transcritor, Microsoft.Extensions.Options.Options.Create(new TranscriptionOptions()),
+        new(db, storage, storage, _transcritor, Microsoft.Extensions.Options.Options.Create(new TranscriptionOptions()),
             _relogio, NullLogger<TranscriptionJobHandler>.Instance);
 
     private async Task<Video> PrepararVideoAsync(IVideoStorage storage)

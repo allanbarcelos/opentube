@@ -16,7 +16,8 @@ namespace OpenTube.Infrastructure.Services;
 public class AdminVideoService(
     OpenTubeDbContext db,
     IJobQueue queue,
-    IVideoStorage storage,
+    IStorageReader storageReader,
+    IStorageWriter storageWriter,
     ILogger<AdminVideoService> logger)
 {
     public Task<Video?> FindAsync(Guid videoId, CancellationToken cancellationToken = default) =>
@@ -69,7 +70,7 @@ public class AdminVideoService(
         await ExclusaoPermanenteDeVideo.ApagarRegistrosAsync(db, [videoId], cancellationToken);
         await transacao.CommitAsync(cancellationToken);
 
-        await ExclusaoPermanenteDeVideo.ApagarArquivosAsync(storage, [videoId], logger, cancellationToken);
+        await ExclusaoPermanenteDeVideo.ApagarArquivosAsync(storageWriter, [videoId], logger, cancellationToken);
 
         logger.LogInformation("Vídeo {VideoId} excluído", videoId);
 
@@ -87,7 +88,7 @@ public class AdminVideoService(
         if (video.Status is VideoStatus.Draft)
             throw new InvalidOperationException("This video's file has not finished uploading.");
 
-        if (!await storage.ExistsAsync(StorageBucket.Originals, video.OriginalKey, cancellationToken))
+        if (!await storageReader.ExistsAsync(StorageBucket.Originals, video.OriginalKey, cancellationToken))
             throw new InvalidOperationException("The original file is no longer in storage.");
 
         if (await TranscodificacaoEmAbertoAsync(video.Id, cancellationToken))

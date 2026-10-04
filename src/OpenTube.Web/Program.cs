@@ -159,7 +159,7 @@ static async Task PrepararAsync(WebApplication app)
     var db = servicos.GetRequiredService<OpenTubeDbContext>();
     await db.Database.MigrateAsync();
 
-    await servicos.GetRequiredService<IVideoStorage>().EnsureBucketsAsync();
+    await servicos.GetRequiredService<IStorageSetup>().EnsureBucketsAsync();
     await servicos.GetRequiredService<AdminSeeder>().EnsureAdminsAsync();
 }
 

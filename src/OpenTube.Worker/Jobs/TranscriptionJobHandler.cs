@@ -28,7 +28,8 @@ public sealed record TranscriptionPayload(Guid VideoId, string OriginalKey, stri
 /// </summary>
 public class TranscriptionJobHandler(
     OpenTubeDbContext db,
-    IVideoStorage storage,
+    IStorageReader storageReader,
+    IStorageWriter storageWriter,
     ITranscriber transcritor,
     IOptions<TranscriptionOptions> opcoes,
     TimeProvider clock,
@@ -73,7 +74,7 @@ public class TranscriptionJobHandler(
         try
         {
             var original = Path.Combine(trabalho.FullName, "original" + StorageKeys.SafeExtension(payload.OriginalKey));
-            await storage.GetFileAsync(StorageBucket.Originals, payload.OriginalKey, original, cancellationToken);
+            await storageReader.GetFileAsync(StorageBucket.Originals, payload.OriginalKey, original, cancellationToken);
 
             var transcricao = await transcritor.TranscribeAsync(
                 original, trabalho.FullName, CaptionLanguage.TranscriptionCode(idioma), cancellationToken);
@@ -92,7 +93,7 @@ public class TranscriptionJobHandler(
                     return;
             }
 
-            await storage.PutTextAsync(StorageBucket.Vod, destino.StorageKey, conteudo, MediaTypes.WebVtt, cancellationToken);
+            await storageWriter.PutTextAsync(StorageBucket.Vod, destino.StorageKey, conteudo, MediaTypes.WebVtt, cancellationToken);
 
             destino.CompleteTranscription(System.Text.Encoding.UTF8.GetByteCount(conteudo), clock.GetUtcNow());
             video.SetTranscript(documento.PlainText);

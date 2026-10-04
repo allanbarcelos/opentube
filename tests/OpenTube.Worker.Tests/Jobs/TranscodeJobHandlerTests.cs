@@ -54,6 +54,7 @@ public class TranscodeJobHandlerTests(PostgresFixture postgres, MinioFixture min
         return new TranscodeJobHandler(
             db,
             storage,
+            storage,
             pipeline,
             new PostgresJobQueue(db, _relogio),
             Microsoft.Extensions.Options.Options.Create(new OpenTube.Infrastructure.Options.StorageOptions
@@ -185,7 +186,7 @@ public class TranscodeJobHandlerTests(PostgresFixture postgres, MinioFixture min
 
         await using (var db = postgres.CreateContext())
         {
-            var limpeza = new RetireOutputsJobHandler(db, storage, NullLogger<RetireOutputsJobHandler>.Instance);
+            var limpeza = new RetireOutputsJobHandler(db, storage, storage, NullLogger<RetireOutputsJobHandler>.Instance);
 
             await limpeza.HandleAsync(TrabalhoDeLimpeza(videoId, antiga));
 
@@ -237,7 +238,7 @@ public class TranscodeJobHandlerTests(PostgresFixture postgres, MinioFixture min
 
         await using (var db = postgres.CreateContext())
         {
-            var limpeza = new RetireOutputsJobHandler(db, storage, NullLogger<RetireOutputsJobHandler>.Instance);
+            var limpeza = new RetireOutputsJobHandler(db, storage, storage, NullLogger<RetireOutputsJobHandler>.Instance);
             var trabalhos = await db.ProcessingJobs
                 .Where(j => j.Kind == JobKind.RetireOutputs && j.TargetId == video.Id)
                 .ToListAsync();

@@ -76,7 +76,7 @@ public sealed record ExclusaoDeColecao(
 /// por isso remover um vídeo daqui muda quem consegue assisti-lo.
 /// </summary>
 public class CollectionService(
-    OpenTubeDbContext db, TimeProvider clock, IVideoStorage storage, ILogger<CollectionService> logger)
+    OpenTubeDbContext db, TimeProvider clock, IStorageWriter storage, ILogger<CollectionService> logger)
 {
     public async Task<Collection> CreateAsync(string name, string? description, Guid adminId, CancellationToken cancellationToken = default)
     {

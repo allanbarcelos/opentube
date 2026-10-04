@@ -53,7 +53,13 @@ public static class DependencyInjection
 
         services.TryAddTimeProvider();
         services.AddScoped<IJobQueue, PostgresJobQueue>();
-        services.AddSingleton<IVideoStorage, S3VideoStorage>();
+        // Uma instância só do cliente S3, entregue a cada serviço pelo papel que ele usa.
+        services.AddSingleton<S3VideoStorage>();
+        services.AddSingleton<IVideoStorage>(sp => sp.GetRequiredService<S3VideoStorage>());
+        services.AddSingleton<IStorageReader>(sp => sp.GetRequiredService<S3VideoStorage>());
+        services.AddSingleton<IStorageWriter>(sp => sp.GetRequiredService<S3VideoStorage>());
+        services.AddSingleton<IMultipartUpload>(sp => sp.GetRequiredService<S3VideoStorage>());
+        services.AddSingleton<IStorageSetup>(sp => sp.GetRequiredService<S3VideoStorage>());
         services.AddScoped<VideoUploadService>();
         services.AddScoped<AdminVideoService>();
         services.AddScoped<ProcessingQueueService>();

@@ -18,7 +18,8 @@ namespace OpenTube.Worker.Jobs;
 /// </summary>
 public class RetireOutputsJobHandler(
     OpenTubeDbContext db,
-    IVideoStorage storage,
+    IStorageReader storageReader,
+    IStorageWriter storageWriter,
     ILogger<RetireOutputsJobHandler> logger) : IJobHandler
 {
     public JobKind Kind => JobKind.RetireOutputs;
@@ -43,7 +44,7 @@ public class RetireOutputsJobHandler(
         }
 
         var legendas = StorageKeys.CaptionsPrefix(payload.VideoId);
-        var chaves = await storage.ListAsync(StorageBucket.Vod, StorageKeys.VodPrefix(payload.VideoId), cancellationToken);
+        var chaves = await storageReader.ListAsync(StorageBucket.Vod, StorageKeys.VodPrefix(payload.VideoId), cancellationToken);
 
         var antigas = chaves
             .Where(k => !k.StartsWith(payload.Prefix, StringComparison.Ordinal) && !k.StartsWith(legendas, StringComparison.Ordinal))
@@ -52,7 +53,7 @@ public class RetireOutputsJobHandler(
         if (antigas.Count == 0)
             return;
 
-        await storage.DeleteKeysAsync(StorageBucket.Vod, antigas, cancellationToken);
+        await storageWriter.DeleteKeysAsync(StorageBucket.Vod, antigas, cancellationToken);
         logger.LogInformation("Apagadas {Quantidade} saídas antigas de {VideoId}", antigas.Count, payload.VideoId);
     }
 }

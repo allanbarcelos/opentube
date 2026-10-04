@@ -42,7 +42,7 @@ public static class ExclusaoPermanenteDeVideo
     }
 
     public static async Task ApagarArquivosAsync(
-        IVideoStorage storage, IEnumerable<Guid> ids, ILogger logger, CancellationToken cancellationToken)
+        IStorageWriter storage, IEnumerable<Guid> ids, ILogger logger, CancellationToken cancellationToken)
     {
         foreach (var id in ids)
         {

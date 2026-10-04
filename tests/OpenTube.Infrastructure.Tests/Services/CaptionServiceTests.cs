@@ -51,7 +51,7 @@ public class CaptionServiceTests(PostgresFixture postgres, MinioFixture minio) :
         var db = postgres.CreateContext();
         var storage = minio.CreateStorage();
 
-        return (new CaptionService(db, storage, new PostgresJobQueue(db, _relogio), new TranscriptionAvailability(db, _relogio), _relogio, NullLogger<CaptionService>.Instance), db, storage);
+        return (new CaptionService(db, storage, storage, new PostgresJobQueue(db, _relogio), new TranscriptionAvailability(db, _relogio), _relogio, NullLogger<CaptionService>.Instance), db, storage);
     }
 
     private async Task<Video> CriarVideoAsync()
