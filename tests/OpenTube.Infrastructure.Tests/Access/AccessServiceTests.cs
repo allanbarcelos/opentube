@@ -236,6 +236,64 @@ public class AccessServiceTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Link_de_video_valendo_abre_e_leva_ao_video()
+    {
+        var video = await VideoRestritoAsync();
+        var concessao = await GravarAsync(AccessGrant.ForLink(
+            TokenHasher.Hash("token", Segredo), GrantTargetType.Video, video.Id, Admin, Agora));
+
+        await using var db = postgres.CreateContext();
+        var entrada = await Criar(db).OpenShareLinkAsync("token");
+
+        Assert.NotNull(entrada);
+        Assert.Equal(concessao.Id, entrada.GrantId);
+        Assert.Equal(video.Slug, entrada.VideoSlug);
+    }
+
+    [Fact]
+    public async Task Link_do_acervo_abre_sem_destino_proprio()
+    {
+        await GravarAsync(AccessGrant.ForLink(
+            TokenHasher.Hash("token", Segredo), GrantTargetType.All, null, Admin, Agora));
+
+        await using var db = postgres.CreateContext();
+        var entrada = await Criar(db).OpenShareLinkAsync("token");
+
+        Assert.NotNull(entrada);
+        Assert.Null(entrada.VideoSlug);
+    }
+
+    [Fact]
+    public async Task Link_vencido_pelo_relogio_da_aplicacao_nao_abre()
+    {
+        var video = await VideoRestritoAsync();
+        await GravarAsync(AccessGrant.ForLink(
+            TokenHasher.Hash("token", Segredo), GrantTargetType.Video, video.Id, Admin, Agora,
+            expiresAt: Agora.AddDays(1)));
+
+        await using var db = postgres.CreateContext();
+        var servico = Criar(db);
+
+        Assert.NotNull(await servico.OpenShareLinkAsync("token"));
+
+        // Vence pelo relógio da aplicação, não pela hora da máquina, que está longe dessa data.
+        _relogio.Advance(TimeSpan.FromDays(2));
+
+        Assert.Null(await servico.OpenShareLinkAsync("token"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("token-inventado")]
+    public async Task Link_inexistente_nao_abre(string? token)
+    {
+        await using var db = postgres.CreateContext();
+
+        Assert.Null(await Criar(db).OpenShareLinkAsync(token));
+    }
+
+    [Fact]
     public async Task Limite_de_visualizacoes_esgota_o_acesso()
     {
         var video = await VideoRestritoAsync();

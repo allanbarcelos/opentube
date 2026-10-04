@@ -27,6 +27,11 @@ public readonly record struct AccessOutcome(AccessDecision Decision, Guid? Grant
 /// Aplica a política de acesso com os dados do banco: carrega as concessões que podem
 /// alcançar o vídeo, confere o token do link e registra o uso.
 /// </summary>
+/// <summary>Link secreto aberto e ainda valendo.</summary>
+/// <param name="GrantId">Concessão do link.</param>
+/// <param name="VideoSlug">Endereço do vídeo, quando o link é de um vídeo só.</param>
+public sealed record ShareLinkEntry(Guid GrantId, string? VideoSlug);
+
 public class AccessService(OpenTubeDbContext db, IOptions<SecurityOptions> options, TimeProvider clock)
 {
     private readonly SecurityOptions _options = options.Value;
@@ -49,6 +54,33 @@ public class AccessService(OpenTubeDbContext db, IOptions<SecurityOptions> optio
             .FirstOrDefaultAsync(g => g.SubjectType == GrantSubjectType.Link && g.SubjectValue == resumo, cancellationToken);
 
         return concessao is null ? viewer : viewer.PresentingLink(concessao.Id);
+    }
+
+    /// <summary>
+    /// Abre um link secreto pelo endereço que a pessoa recebeu. Devolve nulo quando o link não
+    /// existe ou já não vale (revogado, vencido, esgotado ou ainda não começou), conferido pelo
+    /// relógio da aplicação. Quando ele é de um vídeo, traz o endereço do vídeo para a pessoa
+    /// cair direto nele; nos demais casos, a home já lista o que o link liberou.
+    /// </summary>
+    public async Task<ShareLinkEntry?> OpenShareLinkAsync(string? linkToken, CancellationToken cancellationToken = default)
+    {
+        var espectador = await ResolveLinkAsync(Viewer.Anonymous, linkToken, cancellationToken);
+
+        if (espectador.LinkGrantId is not { } concessaoId)
+            return null;
+
+        var concessao = await db.AccessGrants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == concessaoId, cancellationToken);
+
+        if (concessao is null || !concessao.IsActiveAt(clock.GetUtcNow()))
+            return null;
+
+        var video = concessao.TargetType is GrantTargetType.Video && concessao.TargetId is { } videoId
+            ? await db.Videos.Where(v => v.Id == videoId).Select(v => v.Slug).FirstOrDefaultAsync(cancellationToken)
+            : null;
+
+        return new ShareLinkEntry(concessao.Id, video);
     }
 
     /// <summary>Avalia se o espectador pode assistir ao vídeo.</summary>
