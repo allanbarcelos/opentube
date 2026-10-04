@@ -117,7 +117,7 @@
                             @foreach (var concessao in Acessos)
                             {
                                 <li class="list-group-item d-flex justify-content-between small">
-                                    <span>@AlvoTexto(concessao)</span>
+                                    <span>@GrantLabels.Target(concessao.TargetType)</span>
                                     <span class="text-body-secondary">
                                         @(concessao.IsRevoked ? T["Revoked"] : T["in effect"])
                                     </span>
@@ -157,11 +157,4 @@
         Atividade = await Consultas.ViewerTimelineAsync(UserId, cancellationToken: Http.RequestAborted);
         Acessos = await Concessoes.ListForEmailAsync(Pessoa.Email, Http.RequestAborted);
     }
-
-    private string AlvoTexto(AccessGrant concessao) => concessao.TargetType switch
-    {
-        OpenTube.Domain.Enums.GrantTargetType.All => T["The whole library"],
-        OpenTube.Domain.Enums.GrantTargetType.Collection => T["A collection"],
-        _ => T["A video"]
-    };
 }

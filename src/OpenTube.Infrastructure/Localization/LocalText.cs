@@ -604,7 +604,6 @@ public static class LocalText
         ["the whole library"] = "o acervo inteiro",
         ["a removed video"] = "um vídeo removido",
         ["a removed collection"] = "uma coleção removida",
-        ["everyone"] = "todos",
         ["Caption uploaded."] = "Legenda enviada.",
         ["No captions yet. Upload a file or generate one from the speech."] = "Nenhuma legenda ainda. Envie um arquivo ou gere a partir da fala.",
         ["Remove"] = "Remover",
@@ -750,7 +749,6 @@ public static class LocalText
         ["A link grant needs the token digest."] = "A concessão por link exige o resumo do token.",
         ["The grant needs the person's email or the domain."] = "A concessão exige o email ou o domínio do sujeito.",
         ["Only the author of the conversation can reply to it."] = "Só o autor da conversa pode responder por ela.",
-        ["content"] = "conteúdo",
     };
 
     private static readonly Dictionary<string, string> Frances = new(StringComparer.Ordinal)
@@ -1330,7 +1328,6 @@ public static class LocalText
         ["the whole library"] = "toute la vidéothèque",
         ["a removed video"] = "une vidéo supprimée",
         ["a removed collection"] = "une collection supprimée",
-        ["everyone"] = "tout le monde",
         ["Caption uploaded."] = "Sous-titre envoyé.",
         ["No captions yet. Upload a file or generate one from the speech."] = "Aucun sous-titre pour l'instant. Envoyez un fichier ou générez-en un à partir de la parole.",
         ["Remove"] = "Retirer",
@@ -1476,7 +1473,6 @@ public static class LocalText
         ["A link grant needs the token digest."] = "Une autorisation par lien exige le résumé du jeton.",
         ["The grant needs the person's email or the domain."] = "L'autorisation exige l'e-mail de la personne ou le domaine.",
         ["Only the author of the conversation can reply to it."] = "Seul l'auteur de la conversation peut y répondre.",
-        ["content"] = "contenu",
     };
 }
 

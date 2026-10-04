@@ -51,14 +51,7 @@ public class InvitationMailer(
 
     /// <summary>Nome do que foi liberado, para aparecer no convite.</summary>
     private async Task<string> DescreverAlvoAsync(GrantTargetType tipo, Guid? alvoId, CancellationToken cancellationToken) =>
-        tipo is GrantTargetType.All
-            ? LocalText.Get("The whole library")
-            : await queries.TargetNameAsync(tipo, alvoId, cancellationToken) ?? tipo switch
-            {
-                GrantTargetType.Video => LocalText.Get("A video"),
-                GrantTargetType.Collection => LocalText.Get("A collection"),
-                _ => LocalText.Get("content")
-            };
+        await queries.TargetNameAsync(tipo, alvoId, cancellationToken) ?? GrantLabels.Target(tipo);
 
     /// <summary>
     /// Onde a pessoa convidada cai depois de entrar: o vídeo liberado ou, para uma coleção ou o

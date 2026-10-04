@@ -145,6 +145,47 @@ public class AuditoriaTests(PostgresFixture postgres, MinioFixture minio) : IAsy
     }
 
     [Fact]
+    public async Task Revogar_um_dominio_registra_o_dominio_como_o_painel_mostra()
+    {
+        using var storage = minio.CreateStorage();
+        var video = await AcervoDeTeste.PublicarAsync(postgres, storage, "Plano Confidencial", VideoVisibility.Restricted);
+
+        using var cliente = _app.CreateBrowser();
+        await EntrarComoAdminAsync(cliente);
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/videos/{video.Id}", "/admin/access/domain",
+            new Dictionary<string, string>
+            {
+                ["alvoTipo"] = ((int)GrantTargetType.Video).ToString(),
+                ["alvoId"] = video.Id.ToString(),
+                ["dominios"] = "empresa.com",
+                ["validade"] = "sempre",
+                ["valorDaValidade"] = ""
+            });
+
+        Guid concessaoId;
+        await using (var db = postgres.CreateContext())
+            concessaoId = (await db.AccessGrants.SingleAsync()).Id;
+
+        await FormularioHelpers.EnviarFormularioAsync(
+            cliente, $"/admin/videos/{video.Id}", $"/admin/access/{concessaoId}/revoke",
+            new Dictionary<string, string>
+            {
+                ["alvoTipo"] = ((int)GrantTargetType.Video).ToString(),
+                ["alvoId"] = video.Id.ToString()
+            });
+
+        await using var leitura = postgres.CreateContext();
+        var registro = await leitura.AuditEntries.SingleAsync(e => e.Action == AuditActions.AcessoRevogado);
+
+        // O mesmo texto do painel de convites: o domínio com "@", e não um "empresa.com" que se
+        // confunde com um endereço.
+        Assert.Contains("@empresa.com", registro.Summary);
+        Assert.Contains("@empresa.com", await cliente.GetStringAsync($"/admin/videos/{video.Id}?tab=access"));
+    }
+
+    [Fact]
     public async Task A_pagina_de_auditoria_lista_e_filtra()
     {
         using var storage = minio.CreateStorage();

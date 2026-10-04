@@ -88,7 +88,7 @@
                                         }
                                         else
                                         {
-                                            @Sujeito(concessao)
+                                            @GrantLabels.Subject(concessao)
                                         }
                                     </span>
                                     <span class="badge @SituacaoClasse(situacao)">@SituacaoTexto(situacao)</span>
@@ -384,14 +384,6 @@
         var local = fim.ToLocalTime();
         return local.TimeOfDay == TimeSpan.Zero ? local.AddDays(-1).ToString("d") : local.ToString("g");
     }
-
-    private string Sujeito(AccessGrant concessao) => concessao.SubjectType switch
-    {
-        GrantSubjectType.Link => T["secret link"],
-        GrantSubjectType.Public => T["any visitor"],
-        GrantSubjectType.Domain => "@" + concessao.SubjectValue,
-        _ => concessao.SubjectValue
-    };
 
     /// <summary>Como a concessão foi usada: primeiro acesso, visualizações e até quando vale.</summary>
     private string Uso(AccessGrant concessao)
